@@ -643,7 +643,18 @@ Run this tool to see output.</pre
         if (normalized === 'elemental_get_entity') {
             return [
                 { key: 'entity', label: 'Entity', placeholder: 'Microsoft', type: 'text' },
-                { key: 'flavor', label: 'Flavor (optional)', placeholder: 'company', type: 'text' },
+                {
+                    key: 'flavor',
+                    label: 'Flavor (optional)',
+                    placeholder: 'company',
+                    type: 'text',
+                },
+                {
+                    key: 'properties_csv',
+                    label: 'Properties (optional, comma-separated)',
+                    placeholder: 'name, country, industry',
+                    type: 'text',
+                },
             ];
         }
         if (normalized === 'elemental_get_events') {
@@ -776,6 +787,16 @@ Run this tool to see output.</pre
             };
             const flavor = toOptionalString(model.flavor);
             if (flavor) args.flavor = flavor;
+            const propertiesCsv = toOptionalString(model.properties_csv);
+            if (propertiesCsv) {
+                const properties = propertiesCsv
+                    .split(',')
+                    .map((value) => value.trim())
+                    .filter((value) => value.length > 0);
+                if (properties.length) {
+                    args.properties = properties;
+                }
+            }
             return args;
         }
         if (normalized === 'elemental_get_events') {
