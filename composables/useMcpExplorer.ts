@@ -28,16 +28,6 @@ const initPromises = new Map<string, Promise<void>>();
 export function useMcpExplorer() {
     const { accessToken } = useUserState();
 
-    function getGatewayUrl(): string {
-        const config = useRuntimeConfig();
-        return (config.public as any).gatewayUrl || '';
-    }
-
-    function getTenantOrgId(): string {
-        const config = useRuntimeConfig();
-        return (config.public as any).tenantOrgId || '';
-    }
-
     function extractJsonFromSse(raw: string): any | null {
         const blocks = raw.split(/\r?\n\r?\n/);
         let fallbackPayload: any | null = null;
@@ -108,13 +98,7 @@ export function useMcpExplorer() {
     }
 
     async function sendMcpRequest(serverName: string, method: string, params?: any): Promise<any> {
-        const gatewayUrl = getGatewayUrl();
-        const orgId = getTenantOrgId();
-        if (!gatewayUrl || !orgId) {
-            throw new Error('Gateway URL or tenant org ID not configured');
-        }
-
-        const url = `${gatewayUrl}/api/mcp/${orgId}/${serverName}/mcp`;
+        const url = `/api/mcp/${encodeURIComponent(serverName)}`;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (accessToken.value) {
             headers['Authorization'] = `Bearer ${accessToken.value}`;

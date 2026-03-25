@@ -40,34 +40,16 @@ const error = ref<string | null>(null);
 let fetchPromise: Promise<TenantConfig | null> | null = null;
 
 export function useTenantConfig() {
-    function getGatewayUrl(): string {
-        const rtCfg = useRuntimeConfig();
-        return (rtCfg.public as any).gatewayUrl || '';
-    }
-
-    function getTenantOrgId(): string {
-        const rtCfg = useRuntimeConfig();
-        return (rtCfg.public as any).tenantOrgId || '';
-    }
-
     async function fetchConfig(): Promise<TenantConfig | null> {
         if (config.value) return config.value;
         if (fetchPromise) return fetchPromise;
-
-        const gatewayUrl = getGatewayUrl();
-        const orgId = getTenantOrgId();
-
-        if (!gatewayUrl || !orgId) {
-            error.value = 'Gateway URL or tenant org ID not configured';
-            return null;
-        }
 
         loading.value = true;
         error.value = null;
 
         fetchPromise = (async () => {
             try {
-                const result = await $fetch<TenantConfig>(`${gatewayUrl}/api/config/${orgId}`);
+                const result = await $fetch<TenantConfig>('/api/tenant-config');
                 config.value = result;
                 return result;
             } catch (e: any) {
