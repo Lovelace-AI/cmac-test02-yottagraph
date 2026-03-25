@@ -108,15 +108,20 @@ export function useMcpExplorer() {
             headers['Mcp-Session-Id'] = existingSessionId;
         }
 
+        const isNotification = method.startsWith('notifications/');
+        const bodyPayload: Record<string, any> = {
+            jsonrpc: '2.0',
+            method,
+            ...(params ? { params } : {}),
+        };
+        if (!isNotification) {
+            bodyPayload.id = Date.now();
+        }
+
         const res = await fetch(url, {
             method: 'POST',
             headers,
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: Date.now(),
-                method,
-                ...(params ? { params } : {}),
-            }),
+            body: JSON.stringify(bodyPayload),
         });
 
         // Persist the session ID returned by the MCP server (via the gateway).
