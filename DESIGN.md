@@ -1,13 +1,33 @@
-# cmac-test02
+# cmac-test02 - Design Document
 
-## Vision
+## Project Overview
 
-I want to show MCP health and tool results against an entity
+[Provide a brief high level description of your project. What is it meant to accomplish? Who are the intended users?]
 
-## Status
+**Created:** 2026-03-25  
+**App ID:** cmac-test02  
+**Description:** Aether app: cmac-test02  
+**Last updated:** 2026-03-25
 
-Project just created. Run `/build-my-app` in Cursor to start building.
+## Configuration
 
-## Modules
+| Setting        | Value                            |
+| -------------- | -------------------------------- |
+| Authentication | Not yet configured               |
+| Query Server   | https://stable-query.lovelace.ai |
 
-*None yet — the agent will populate this as features are built.*
+## Cross-Cutting Concepts
+
+[Use this section for cross-cutting concepts such as entity score calculations and shared composables.]
+
+## Pages
+
+[Create a subsection for each page or major feature.]
+
+### Page Template
+
+Name:
+Route:
+Description:
+Implementation status:
+Details:
