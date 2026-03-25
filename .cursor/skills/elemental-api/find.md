@@ -20,21 +20,21 @@ Expressions are passed as URL-encoded form data in the `expression` parameter (N
 
 ## Expression Types
 
-| Type         | Description                            | Key Fields                                                  | Status                              |
-| ------------ | -------------------------------------- | ----------------------------------------------------------- | ----------------------------------- |
-| `is_type`    | Filter entities by type (flavor)       | `is_type.fid` (integer)                                     | Implemented                         |
-| `comparison` | Compare a property value               | `comparison.operator`, `comparison.pid`, `comparison.value` | Partial -- see operator table below |
-| `linked`     | Find entities linked via relationships | `linked.distance`, `linked.to_entity`, `linked.pids`        | Implemented                         |
-| `and`        | All sub-expressions must match         | `and` (array of expressions)                                | Implemented                         |
-| `or`         | At least one sub-expression must match | `or` (array of expressions)                                 | Implemented                         |
-| `not`        | Negate an expression                   | `not` (single expression)                                   | Implemented                         |
+| Type | Description | Key Fields | Status |
+|------|-------------|------------|--------|
+| `is_type` | Filter entities by type (flavor) | `is_type.fid` (integer) | Implemented |
+| `comparison` | Compare a property value | `comparison.operator`, `comparison.pid`, `comparison.value` | Partial -- see operator table below |
+| `linked` | Find entities linked via relationships | `linked.distance`, `linked.to_entity`, `linked.pids` | Implemented |
+| `and` | All sub-expressions must match | `and` (array of expressions) | Implemented |
+| `or` | At least one sub-expression must match | `or` (array of expressions) | Implemented |
+| `not` | Negate an expression | `not` (single expression) | Implemented |
 
 ### `is_type` -- Filter by Entity Type
 
 Returns all entities of a given flavor (type). Look up FIDs via `GET /elemental/metadata/schema` (see schema.md).
 
 ```json
-{ "type": "is_type", "is_type": { "fid": 1 } }
+{"type": "is_type", "is_type": {"fid": 1}}
 ```
 
 ### `comparison` -- Compare Property Values
@@ -42,75 +42,66 @@ Returns all entities of a given flavor (type). Look up FIDs via `GET /elemental/
 Compares a property (identified by PID) against a value. Look up PIDs via the schema endpoints (see schema.md).
 
 ```json
-{ "type": "comparison", "comparison": { "operator": "string_like", "pid": 8, "value": "PACIFIC" } }
+{"type": "comparison", "comparison": {"operator": "string_like", "pid": 8, "value": "PACIFIC"}}
 ```
 
 **Fields:**
 
-| Field          | Type    | Required | Description                                                                                                    |
-| -------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------- |
-| operator       | string  | yes      | One of: `string_like`, `eq`, `lt`, `gt`, `regex`, `has_value`                                                  |
-| pid            | integer | yes      | Property ID to compare (must be non-zero)                                                                      |
-| value          | any     | depends  | Value to compare against (not required for `has_value`)                                                        |
-| accept_imputed | boolean | no       | Include imputed (inferred) values in the comparison (default: false). Parsed but not yet used by any operator. |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| operator | string | yes | One of: `string_like`, `eq`, `lt`, `gt`, `regex`, `has_value` |
+| pid | integer | yes | Property ID to compare (must be non-zero) |
+| value | any | depends | Value to compare against (not required for `has_value`) |
+| accept_imputed | boolean | no | Include imputed (inferred) values in the comparison (default: false). Parsed but not yet used by any operator. |
 
 **Operators:**
 
-| Operator      | Description                                     | Value Type                 | Status                                |
-| ------------- | ----------------------------------------------- | -------------------------- | ------------------------------------- |
-| `string_like` | Case-insensitive substring match                | string                     | Implemented (name property only)      |
-| `has_value`   | Property has any value (value field not needed) | n/a                        | Implemented                           |
-| `eq`          | Equal to                                        | string, number, or boolean | Implemented (type-aware)              |
-| `lt`          | Less than                                       | number                     | Implemented (numeric properties only) |
-| `gt`          | Greater than                                    | number                     | Implemented (numeric properties only) |
-| `regex`       | Regular expression match                        | string (regex pattern)     | Not yet implemented                   |
+| Operator | Description | Value Type | Status |
+|----------|-------------|------------|--------|
+| `string_like` | Case-insensitive substring match | string | Implemented (name property only) |
+| `has_value` | Property has any value (value field not needed) | n/a | Implemented |
+| `eq` | Equal to | string, number, or boolean | Implemented (type-aware) |
+| `lt` | Less than | number | Implemented (numeric properties only) |
+| `gt` | Greater than | number | Implemented (numeric properties only) |
+| `regex` | Regular expression match | string (regex pattern) | Not yet implemented |
 
 ### `linked` -- Relationship Traversal
 
 Finds entities linked to a target entity through the knowledge graph. See relationships.md for more on entity relationships.
 
 ```json
-{ "type": "linked", "linked": { "to_entity": "00416400910670863867", "distance": 1 } }
+{"type": "linked", "linked": {"to_entity": "00416400910670863867", "distance": 1}}
 ```
 
 **Fields:**
 
-| Field     | Type      | Required | Description                                                                                                                                                       |
-| --------- | --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| distance  | integer   | yes      | Maximum relationship distance to traverse (minimum 1)                                                                                                             |
-| to_entity | string    | no       | Target entity ID (20-character zero-padded)                                                                                                                       |
-| pids      | integer[] | no       | Property IDs defining which relationship types to follow                                                                                                          |
-| direction | string    | no       | Direction of traversal: `"outgoing"` (default) follows subject->value edges, `"incoming"` follows reverse (value->subject) edges, `"both"` unions both directions |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| distance | integer | yes | Maximum relationship distance to traverse (minimum 1) |
+| to_entity | string | no | Target entity ID (20-character zero-padded) |
+| pids | integer[] | no | Property IDs defining which relationship types to follow |
+| direction | string | no | Direction of traversal: `"outgoing"` (default) follows subject->value edges, `"incoming"` follows reverse (value->subject) edges, `"both"` unions both directions |
 
 ### `and` / `or` / `not` -- Logical Operators
 
 Combine expressions with standard boolean logic. `and` and `or` take arrays of sub-expressions; `not` takes a single sub-expression.
 
 ```json
-{
-    "type": "and",
-    "and": [
-        { "type": "is_type", "is_type": { "fid": 1 } },
-        {
-            "type": "comparison",
-            "comparison": { "operator": "string_like", "pid": 8, "value": "PACIFIC" }
-        }
-    ]
-}
+{"type": "and", "and": [
+  {"type": "is_type", "is_type": {"fid": 1}},
+  {"type": "comparison", "comparison": {"operator": "string_like", "pid": 8, "value": "PACIFIC"}}
+]}
 ```
 
 ```json
-{
-    "type": "or",
-    "or": [
-        { "type": "is_type", "is_type": { "fid": 1 } },
-        { "type": "is_type", "is_type": { "fid": 2 } }
-    ]
-}
+{"type": "or", "or": [
+  {"type": "is_type", "is_type": {"fid": 1}},
+  {"type": "is_type", "is_type": {"fid": 2}}
+]}
 ```
 
 ```json
-{ "type": "not", "not": { "type": "is_type", "is_type": { "fid": 1 } } }
+{"type": "not", "not": {"type": "is_type", "is_type": {"fid": 1}}}
 ```
 
 ## Examples
@@ -188,20 +179,20 @@ CRITICAL: This endpoint REQUIRES Content-Type: application/x-www-form-urlencoded
 
 **Content-Type:** `application/x-www-form-urlencoded`
 
-| Name       | Type    | Required | Description                                                 |
-| ---------- | ------- | -------- | ----------------------------------------------------------- |
-| expression | string  | yes      | JSON-encoded expression object defining the search criteria |
-| deadline   | any     | no       | Response deadline in milliseconds or duration format        |
-| limit      | integer | no       | Maximum number of entity IDs to return in first response    |
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| expression | string | yes | JSON-encoded expression object defining the search criteria |
+| deadline | any | no | Response deadline in milliseconds or duration format |
+| limit | integer | no | Maximum number of entity IDs to return in first response |
 
 #### Responses
 
-| Status | Description                                                        |
-| ------ | ------------------------------------------------------------------ |
-| 200    | Find operation successful (`FindResponse`)                         |
-| 400    | Bad request - invalid parameters or malformed expression (`Error`) |
-| 500    | Internal server error (`Error`)                                    |
-| 501    | Elemental API capability not enabled (`Error`)                     |
+| Status | Description |
+|--------|-------------|
+| 200 | Find operation successful (`FindResponse`) |
+| 400 | Bad request - invalid parameters or malformed expression (`Error`) |
+| 500 | Internal server error (`Error`) |
+| 501 | Elemental API capability not enabled (`Error`) |
 
 #### Example
 
@@ -217,76 +208,72 @@ expression={"type":"is_type","is_type":{"fid":10}}&limit=5
 **Response:**
 
 ```json
-{
-    "op_id": "98cc54e9-0108-4361-9c96-18ea97cda7a2",
-    "follow_up": true,
-    "eids": ["01601807036815568643", "08115040994665529432", "02045070050429461063"]
-}
+{"op_id": "98cc54e9-0108-4361-9c96-18ea97cda7a2", "follow_up": true, "eids": ["01601807036815568643", "08115040994665529432", "02045070050429461063"]}
 ```
 
 ## Types
 
 ### FindResponse
 
-| Field | Type       | Description |
-| ----- | ---------- | ----------- |
-| find  | `FindData` |             |
+| Field | Type | Description |
+|-------|------|-------------|
+| find | `FindData` |  |
 
 ### FindData
 
-| Field    | Type     | Description                                                     |
-| -------- | -------- | --------------------------------------------------------------- |
+| Field | Type | Description |
+|-------|------|-------------|
 | **eids** | string[] | Array of 20-character entity IDs matching the search expression |
 
 ### Expression
 
-| Field    | Type   | Description                                                                                                                                                                               |
-| -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field | Type | Description |
+|-------|------|-------------|
 | **type** | string | Type of expression. One of: is_type (filter by entity type), comparison (compare property values), linked (relationship traversal), and (logical AND), or (logical OR), not (logical NOT) |
 
 ### AndExpression
 
-| Field   | Type           | Description                                |
-| ------- | -------------- | ------------------------------------------ |
+| Field | Type | Description |
+|-------|------|-------------|
 | **and** | `Expression`[] | Array of expressions that must all be true |
 
 ### OrExpression
 
-| Field  | Type           | Description                                          |
-| ------ | -------------- | ---------------------------------------------------- |
+| Field | Type | Description |
+|-------|------|-------------|
 | **or** | `Expression`[] | Array of expressions where at least one must be true |
 
 ### NotExpression
 
-| Field   | Type         | Description          |
-| ------- | ------------ | -------------------- |
+| Field | Type | Description |
+|-------|------|-------------|
 | **not** | `Expression` | Expression to negate |
 
 ### ComparisonExpression
 
-| Field          | Type         | Description |
-| -------------- | ------------ | ----------- |
-| **comparison** | `Comparison` |             |
+| Field | Type | Description |
+|-------|------|-------------|
+| **comparison** | `Comparison` |  |
 
 ### IsTypeExpression
 
-| Field       | Type     | Description |
-| ----------- | -------- | ----------- |
-| **is_type** | `IsType` |             |
+| Field | Type | Description |
+|-------|------|-------------|
+| **is_type** | `IsType` |  |
 
 ### Comparison
 
-| Field          | Type    | Description                                                                                                                                                                                                                |
-| -------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **operator**   | string  | Comparison operator. One of: string_like (case-insensitive substring match), eq (equal to), lt (less than), gt (greater than), regex (regular expression match), has_value (property has any value, no value field needed) |
-| **pid**        | integer | Property identifier (PID) to compare against                                                                                                                                                                               |
-| value          | any     | Value to compare with (not required for has_value operator)                                                                                                                                                                |
-| accept_imputed | boolean | Whether to include imputed property values in comparison                                                                                                                                                                   |
+| Field | Type | Description |
+|-------|------|-------------|
+| **operator** | string | Comparison operator. One of: string_like (case-insensitive substring match), eq (equal to), lt (less than), gt (greater than), regex (regular expression match), has_value (property has any value, no value field needed) |
+| **pid** | integer | Property identifier (PID) to compare against |
+| value | any | Value to compare with (not required for has_value operator) |
+| accept_imputed | boolean | Whether to include imputed property values in comparison |
 
 ### IsType
 
-| Field   | Type    | Description                                      |
-| ------- | ------- | ------------------------------------------------ |
+| Field | Type | Description |
+|-------|------|-------------|
 | **fid** | integer | Flavor identifier (FID) representing entity type |
 
 <!-- END GENERATED CONTENT -->

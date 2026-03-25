@@ -10,7 +10,6 @@ This skill provides documentation for the Lovelace Elemental API, the primary in
 ## When to Use This Skill
 
 Use this skill when you need to:
-
 - Look up entities (companies, people, organizations) by name or ID
 - Get sentiment analysis for entities over time
 - Find news mentions and articles about entities
@@ -27,7 +26,6 @@ Use this skill when you need to:
 ## Files in This Skill
 
 See [overview.md](overview.md) for descriptions of each endpoint category:
-
 - `entities.md` - Entity search, details, and properties
 - `find.md` - Expression language for searching entities by type, property values, and relationships
 - `schema.md` - Data model: entity types (flavors), properties, and schema endpoints
