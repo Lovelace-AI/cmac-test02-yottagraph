@@ -171,6 +171,49 @@
                                 <div class="text-body-2 text-medium-emphasis mb-2">
                                     {{ tool.description || 'No description' }}
                                 </div>
+                                <v-row v-if="toolInputFields(tool).length" class="mb-1">
+                                    <v-col
+                                        v-for="field in toolInputFields(tool)"
+                                        :key="`${tool.name}-${field.key}`"
+                                        cols="12"
+                                        md="6"
+                                    >
+                                        <v-switch
+                                            v-if="field.type === 'boolean'"
+                                            :model-value="
+                                                toolInputValue(tool, field.key, field.type)
+                                            "
+                                            :label="field.label"
+                                            color="primary"
+                                            hide-details
+                                            @update:model-value="
+                                                setToolInputValue(
+                                                    tool,
+                                                    field.key,
+                                                    $event,
+                                                    field.type
+                                                )
+                                            "
+                                        />
+                                        <v-text-field
+                                            v-else
+                                            :model-value="
+                                                toolInputValue(tool, field.key, field.type)
+                                            "
+                                            :label="field.label"
+                                            :type="field.type === 'number' ? 'number' : 'text'"
+                                            :placeholder="field.placeholder || ''"
+                                            @update:model-value="
+                                                setToolInputValue(
+                                                    tool,
+                                                    field.key,
+                                                    $event,
+                                                    field.type
+                                                )
+                                            "
+                                        />
+                                    </v-col>
+                                </v-row>
                                 <div class="d-flex align-center ga-2 mb-3">
                                     <v-btn
                                         size="small"
@@ -194,39 +237,45 @@
                                         {{ singleToolStatus[tool.name] }}
                                     </v-chip>
                                 </div>
-                                <div class="text-caption mb-1">Input schema</div>
+                                <v-row>
+                                    <v-col cols="12" md="6">
+                                        <div class="text-caption mb-1">Actual command</div>
+                                        <pre class="result-block">{{
+                                            formatJson(singleToolCommandPayload[tool.name] ?? {})
+                                        }}</pre>
+                                        <div
+                                            v-if="singleToolCurl[tool.name]"
+                                            class="text-caption mt-3 mb-1"
+                                        >
+                                            cURL equivalent
+                                        </div>
+                                        <pre
+                                            v-if="singleToolCurl[tool.name]"
+                                            class="result-block"
+                                            >{{ singleToolCurl[tool.name] }}</pre
+                                        >
+                                    </v-col>
+                                    <v-col cols="12" md="6">
+                                        <div class="text-caption mb-1">Actual result</div>
+                                        <pre
+                                            v-if="singleToolResults[tool.name]"
+                                            class="result-block"
+                                            >{{ formatJson(singleToolResults[tool.name]) }}</pre
+                                        >
+                                        <pre
+                                            v-else-if="singleToolErrors[tool.name]"
+                                            class="result-block"
+                                            >{{ singleToolErrors[tool.name] }}</pre
+                                        >
+                                        <pre v-else class="result-block">
+Run this tool to see output.</pre
+                                        >
+                                    </v-col>
+                                </v-row>
+                                <div class="text-caption mt-3 mb-1">Input schema</div>
                                 <pre class="result-block">{{
                                     formatJson(tool.inputSchema ?? {})
                                 }}</pre>
-                                <div
-                                    v-if="singleToolArgs[tool.name]"
-                                    class="text-caption mt-3 mb-1"
-                                >
-                                    Last arguments
-                                </div>
-                                <pre v-if="singleToolArgs[tool.name]" class="result-block">{{
-                                    formatJson(singleToolArgs[tool.name])
-                                }}</pre>
-                                <div
-                                    v-if="
-                                        singleToolResults[tool.name] || singleToolErrors[tool.name]
-                                    "
-                                    class="text-caption mt-3 mb-1"
-                                >
-                                    Last result
-                                </div>
-                                <pre v-if="singleToolResults[tool.name]" class="result-block">{{
-                                    formatJson(singleToolResults[tool.name])
-                                }}</pre>
-                                <v-alert
-                                    v-if="singleToolErrors[tool.name]"
-                                    type="error"
-                                    density="compact"
-                                    variant="tonal"
-                                    class="mt-2"
-                                >
-                                    {{ singleToolErrors[tool.name] }}
-                                </v-alert>
                             </v-expansion-panel-text>
                         </v-expansion-panel>
                     </v-expansion-panels>
@@ -360,6 +409,12 @@
         error?: string;
         note?: string;
     }
+    interface ToolInputField {
+        key: string;
+        label: string;
+        placeholder?: string;
+        type: 'text' | 'number' | 'boolean';
+    }
 
     const { appName } = useAppInfo();
     const { config: tenantConfig, fetchConfig } = useTenantConfig();
@@ -392,8 +447,10 @@
     const runningToolNames = ref<Record<string, boolean>>({});
     const singleToolResults = ref<Record<string, unknown>>({});
     const singleToolErrors = ref<Record<string, string>>({});
-    const singleToolArgs = ref<Record<string, Record<string, unknown>>>({});
     const singleToolStatus = ref<Record<string, 'passed' | 'failed'>>({});
+    const singleToolCommandPayload = ref<Record<string, unknown>>({});
+    const singleToolCurl = ref<Record<string, string>>({});
+    const toolInputModels = ref<Record<string, Record<string, string | number | boolean>>>({});
 
     const configuredServers = computed(
         () => tenantConfig.value?.mcp_servers?.map((server) => server.name) ?? []
@@ -579,6 +636,212 @@
         }
 
         return args;
+    }
+
+    function toolInputFields(tool: McpTool): ToolInputField[] {
+        const normalized = normalizeToolName(tool.name);
+        if (normalized === 'elemental_get_entity') {
+            return [
+                { key: 'entity', label: 'Entity', placeholder: 'Microsoft', type: 'text' },
+                { key: 'flavor', label: 'Flavor (optional)', placeholder: 'company', type: 'text' },
+            ];
+        }
+        if (normalized === 'elemental_get_events') {
+            return [
+                { key: 'entity', label: 'Entity', placeholder: 'Microsoft', type: 'text' },
+                { key: 'limit', label: 'Limit', placeholder: '5', type: 'number' },
+                {
+                    key: 'query',
+                    label: 'Event query (optional)',
+                    placeholder: 'earnings call',
+                    type: 'text',
+                },
+            ];
+        }
+        if (normalized === 'elemental_get_related') {
+            return [
+                { key: 'entity', label: 'Entity', placeholder: 'Microsoft', type: 'text' },
+                {
+                    key: 'related_flavor',
+                    label: 'Related flavor',
+                    placeholder: 'company',
+                    type: 'text',
+                },
+                { key: 'limit', label: 'Limit', placeholder: '5', type: 'number' },
+            ];
+        }
+        if (normalized === 'elemental_get_relationships') {
+            return [
+                {
+                    key: 'source_entity',
+                    label: 'Source entity',
+                    placeholder: 'Microsoft',
+                    type: 'text',
+                },
+                {
+                    key: 'target_entity',
+                    label: 'Target entity',
+                    placeholder: 'OpenAI',
+                    type: 'text',
+                },
+            ];
+        }
+        if (normalized === 'elemental_get_schema') {
+            return [
+                { key: 'flavor', label: 'Flavor (optional)', placeholder: 'company', type: 'text' },
+                { key: 'query', label: 'Query (optional)', placeholder: 'revenue', type: 'text' },
+            ];
+        }
+        if (normalized === 'elemental_graph_neighborhood') {
+            return [
+                { key: 'entity', label: 'Entity', placeholder: 'Microsoft', type: 'text' },
+                { key: 'size', label: 'Size', placeholder: '10', type: 'number' },
+                { key: 'history', label: 'Include history', type: 'boolean' },
+            ];
+        }
+        if (normalized === 'elemental_graph_sentiment') {
+            return [{ key: 'entity', label: 'Entity', placeholder: 'Microsoft', type: 'text' }];
+        }
+        return [];
+    }
+
+    function ensureToolInputModel(tool: McpTool): Record<string, string | number | boolean> {
+        const existing = toolInputModels.value[tool.name];
+        if (existing) return existing;
+
+        const model: Record<string, string | number | boolean> = {};
+        for (const field of toolInputFields(tool)) {
+            if (field.key === 'entity') model[field.key] = allToolsEntityInput.value || 'Microsoft';
+            else if (field.key === 'source_entity')
+                model[field.key] = allToolsEntityInput.value || 'Microsoft';
+            else if (field.key === 'target_entity') model[field.key] = 'OpenAI';
+            else if (field.key === 'related_flavor') model[field.key] = 'company';
+            else if (field.key === 'flavor') model[field.key] = 'company';
+            else if (field.type === 'number') model[field.key] = 5;
+            else if (field.type === 'boolean') model[field.key] = false;
+            else model[field.key] = '';
+        }
+        toolInputModels.value = { ...toolInputModels.value, [tool.name]: model };
+        return model;
+    }
+
+    function toolInputValue(tool: McpTool, key: string, type: ToolInputField['type']) {
+        const model = ensureToolInputModel(tool);
+        const value = model[key];
+        if (value === undefined) return type === 'boolean' ? false : '';
+        return value;
+    }
+
+    function setToolInputValue(
+        tool: McpTool,
+        key: string,
+        value: string | number | boolean | null,
+        type: ToolInputField['type']
+    ) {
+        const model = ensureToolInputModel(tool);
+        let next: string | number | boolean = '';
+
+        if (type === 'boolean') next = Boolean(value);
+        else if (type === 'number') {
+            const parsed = Number(value);
+            next = Number.isFinite(parsed) ? parsed : 0;
+        } else next = String(value ?? '');
+
+        toolInputModels.value = {
+            ...toolInputModels.value,
+            [tool.name]: { ...model, [key]: next },
+        };
+    }
+
+    function toOptionalString(value: string | number | boolean | undefined): string | undefined {
+        if (value === undefined || value === null) return undefined;
+        const text = String(value).trim();
+        return text.length ? text : undefined;
+    }
+
+    function buildSingleToolArgs(
+        tool: McpTool,
+        entityInput: string,
+        resolvedNeid: string | null
+    ): Record<string, unknown> {
+        const normalized = normalizeToolName(tool.name);
+        const model = ensureToolInputModel(tool);
+
+        if (normalized === 'elemental_health') {
+            return {};
+        }
+        if (normalized === 'elemental_get_entity') {
+            const args: Record<string, unknown> = {
+                entity: toOptionalString(model.entity) ?? entityInput,
+            };
+            const flavor = toOptionalString(model.flavor);
+            if (flavor) args.flavor = flavor;
+            return args;
+        }
+        if (normalized === 'elemental_get_events') {
+            const args: Record<string, unknown> = {
+                entity: toOptionalString(model.entity) ?? entityInput,
+                limit: Number(model.limit ?? 5),
+            };
+            const query = toOptionalString(model.query);
+            if (query) args.query = query;
+            return args;
+        }
+        if (normalized === 'elemental_get_related') {
+            return {
+                entity: toOptionalString(model.entity) ?? entityInput,
+                related_flavor: toOptionalString(model.related_flavor) ?? 'company',
+                limit: Number(model.limit ?? 5),
+            };
+        }
+        if (normalized === 'elemental_get_relationships') {
+            return {
+                source: { entity: toOptionalString(model.source_entity) ?? entityInput },
+                target: { entity: toOptionalString(model.target_entity) ?? 'OpenAI' },
+            };
+        }
+        if (normalized === 'elemental_get_schema') {
+            const args: Record<string, unknown> = {};
+            const flavor = toOptionalString(model.flavor);
+            const query = toOptionalString(model.query);
+            if (flavor) args.flavor = flavor;
+            if (query) args.query = query;
+            return args;
+        }
+        if (normalized === 'elemental_graph_neighborhood') {
+            return {
+                entity: toOptionalString(model.entity) ?? entityInput,
+                size: Number(model.size ?? 10),
+                history: Boolean(model.history),
+            };
+        }
+        if (normalized === 'elemental_graph_sentiment') {
+            return {
+                entity: toOptionalString(model.entity) ?? entityInput,
+            };
+        }
+
+        return buildToolTestArgs(tool, entityInput, resolvedNeid);
+    }
+
+    function buildCommandPayload(toolName: string, args: Record<string, unknown>) {
+        return {
+            endpoint: `/api/mcp/${encodeURIComponent(elementalServerName.value || 'elemental')}`,
+            method: 'POST',
+            body: {
+                jsonrpc: '2.0',
+                method: 'tools/call',
+                params: {
+                    name: toolName,
+                    arguments: args,
+                },
+            },
+        };
+    }
+
+    function buildCurlEquivalent(endpoint: string, body: unknown): string {
+        const serialized = JSON.stringify(body).replace(/'/g, "'\"'\"'");
+        return `curl -sS -X POST \"${endpoint}\" -H \"Content-Type: application/json\" -d '${serialized}'`;
     }
 
     function statusColor(status: HealthState | undefined): string {
@@ -838,9 +1101,20 @@
         try {
             await listTools(serverName);
             const resolvedNeid = await resolveEntityNeidForTests(serverName, entityInput);
-            const args = buildToolTestArgs(tool, entityInput, resolvedNeid);
-            singleToolArgs.value = { ...singleToolArgs.value, [tool.name]: args };
+            const args = buildSingleToolArgs(tool, entityInput, resolvedNeid);
             singleToolErrors.value = { ...singleToolErrors.value, [tool.name]: '' };
+            const commandPayload = buildCommandPayload(tool.name, args);
+            singleToolCommandPayload.value = {
+                ...singleToolCommandPayload.value,
+                [tool.name]: commandPayload,
+            };
+            singleToolCurl.value = {
+                ...singleToolCurl.value,
+                [tool.name]: buildCurlEquivalent(
+                    String(commandPayload.endpoint),
+                    commandPayload.body
+                ),
+            };
 
             const response = await callTool(serverName, tool.name, args);
             if (response.error) {
