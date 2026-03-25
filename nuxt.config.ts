@@ -136,7 +136,9 @@ export default defineNuxtConfig({
         },
     },
 
-    css: ['~/assets/fonts.css', '~/assets/brand-globals.css', '~/assets/theme-styles.css'],
+    // fonts.css expects licensed font binaries in /public/fonts.
+    // Keep global styles without attempting missing font downloads.
+    css: ['~/assets/brand-globals.css', '~/assets/theme-styles.css'],
 
     // Runtime configuration with sensible defaults
     // Nuxt automatically overrides these with environment variables following the pattern:

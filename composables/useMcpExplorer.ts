@@ -22,6 +22,8 @@ const callLoading = ref(false);
 
 // Per-server MCP session IDs for citation tracking continuity.
 const sessionIds = ref<Record<string, string>>({});
+const initializedServers = ref<Record<string, boolean>>({});
+const initPromises = new Map<string, Promise<void>>();
 
 export function useMcpExplorer() {
     const { accessToken } = useUserState();
@@ -105,14 +107,14 @@ export function useMcpExplorer() {
         return JSON.parse(raw);
     }
 
-    async function rpc(serverName: string, method: string, params?: any): Promise<any> {
+    async function sendMcpRequest(serverName: string, method: string, params?: any): Promise<any> {
         const gatewayUrl = getGatewayUrl();
         const orgId = getTenantOrgId();
         if (!gatewayUrl || !orgId) {
             throw new Error('Gateway URL or tenant org ID not configured');
         }
 
-        const url = `${gatewayUrl}/api/mcp/${orgId}/${serverName}/rpc`;
+        const url = `${gatewayUrl}/api/mcp/${orgId}/${serverName}/mcp`;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (accessToken.value) {
             headers['Authorization'] = `Bearer ${accessToken.value}`;
@@ -163,7 +165,59 @@ export function useMcpExplorer() {
                 : new Error('Failed to parse MCP RPC response');
         }
 
+        if (payload?.error?.message) {
+            throw new Error(payload.error.message);
+        }
+
         return payload;
+    }
+
+    async function ensureInitialized(serverName: string): Promise<void> {
+        if (initializedServers.value[serverName]) {
+            return;
+        }
+
+        const existingInit = initPromises.get(serverName);
+        if (existingInit) {
+            await existingInit;
+            return;
+        }
+
+        const initPromise = (async () => {
+            const protocolVersion = '2024-11-05';
+            await sendMcpRequest(serverName, 'initialize', {
+                protocolVersion,
+                capabilities: {},
+                clientInfo: {
+                    name: 'cmac-test02-yottagraph',
+                    version: '1.0.0',
+                },
+            });
+
+            // Required MCP lifecycle notification after initialize.
+            await sendMcpRequest(serverName, 'notifications/initialized', {});
+            initializedServers.value = { ...initializedServers.value, [serverName]: true };
+        })();
+
+        initPromises.set(serverName, initPromise);
+
+        try {
+            await initPromise;
+        } catch (error) {
+            delete sessionIds.value[serverName];
+            delete initializedServers.value[serverName];
+            throw error;
+        } finally {
+            initPromises.delete(serverName);
+        }
+    }
+
+    async function rpc(serverName: string, method: string, params?: any): Promise<any> {
+        const isInitMethod = method === 'initialize' || method === 'notifications/initialized';
+        if (!isInitMethod) {
+            await ensureInitialized(serverName);
+        }
+        return await sendMcpRequest(serverName, method, params);
     }
 
     async function listTools(serverName: string): Promise<McpTool[]> {
