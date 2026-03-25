@@ -33,6 +33,43 @@
                 {{ topLevelError }}
             </v-alert>
 
+            <v-card class="mb-4">
+                <v-card-item>
+                    <v-card-title>MCP Servers In Use</v-card-title>
+                    <v-card-subtitle>
+                        Servers discovered from tenant config (or fallback defaults).
+                    </v-card-subtitle>
+                </v-card-item>
+                <v-card-text>
+                    <v-table density="compact">
+                        <thead>
+                            <tr>
+                                <th>Server</th>
+                                <th>API Endpoint</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="server in mcpServerRows" :key="server.name">
+                                <td>{{ server.name }}</td>
+                                <td>
+                                    <code>{{ server.endpoint }}</code>
+                                </td>
+                                <td>
+                                    <v-chip
+                                        size="x-small"
+                                        :color="statusColor(serverHealth[server.name]?.status)"
+                                        variant="tonal"
+                                    >
+                                        {{ serverHealth[server.name]?.status ?? 'checking' }}
+                                    </v-chip>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </v-table>
+                </v-card-text>
+            </v-card>
+
             <v-row class="mb-2">
                 <v-col v-for="name in serverNames" :key="name" cols="12" md="6" xl="3">
                     <v-card height="100%">
@@ -468,6 +505,12 @@ Run this tool to see output.</pre
         if (!elementalServerName.value) return [];
         return getTools(elementalServerName.value);
     });
+    const mcpServerRows = computed(() =>
+        serverNames.value.map((name) => ({
+            name,
+            endpoint: `/api/mcp/${encodeURIComponent(name)}`,
+        }))
+    );
 
     watch(
         serverNames,
