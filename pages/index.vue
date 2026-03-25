@@ -100,27 +100,42 @@
                     </v-card-subtitle>
                 </v-card-item>
                 <v-card-text>
-                    <v-row class="mb-2">
-                        <v-col cols="12" md="8">
-                            <v-text-field
-                                v-model="allToolsEntityInput"
-                                label="Entity for all-tools test"
-                                placeholder="Example: Microsoft"
-                                :disabled="allToolsRunning"
-                            />
-                        </v-col>
-                        <v-col cols="12" md="4" class="d-flex align-center">
-                            <v-btn
-                                color="primary"
-                                prepend-icon="mdi-flask"
-                                :loading="allToolsRunning"
-                                :disabled="!elementalTools.length"
-                                @click="runAllElementalToolsTest"
-                            >
-                                Run All Tools Test
-                            </v-btn>
-                        </v-col>
-                    </v-row>
+                    <div class="d-flex justify-end mb-2">
+                        <v-btn
+                            size="small"
+                            variant="text"
+                            :prepend-icon="
+                                showAllToolsInputs ? 'mdi-chevron-up' : 'mdi-chevron-down'
+                            "
+                            @click="showAllToolsInputs = !showAllToolsInputs"
+                        >
+                            {{ showAllToolsInputs ? 'Hide Inputs' : 'Show Inputs' }}
+                        </v-btn>
+                    </div>
+
+                    <v-expand-transition>
+                        <v-row v-show="showAllToolsInputs" class="mb-2">
+                            <v-col cols="12" md="8">
+                                <v-text-field
+                                    v-model="allToolsEntityInput"
+                                    label="Entity for all-tools test"
+                                    placeholder="Example: Microsoft"
+                                    :disabled="allToolsRunning"
+                                />
+                            </v-col>
+                            <v-col cols="12" md="4" class="d-flex align-center">
+                                <v-btn
+                                    color="primary"
+                                    prepend-icon="mdi-flask"
+                                    :loading="allToolsRunning"
+                                    :disabled="!elementalTools.length"
+                                    @click="runAllElementalToolsTest"
+                                >
+                                    Run All Tools Test
+                                </v-btn>
+                            </v-col>
+                        </v-row>
+                    </v-expand-transition>
 
                     <v-alert
                         v-if="allToolsError"
@@ -369,6 +384,7 @@
     const lastEntityToolName = ref<string | null>(null);
     const lastEntityArgs = ref<Record<string, unknown> | null>(null);
     const allToolsEntityInput = ref('Microsoft');
+    const showAllToolsInputs = ref(true);
     const allToolsRunning = ref(false);
     const allToolsError = ref<string | null>(null);
     const allToolsSummary = ref<string | null>(null);

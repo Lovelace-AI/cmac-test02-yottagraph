@@ -10,9 +10,9 @@ Symbol universe: ~6,900 tickers (after filtering preferred stock symbols) source
 
 Rate limit: 1,200 requests/minute (premium plan). Downloads run concurrently (10 workers) with the Alpha Vantage client rate limiter gating throughput.
 
-| Pipeline | `Record.Source` |
-|----------|----------------|
-| Daily OHLCV | `stocks` |
+| Pipeline    | `Record.Source` |
+| ----------- | --------------- |
+| Daily OHLCV | `stocks`        |
 
 ---
 
@@ -43,59 +43,59 @@ A company or entity whose equity securities are publicly traded on a US exchange
 
 #### Identity
 
-* `ticker_symbol`
-  * Definition: Stock ticker symbol as listed on the exchange.
-  * Examples: `"AAPL"`, `"IBM"`, `"MSFT"`, `"BRK-B"`
-  * Derivation: `symbol` field from the NASDAQ screener CSV; also present in Alpha Vantage response `Meta Data` → `2. Symbol`.
+- `ticker_symbol`
+    - Definition: Stock ticker symbol as listed on the exchange.
+    - Examples: `"AAPL"`, `"IBM"`, `"MSFT"`, `"BRK-B"`
+    - Derivation: `symbol` field from the NASDAQ screener CSV; also present in Alpha Vantage response `Meta Data` → `2. Symbol`.
 
-* `company_name`
-  * Definition: Full registered security name.
-  * Examples: `"Apple Inc. Common Stock"`, `"International Business Machines Corporation Common Stock"`
-  * Derivation: `name` field from the NASDAQ screener CSV.
+- `company_name`
+    - Definition: Full registered security name.
+    - Examples: `"Apple Inc. Common Stock"`, `"International Business Machines Corporation Common Stock"`
+    - Derivation: `name` field from the NASDAQ screener CSV.
 
-* `exchange`
-  * Definition: US stock exchange where the security is listed.
-  * Examples: `"NYSE"`, `"NASDAQ"`, `"AMEX"`
-  * Derivation: `exchange` field from the NASDAQ screener CSV.
+- `exchange`
+    - Definition: US stock exchange where the security is listed.
+    - Examples: `"NYSE"`, `"NASDAQ"`, `"AMEX"`
+    - Derivation: `exchange` field from the NASDAQ screener CSV.
 
-* `sector`
-  * Definition: Market sector classification.
-  * Examples: `"Technology"`, `"Health Care"`, `"Industrials"`
-  * Derivation: `sector` field from the NASDAQ screener CSV. May be empty for some securities (e.g., SPACs, warrants).
+- `sector`
+    - Definition: Market sector classification.
+    - Examples: `"Technology"`, `"Health Care"`, `"Industrials"`
+    - Derivation: `sector` field from the NASDAQ screener CSV. May be empty for some securities (e.g., SPACs, warrants).
 
-* `industry`
-  * Definition: Industry sub-classification within the sector.
-  * Examples: `"Computer Manufacturing"`, `"Biotechnology: Laboratory Analytical Instruments"`
-  * Derivation: `industry` field from the NASDAQ screener CSV. May be empty.
+- `industry`
+    - Definition: Industry sub-classification within the sector.
+    - Examples: `"Computer Manufacturing"`, `"Biotechnology: Laboratory Analytical Instruments"`
+    - Derivation: `industry` field from the NASDAQ screener CSV. May be empty.
 
 #### Price Data (per daily candle)
 
 Each record represents one daily OHLCV candlestick for a single security. The atom timestamp is the trading day's date (Eastern time, converted to UTC).
 
-* `open_price`
-  * Definition: Opening price of the trading day. Unit: USD.
-  * Examples: `233.55`, `247.10`
-  * Derivation: `1. open` field from Alpha Vantage `Time Series (Daily)` response, parsed as float.
+- `open_price`
+    - Definition: Opening price of the trading day. Unit: USD.
+    - Examples: `233.55`, `247.10`
+    - Derivation: `1. open` field from Alpha Vantage `Time Series (Daily)` response, parsed as float.
 
-* `high_price`
-  * Definition: Highest price reached during the trading day. Unit: USD.
-  * Examples: `234.00`, `250.05`
-  * Derivation: `2. high` field from Alpha Vantage response, parsed as float.
+- `high_price`
+    - Definition: Highest price reached during the trading day. Unit: USD.
+    - Examples: `234.00`, `250.05`
+    - Derivation: `2. high` field from Alpha Vantage response, parsed as float.
 
-* `low_price`
-  * Definition: Lowest price reached during the trading day. Unit: USD.
-  * Examples: `233.00`, `245.64`
-  * Derivation: `3. low` field from Alpha Vantage response, parsed as float.
+- `low_price`
+    - Definition: Lowest price reached during the trading day. Unit: USD.
+    - Examples: `233.00`, `245.64`
+    - Derivation: `3. low` field from Alpha Vantage response, parsed as float.
 
-* `close_price`
-  * Definition: Closing price of the trading day. Unit: USD.
-  * Examples: `233.50`, `247.68`
-  * Derivation: `4. close` field from Alpha Vantage response, parsed as float.
+- `close_price`
+    - Definition: Closing price of the trading day. Unit: USD.
+    - Examples: `233.50`, `247.68`
+    - Derivation: `4. close` field from Alpha Vantage response, parsed as float.
 
-* `trading_volume`
-  * Definition: Number of shares traded during the day. Unit: shares.
-  * Examples: `1858`, `5547724`
-  * Derivation: `5. volume` field from Alpha Vantage response, parsed as integer (stored as float per v2 convention).
+- `trading_volume`
+    - Definition: Number of shares traded during the day. Unit: shares.
+    - Examples: `1858`, `5547724`
+    - Derivation: `5. volume` field from Alpha Vantage response, parsed as integer (stored as float per v2 convention).
 
 ---
 
@@ -105,11 +105,11 @@ Each record represents one daily OHLCV candlestick for a single security. The at
 organization ──[traded_as]──→ financial_instrument
 ```
 
-* `traded_as`
-  * Definition: Links a company to the stock ticker under which its equity is publicly traded.
-  * Examples: `"Apple Inc. Common Stock" traded_as AAPL`, `"NVIDIA Corporation" traded_as NVDA`
-  * Derivation: one record per symbol, emitted alongside the price candle records. The organization name comes from the NASDAQ screener CSV `name` field; the financial_instrument is identified by the `ticker_symbol` strong ID.
-  * Note: one organization record with a `traded_as` relationship is emitted per download file (not per candle).
+- `traded_as`
+    - Definition: Links a company to the stock ticker under which its equity is publicly traded.
+    - Examples: `"Apple Inc. Common Stock" traded_as AAPL`, `"NVIDIA Corporation" traded_as NVDA`
+    - Derivation: one record per symbol, emitted alongside the price candle records. The organization name comes from the NASDAQ screener CSV `name` field; the financial_instrument is identified by the `ticker_symbol` strong ID.
+    - Note: one organization record with a `traded_as` relationship is emitted per download file (not per candle).
 
 ---
 

@@ -41,6 +41,7 @@ Route: `/`
 Description: Main operational page for MCP server checks and entity tool execution.  
 Implementation status: Implemented  
 Details:
+
 - Server cards display per-server status (`healthy`, `degraded`, `unavailable`), total tool count, detected health tool, and detected get-entity tool.
 - Refresh action re-checks all servers and re-runs health checks where available.
 - Entity runner allows choosing a server, entering an entity search term, and running detected get-entity style tools.

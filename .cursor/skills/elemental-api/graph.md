@@ -36,22 +36,22 @@ Only use this endpoint if you care about graph-specific properties. Otherwise it
 
 #### Parameters
 
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| center_neid | string | yes | Center entity NEID |
-| neid | string[] | no | Additional entity NEIDs to include in layout |
-| borderMinX | number | no | Minimum X border for layout |
-| borderMinY | number | no | Minimum Y border for layout |
-| borderMaxX | number | no | Maximum X border for layout |
-| borderMaxY | number | no | Maximum Y border for layout |
+| Name        | Type     | Required | Description                                  |
+| ----------- | -------- | -------- | -------------------------------------------- |
+| center_neid | string   | yes      | Center entity NEID                           |
+| neid        | string[] | no       | Additional entity NEIDs to include in layout |
+| borderMinX  | number   | no       | Minimum X border for layout                  |
+| borderMinY  | number   | no       | Minimum Y border for layout                  |
+| borderMaxX  | number   | no       | Maximum X border for layout                  |
+| borderMaxY  | number   | no       | Maximum Y border for layout                  |
 
 #### Responses
 
-| Status | Description |
-|--------|-------------|
-| 200 | Graph layout with nodes and edges (`GraphLayoutResponse`) |
-| 400 | Invalid parameters (`Error`) |
-| 500 | Internal server error (`Error`) |
+| Status | Description                                               |
+| ------ | --------------------------------------------------------- |
+| 200    | Graph layout with nodes and edges (`GraphLayoutResponse`) |
+| 400    | Invalid parameters (`Error`)                              |
+| 500    | Internal server error (`Error`)                           |
 
 #### Example
 
@@ -64,7 +64,33 @@ GET /graph/00416400910670863867/layout?neid=04358848009837283240
 **Response:**
 
 ```json
-{"nodes": [{"neid": "00416400910670863867", "label": "organization|Apple|nationality: us...", "isCentralNode": true, "x": -333.33, "y": -200, "width": 666.67, "height": 266.67}], "edges": [{"source": "00416400910670863867", "target": "04358848009837283240", "label": "competes_with", "path": [{"X": 0, "Y": 0}, {"X": 0, "Y": 66.67}], "article_ids": ["02861951941133789623"], "snippets": ["Apple and Google are mentioned as companies..."], "weight": 0.0267}]}
+{
+    "nodes": [
+        {
+            "neid": "00416400910670863867",
+            "label": "organization|Apple|nationality: us...",
+            "isCentralNode": true,
+            "x": -333.33,
+            "y": -200,
+            "width": 666.67,
+            "height": 266.67
+        }
+    ],
+    "edges": [
+        {
+            "source": "00416400910670863867",
+            "target": "04358848009837283240",
+            "label": "competes_with",
+            "path": [
+                { "X": 0, "Y": 0 },
+                { "X": 0, "Y": 66.67 }
+            ],
+            "article_ids": ["02861951941133789623"],
+            "snippets": ["Apple and Google are mentioned as companies..."],
+            "weight": 0.0267
+        }
+    ]
+}
 ```
 
 ---
@@ -81,20 +107,20 @@ Only use this endpoint if you care about graph-specific properties. Otherwise it
 
 #### Parameters
 
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| center_neid | string | yes | Center entity NEID |
-| size | integer | no | Maximum number of neighbors to return |
-| type | string[] | no | Filter by entity type(s) |
+| Name        | Type     | Required | Description                           |
+| ----------- | -------- | -------- | ------------------------------------- |
+| center_neid | string   | yes      | Center entity NEID                    |
+| size        | integer  | no       | Maximum number of neighbors to return |
+| type        | string[] | no       | Filter by entity type(s)              |
 
 #### Responses
 
-| Status | Description |
-|--------|-------------|
-| 200 | Neighbors and their weights (`GraphNeighborhoodResponse`) |
-| 400 | Invalid parameters (`Error`) |
-| 404 | Center entity not found (`Error`) |
-| 500 | Internal server error (`Error`) |
+| Status | Description                                               |
+| ------ | --------------------------------------------------------- |
+| 200    | Neighbors and their weights (`GraphNeighborhoodResponse`) |
+| 400    | Invalid parameters (`Error`)                              |
+| 404    | Center entity not found (`Error`)                         |
+| 500    | Internal server error (`Error`)                           |
 
 #### Example
 
@@ -107,7 +133,10 @@ GET /graph/00416400910670863867/neighborhood?size=5
 **Response:**
 
 ```json
-{"neighbors": ["00416400910670863867", "04358848009837283240", "00315863961550087877"], "weights": [1, 0.0267, 0.0167]}
+{
+    "neighbors": ["00416400910670863867", "04358848009837283240", "00315863961550087877"],
+    "weights": [1, 0.0267, 0.0167]
+}
 ```
 
 ---
@@ -124,20 +153,20 @@ Response includes the center entity itself in each day's results with an influen
 
 #### Parameters
 
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| center_neid | string | yes | Center entity NEID |
-| size | integer | no | Maximum number of neighbors per day to return |
-| type | string[] | no | Filter by entity type(s) |
+| Name        | Type     | Required | Description                                   |
+| ----------- | -------- | -------- | --------------------------------------------- |
+| center_neid | string   | yes      | Center entity NEID                            |
+| size        | integer  | no       | Maximum number of neighbors per day to return |
+| type        | string[] | no       | Filter by entity type(s)                      |
 
 #### Responses
 
-| Status | Description |
-|--------|-------------|
-| 200 | Historical neighborhood data (`GraphNeighborhoodHistoryResponse`) |
-| 400 | Invalid parameters (`Error`) |
-| 404 | Center entity not found (`Error`) |
-| 500 | Internal server error (`Error`) |
+| Status | Description                                                       |
+| ------ | ----------------------------------------------------------------- |
+| 200    | Historical neighborhood data (`GraphNeighborhoodHistoryResponse`) |
+| 400    | Invalid parameters (`Error`)                                      |
+| 404    | Center entity not found (`Error`)                                 |
+| 500    | Internal server error (`Error`)                                   |
 
 #### Example
 
@@ -150,7 +179,17 @@ GET /graph/00416400910670863867/neighborhood/history?size=3
 **Response:**
 
 ```json
-{"history": [{"date": "2025-12-30T00:00:00Z", "neighbors": [{"neid": "00416400910670863867", "influence": 1}, {"neid": "04015955446548481006", "influence": 0.072}]}]}
+{
+    "history": [
+        {
+            "date": "2025-12-30T00:00:00Z",
+            "neighbors": [
+                { "neid": "00416400910670863867", "influence": 1 },
+                { "neid": "04015955446548481006", "influence": 0.072 }
+            ]
+        }
+    ]
+}
 ```
 
 ## Types
@@ -159,22 +198,22 @@ GET /graph/00416400910670863867/neighborhood/history?size=3
 
 An edge between two nodes in the graph
 
-| Field | Type | Description |
-|-------|------|-------------|
-| article_ids | string[] | Article IDs associated with this edge |
-| label | string | Display label for the edge |
-| path | `GraphVector`[] | Path points for rendering the edge |
-| snippets | string[] | Text snippets describing the relationship |
-| source | string | Source node NEID |
-| target | string | Target node NEID |
-| weight | number | Weight/strength of the edge |
+| Field       | Type            | Description                               |
+| ----------- | --------------- | ----------------------------------------- |
+| article_ids | string[]        | Article IDs associated with this edge     |
+| label       | string          | Display label for the edge                |
+| path        | `GraphVector`[] | Path points for rendering the edge        |
+| snippets    | string[]        | Text snippets describing the relationship |
+| source      | string          | Source node NEID                          |
+| target      | string          | Target node NEID                          |
+| weight      | number          | Weight/strength of the edge               |
 
 ### GraphLayoutResponse
 
 Response containing graph layout for visualization
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field | Type          | Description         |
+| ----- | ------------- | ------------------- |
 | edges | `GraphEdge`[] | List of graph edges |
 | nodes | `GraphNode`[] | List of graph nodes |
 
@@ -182,58 +221,58 @@ Response containing graph layout for visualization
 
 Response containing historical influential neighbor data over time
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field   | Type                         | Description                             |
+| ------- | ---------------------------- | --------------------------------------- |
 | history | `NeighborhoodHistoryEntry`[] | List of historical neighborhood entries |
 
 ### GraphNeighborhoodResponse
 
 Response containing neighbors of an entity in the relationship graph
 
-| Field | Type | Description |
-|-------|------|-------------|
-| neighbors | string[] | List of neighbor NEIDs |
-| weights | number[] | Weights corresponding to each neighbor (same order as neighbors) |
+| Field     | Type     | Description                                                      |
+| --------- | -------- | ---------------------------------------------------------------- |
+| neighbors | string[] | List of neighbor NEIDs                                           |
+| weights   | number[] | Weights corresponding to each neighbor (same order as neighbors) |
 
 ### GraphNode
 
 A node in the graph layout
 
-| Field | Type | Description |
-|-------|------|-------------|
-| height | number | Height of the node for rendering |
+| Field         | Type    | Description                            |
+| ------------- | ------- | -------------------------------------- |
+| height        | number  | Height of the node for rendering       |
 | isCentralNode | boolean | Whether this is the central/focus node |
-| label | string | Display label for the node |
-| neid | string | Named Entity ID |
-| width | number | Width of the node for rendering |
-| x | number | X coordinate in the layout |
-| y | number | Y coordinate in the layout |
+| label         | string  | Display label for the node             |
+| neid          | string  | Named Entity ID                        |
+| width         | number  | Width of the node for rendering        |
+| x             | number  | X coordinate in the layout             |
+| y             | number  | Y coordinate in the layout             |
 
 ### GraphVector
 
 A 2D point in the graph layout
 
-| Field | Type | Description |
-|-------|------|-------------|
-| X | number | X coordinate |
-| Y | number | Y coordinate |
+| Field | Type   | Description  |
+| ----- | ------ | ------------ |
+| X     | number | X coordinate |
+| Y     | number | Y coordinate |
 
 ### InfluenceEntry
 
 A neighbor and their influence score
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field     | Type   | Description     |
+| --------- | ------ | --------------- |
 | influence | number | Influence score |
-| neid | string | Named Entity ID |
+| neid      | string | Named Entity ID |
 
 ### NeighborhoodHistoryEntry
 
 Influential neighbors for a specific date
 
-| Field | Type | Description |
-|-------|------|-------------|
-| date | string | Date of the history entry @Format date-time |
-| neighbors | `InfluenceEntry`[] | List of influential neighbors on this date |
+| Field     | Type               | Description                                 |
+| --------- | ------------------ | ------------------------------------------- |
+| date      | string             | Date of the history entry @Format date-time |
+| neighbors | `InfluenceEntry`[] | List of influential neighbors on this date  |
 
 <!-- END GENERATED CONTENT -->
