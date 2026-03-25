@@ -36,6 +36,75 @@ export function useMcpExplorer() {
         return (config.public as any).tenantOrgId || '';
     }
 
+    function extractJsonFromSse(raw: string): any | null {
+        const blocks = raw.split(/\r?\n\r?\n/);
+        let fallbackPayload: any | null = null;
+
+        for (const block of blocks) {
+            if (!block.trim()) continue;
+
+            const lines = block.split(/\r?\n/);
+            let eventName = '';
+            const dataLines: string[] = [];
+
+            for (const line of lines) {
+                if (line.startsWith('event:')) {
+                    eventName = line.slice('event:'.length).trim();
+                    continue;
+                }
+                if (line.startsWith('data:')) {
+                    dataLines.push(line.slice('data:'.length).trimStart());
+                }
+            }
+
+            if (!dataLines.length) continue;
+            const dataPayload = dataLines.join('\n').trim();
+            if (!dataPayload || dataPayload === '[DONE]') continue;
+
+            let parsed: any;
+            try {
+                parsed = JSON.parse(dataPayload);
+            } catch {
+                // Some SSE events (for example endpoint/session metadata) are plain text.
+                continue;
+            }
+
+            if (parsed?.jsonrpc || parsed?.result !== undefined || parsed?.error !== undefined) {
+                return parsed;
+            }
+
+            if (parsed?.data?.jsonrpc || parsed?.data?.result !== undefined) {
+                return parsed.data;
+            }
+
+            if (eventName === 'message') {
+                fallbackPayload = parsed;
+            }
+        }
+
+        return fallbackPayload;
+    }
+
+    async function parseRpcPayload(res: Response): Promise<any> {
+        const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
+        const raw = await res.text();
+
+        if (!raw.trim()) {
+            return {};
+        }
+
+        if (contentType.includes('application/json')) {
+            return JSON.parse(raw);
+        }
+
+        const ssePayload = extractJsonFromSse(raw);
+        if (ssePayload) {
+            return ssePayload;
+        }
+
+        return JSON.parse(raw);
+    }
+
     async function rpc(serverName: string, method: string, params?: any): Promise<any> {
         const gatewayUrl = getGatewayUrl();
         const orgId = getTenantOrgId();
@@ -70,12 +139,31 @@ export function useMcpExplorer() {
             sessionIds.value = { ...sessionIds.value, [serverName]: returnedSessionId };
         }
 
-        if (!res.ok) {
-            const text = await res.text();
-            throw new Error(text || `MCP RPC failed (${res.status})`);
+        let payload: any = null;
+        let parseError: unknown = null;
+
+        try {
+            payload = await parseRpcPayload(res);
+        } catch (error) {
+            parseError = error;
         }
 
-        return await res.json();
+        if (!res.ok) {
+            const statusMessage =
+                payload?.message ||
+                payload?.error?.message ||
+                (parseError instanceof Error ? parseError.message : null) ||
+                `MCP RPC failed (${res.status})`;
+            throw new Error(statusMessage);
+        }
+
+        if (parseError) {
+            throw parseError instanceof Error
+                ? parseError
+                : new Error('Failed to parse MCP RPC response');
+        }
+
+        return payload;
     }
 
     async function listTools(serverName: string): Promise<McpTool[]> {
