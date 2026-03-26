@@ -13,11 +13,87 @@ import {
 const EVENT_HUB_FLAVORS = ['financial_instrument', 'organization', 'fund_account'] as const;
 const MAX_EVENT_HUBS = 15;
 
+const RELATIONSHIP_PROBES: Array<{
+    sourceFlav: string;
+    relType: string;
+    targetFlav: string;
+    maxSources?: number;
+}> = [
+    {
+        sourceFlav: 'financial_instrument',
+        relType: 'fund_of',
+        targetFlav: 'fund_account',
+        maxSources: 10,
+    },
+    {
+        sourceFlav: 'financial_instrument',
+        relType: 'issuer_of',
+        targetFlav: 'organization',
+        maxSources: 10,
+    },
+    {
+        sourceFlav: 'financial_instrument',
+        relType: 'trustee_of',
+        targetFlav: 'organization',
+        maxSources: 10,
+    },
+    {
+        sourceFlav: 'financial_instrument',
+        relType: 'beneficiary_of',
+        targetFlav: 'organization',
+        maxSources: 10,
+    },
+    {
+        sourceFlav: 'financial_instrument',
+        relType: 'borrower_of',
+        targetFlav: 'organization',
+        maxSources: 10,
+    },
+    {
+        sourceFlav: 'fund_account',
+        relType: 'holds_investment',
+        targetFlav: 'financial_instrument',
+        maxSources: 15,
+    },
+    {
+        sourceFlav: 'organization',
+        relType: 'advisor_to',
+        targetFlav: 'organization',
+        maxSources: 10,
+    },
+    { sourceFlav: 'organization', relType: 'located_at', targetFlav: 'location', maxSources: 10 },
+    {
+        sourceFlav: 'organization',
+        relType: 'sponsor_of',
+        targetFlav: 'organization',
+        maxSources: 5,
+    },
+    {
+        sourceFlav: 'organization',
+        relType: 'successor_to',
+        targetFlav: 'organization',
+        maxSources: 5,
+    },
+    { sourceFlav: 'person', relType: 'works_at', targetFlav: 'organization', maxSources: 5 },
+];
+
+function addRelationship(
+    relationships: RelationshipRecord[],
+    seen: Set<string>,
+    rel: RelationshipRecord
+): void {
+    const key = `${rel.sourceNeid}|${rel.targetNeid}|${rel.type}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    relationships.push(rel);
+}
+
 export default defineEventHandler(async (): Promise<CollectionState> => {
     resetMcpSession();
 
     const entityMap = new Map<string, EntityRecord>();
     const relationships: RelationshipRecord[] = [];
+    const relSeen = new Set<string>();
     const eventMap = new Map<string, EventRecord>();
 
     // Phase 1: Fan out from each document NEID across all hop-1 flavors
@@ -50,7 +126,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                             properties: rel.properties ?? undefined,
                         });
                     }
-                    relationships.push({
+                    addRelationship(relationships, relSeen, {
                         sourceNeid: docNeid,
                         targetNeid: neid,
                         type: 'appears_in',
@@ -92,7 +168,15 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                 const participantNeids: string[] = [];
                 if (Array.isArray(evt.participants)) {
                     for (const p of evt.participants) {
-                        if (p.neid) participantNeids.push(p.neid);
+                        if (p.neid) {
+                            participantNeids.push(p.neid);
+                            addRelationship(relationships, relSeen, {
+                                sourceNeid: p.neid,
+                                targetNeid: evtNeid,
+                                type: 'participant',
+                                origin: 'document',
+                            });
+                        }
                     }
                 }
 
@@ -116,28 +200,20 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
         }
     }
 
-    // Phase 3: Typed relationship discovery for key relationship types
-    const typedRelTypes = [
-        'issuer_of',
-        'trustee_of',
-        'borrower_of',
-        'advisor_to',
-        'beneficiary_of',
-        'fund_of',
-        'holds_investment',
-        'located_at',
-        'works_at',
-        'sponsor_of',
-    ];
+    // Phase 3: Typed relationship discovery
+    // Probe each (source_flavor, relationship_type, target_flavor) combination
+    // from discovered entities matching the source flavor.
+    for (const probe of RELATIONSHIP_PROBES) {
+        const sources = Array.from(entityMap.values()).filter((e) => e.flavor === probe.sourceFlav);
+        const limit = probe.maxSources ?? sources.length;
+        const toProbe = sources.slice(0, limit);
 
-    const sampleHubs = hubNeids.slice(0, 5);
-    for (const hubNeid of sampleHubs) {
-        for (const relType of typedRelTypes) {
+        for (const source of toProbe) {
             try {
                 const result = await mcpCallTool('elemental_get_related', {
-                    entity_id: { id_type: 'neid', id: hubNeid },
-                    related_flavor: 'organization',
-                    relationship_types: [relType],
+                    entity_id: { id_type: 'neid', id: source.neid },
+                    related_flavor: probe.targetFlav,
+                    relationship_types: [probe.relType],
                     limit: 100,
                     direction: 'both',
                 });
@@ -145,23 +221,24 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                 const related = result?.relationships ?? [];
                 for (const rel of related) {
                     if (!rel.neid) continue;
-                    const exists = relationships.some(
-                        (r) =>
-                            r.sourceNeid === hubNeid &&
-                            r.targetNeid === rel.neid &&
-                            r.type === relType
-                    );
-                    if (!exists) {
-                        relationships.push({
-                            sourceNeid: hubNeid,
-                            targetNeid: rel.neid,
-                            type: relType,
+                    addRelationship(relationships, relSeen, {
+                        sourceNeid: source.neid,
+                        targetNeid: rel.neid,
+                        type: probe.relType,
+                        origin: 'document',
+                    });
+                    if (!entityMap.has(rel.neid)) {
+                        entityMap.set(rel.neid, {
+                            neid: rel.neid,
+                            name: (rel.name as string) || rel.neid,
+                            flavor: (rel.flavor as string) || probe.targetFlav,
+                            sourceDocuments: source.sourceDocuments,
                             origin: 'document',
                         });
                     }
                 }
             } catch {
-                // Typed relationship probe; failures are expected for non-matching types
+                // Typed relationship probe — not all types exist for all entities
             }
         }
     }
