@@ -309,10 +309,32 @@ Run this tool to see output.</pre
                                         >
                                     </v-col>
                                 </v-row>
-                                <div class="text-caption mt-3 mb-1">Input schema</div>
-                                <pre class="result-block">{{
-                                    formatJson(tool.inputSchema ?? {})
-                                }}</pre>
+                                <div class="d-flex justify-end mt-3">
+                                    <v-btn
+                                        size="x-small"
+                                        variant="text"
+                                        :prepend-icon="
+                                            showToolSchema[tool.name]
+                                                ? 'mdi-chevron-up'
+                                                : 'mdi-chevron-down'
+                                        "
+                                        @click.stop="toggleToolSchema(tool.name)"
+                                    >
+                                        {{
+                                            showToolSchema[tool.name]
+                                                ? 'Hide Input Schema'
+                                                : 'Show Input Schema'
+                                        }}
+                                    </v-btn>
+                                </div>
+                                <v-expand-transition>
+                                    <div v-show="showToolSchema[tool.name]">
+                                        <div class="text-caption mt-1 mb-1">Input schema</div>
+                                        <pre class="result-block">{{
+                                            formatJson(tool.inputSchema ?? {})
+                                        }}</pre>
+                                    </div>
+                                </v-expand-transition>
                             </v-expansion-panel-text>
                         </v-expansion-panel>
                     </v-expansion-panels>
@@ -488,6 +510,7 @@ Run this tool to see output.</pre
     const singleToolCommandPayload = ref<Record<string, unknown>>({});
     const singleToolCurl = ref<Record<string, string>>({});
     const toolInputModels = ref<Record<string, Record<string, string | number | boolean>>>({});
+    const showToolSchema = ref<Record<string, boolean>>({});
 
     const configuredServers = computed(
         () => tenantConfig.value?.mcp_servers?.map((server) => server.name) ?? []
@@ -906,6 +929,13 @@ Run this tool to see output.</pre
     function buildCurlEquivalent(endpoint: string, body: unknown): string {
         const serialized = JSON.stringify(body).replace(/'/g, "'\"'\"'");
         return `curl -sS -X POST \"${endpoint}\" -H \"Content-Type: application/json\" -d '${serialized}'`;
+    }
+
+    function toggleToolSchema(toolName: string) {
+        showToolSchema.value = {
+            ...showToolSchema.value,
+            [toolName]: !showToolSchema.value[toolName],
+        };
     }
 
     function statusColor(status: HealthState | undefined): string {
