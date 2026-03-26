@@ -56,6 +56,7 @@ function readBroadchurchYaml() {
             tenantOrgId: valueFrom('tenant', 'org_id'),
             queryServerAddress: urlFrom('query_server'),
             auth0ClientId: valueFrom('auth', 'client_id'),
+            qsApiKey: valueFrom('gateway', 'qs_api_key'),
         };
     } catch {
         return empty;
@@ -145,6 +146,7 @@ export default defineNuxtConfig({
     // NUXT_PUBLIC_[KEY_NAME] for public config (e.g., NUXT_PUBLIC_APP_ID overrides appId)
     // See: https://nuxt.com/docs/guide/going-further/runtime-config
     runtimeConfig: {
+        qsApiKey: bcYaml.qsApiKey || '',
         public: {
             qsApiKey: '',
             // App Identity — broadchurch.yaml provides defaults for provisioned projects
