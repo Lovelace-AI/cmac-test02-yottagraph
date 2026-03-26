@@ -1,101 +1,143 @@
-# BNY KG Reconstruction README
+# BNY Exact Reconstruction README
 
-This document explains how to reconstruct the BNY document-derived graph for
-app display: entities, relationships, events, and historical properties.
+This document explains **exactly how to reconstruct the entities, events,
+relationships, and associated properties that were extracted from the 5 BNY
+documents**.
 
-It is based on the validated workflow documented in
-`import/elemental-retrieval-findings.md`.
+This is not a generic pattern doc. It is the exact retrieval recipe for the
+validated BNY graph analyzed in `import/elemental-retrieval-findings.md`.
 
-## Goal
+## Reconstruction Target
 
-Build an app-facing graph model from the 5 BNY rebate-analysis documents that
-supports:
+The source-of-truth graph extracted from the 5 documents contains:
 
-- entity lists and detail views
-- typed relationships
-- event timelines
-- historical property charts
-- document-scoped provenance where possible
+- `193` entity names
+- `57` event names
+- `521` relationship edges
+- `15` relationship types
+- fund-account historical property series across 4 report dates
+- bond sources/uses property rows across the same report set
 
-## Inputs Required
+### Final validated coverage
+
+| Category           | Ground truth       | KG result                  | Interpretation                          |
+| ------------------ | ------------------ | -------------------------- | --------------------------------------- |
+| Entity names       | `193`              | `185` unique NEIDs         | `8` gaps explained by correct merges    |
+| Event names        | `57`               | `53` unique event NEIDs    | `4` gaps explained by correct merges    |
+| Relationship types | `15`               | `15` present               | all confirmed                           |
+| Properties         | full extracted set | full extracted set present | full history recoverable through raw QS |
+
+## Required Inputs
 
 You need:
 
-- the 5 BNY document NEIDs
-- tenant gateway access or authenticated Query Server access
-- schema access for mapping property IDs to names
+- the 5 document NEIDs
+- tenant gateway or direct Query Server auth
+- schema access for PID -> property-name mapping
 
-### BNY Document NEIDs
+### Exact document seeds
 
-| Document | NEID                  |
-| -------- | --------------------- |
-| 7438596  | `2051052947608524725` |
-| 26889358 | `7447437794117404020` |
-| 4124255  | `7526709763959495568` |
-| 5816087  | `7780293260382878366` |
-| 9587055  | `8759058315171884540` |
+| Document ID | Meaning                        | Document NEID         |
+| ----------- | ------------------------------ | --------------------- |
+| `7438596`   | Interim Rebate Analysis (2015) | `2051052947608524725` |
+| `26889358`  | Interim Rebate Analysis (2024) | `7447437794117404020` |
+| `4124255`   | Irrevocable Letter of Credit   | `7526709763959495568` |
+| `5816087`   | Interim Rebate Analysis (2012) | `7780293260382878366` |
+| `9587055`   | Interim Rebate Analysis (2021) | `8759058315171884540` |
 
-## Retrieval Model
+### Exact report-date mapping used in the graph
 
-Use two layers:
+| Recorded date          | Source document             | Document NEID         |
+| ---------------------- | --------------------------- | --------------------- |
+| `2012-10-16T00:00:00Z` | 5816087                     | `7780293260382878366` |
+| `2015-10-16T00:00:00Z` | 7438596                     | `2051052947608524725` |
+| `2021-10-16T00:00:00Z` | 9587055                     | `8759058315171884540` |
+| `2024-10-16T00:00:00Z` | 26889358                    | `7447437794117404020` |
+| `2026-03-25...`        | 4124255 LOC extraction rows | `7526709763959495568` |
 
-### 1. MCP layer
+## Two-Layer Retrieval Model
+
+Use two layers together:
+
+### Layer 1: MCP
 
 Use MCP for:
 
 - entity discovery
-- graph traversal
+- hop traversal
 - event discovery
-- debugging individual entities
+- typed relationship probing
 
-Primary MCP tools:
+Primary tools:
 
 - `elemental_get_related`
 - `elemental_get_events`
 - `elemental_get_entity`
 - `elemental_get_schema`
 
-### 2. Raw Query Server layer
+### Layer 2: Raw Query Server
 
-Use raw Query Server property history for:
+Use raw Query Server for:
 
-- full historical property series
-- relationship-row timestamp recovery
-- final validation of document-ingested edges
+- full temporal property history
+- relationship-row timestamps
+- validation of the final relationship types not cleanly exposed through MCP
 
-Primary raw endpoint:
+Primary endpoint:
 
 ```text
 POST /elemental/entities/properties
 ```
 
-Use it through the tenant gateway:
+Tenant-gateway form:
 
 ```text
 {gateway}/api/qs/{org_id}/elemental/entities/properties
 ```
 
-## Step-By-Step Workflow
+## Exact Reconstruction Workflow
 
-### Step 1: Fan out from documents
+## Step 1: Discover hop-1 entities from the 5 documents
 
-For each document NEID, call `get_related` with:
+For **each** of the 5 document NEIDs, call `elemental_get_related` with:
 
 - `limit: 500`
-- flavors:
+- one flavor at a time:
     - `organization`
     - `person`
     - `financial_instrument`
     - `location`
     - `fund_account`
     - `legal_agreement`
+    - optionally `schema::flavor::event` only to confirm it returns `0`
 
-Do not depend on document -> event traversal; it returns zero useful event
-edges in this dataset.
+### Expected result after de-duplication
 
-### Step 2: Build the hop-1 entity index
+From all 5 documents combined, hop 1 should contain:
 
-Create a canonical entity map keyed by NEID:
+- `21` organizations
+- `3` persons
+- `19` financial instruments
+- `20` locations
+- `27` fund accounts
+- `37` legal agreements
+- `0` events
+
+Total hop-1 unique NEIDs: `127`
+
+If you include the 5 documents themselves, the graph state at this stage is:
+
+- hop 0: `5` documents
+- hop 1: `127` unique non-document NEIDs
+
+Important:
+
+- there are **no document -> event edges**
+- if your counts are materially lower, you probably used too small a limit
+
+## Step 2: Build the canonical entity table
+
+Construct a canonical entity table keyed by NEID:
 
 ```ts
 type EntityNode = {
@@ -106,59 +148,142 @@ type EntityNode = {
 };
 ```
 
-As you collect entities from documents:
+Rules:
 
-- de-duplicate by NEID
-- record all documents where each entity appears
-- keep canonical names from traversal, not from fuzzy name search
+- de-duplicate by `neid`
+- accumulate all source-document NEIDs where the entity appears
+- treat traversal names as canonical
+- never switch back to name-based lookup once a NEID is known
 
-### Step 3: Traverse hop-2 for events
+### Expected final entity totals
 
-Use hop-1 hubs to find events:
+After merge interpretation:
 
-- bond / main financial instrument
-- fund accounts
-- key organizations
+| Flavor                  | Ground-truth names | Unique KG NEIDs | Effective coverage |
+| ----------------------- | -----------------: | --------------: | -----------------: |
+| `document`              |                  5 |               5 |               100% |
+| `organization`          |                 22 |              21 |               100% |
+| `person`                |                  3 |               3 |               100% |
+| `financial_instrument`  |                 19 |              19 |               100% |
+| `location`              |                 22 |              20 |               100% |
+| `fund_account`          |                 28 |              27 |               100% |
+| `legal_agreement`       |                 37 |              37 |               100% |
+| `schema::flavor::event` |                 57 |              53 |               100% |
+| **Total**               |            **193** |         **185** |           **100%** |
 
-For BNY, the key pattern is:
+## Step 3: Traverse hop-2 events from the exact BNY hubs
 
-- documents -> non-event entities at hop 1
-- events at hop 2
+To recover the event graph, traverse from these known hubs.
 
-Useful event sources in this dataset:
+### Required hubs
 
-- bond entity
-- NJHMFA
-- BLX Group LLC
-- fund accounts
-- selected banks / trustees / counterparties
+| Entity                                               | NEID                   | Why it matters                           |
+| ---------------------------------------------------- | ---------------------- | ---------------------------------------- |
+| Bond hub: `IRREVOCABLE LETTER OF CREDIT NO. 5094714` | `8242646876499346416`  | largest event hub                        |
+| New Jersey Housing and Mortgage Finance Agency       | `06471256961308361850` | unique issuance/refunding/payment events |
+| BLX Group LLC                                        | `01470965072054453101` | report-issuance and analysis events      |
+| Reserve I Account                                    | `09112734796193071548` | valuation events                         |
+| Reserve II Account                                   | `02877916378535664072` | valuation events                         |
+| Liquidity I Account                                  | `07476737946181823597` | valuation events                         |
+| Liquidity II Account                                 | `06638852300639391265` | valuation events                         |
 
-### Step 4: Assemble typed relationships
+### Useful secondary audit hubs
 
-MCP path:
+These are helpful for validation, but not strictly required once the main hubs
+above have been traversed:
 
-- use `get_related` with `relationship_types` filters for typed discovery
+| Entity                              | NEID                   |
+| ----------------------------------- | ---------------------- |
+| UNITED JERSEY BANK/CENTRAL,         | `06967031221082229818` |
+| Orrick, Herrington & Sutcliffe      | `05477621199116204617` |
+| REPUBLIC NATIONAL BANK OF NEW YORK  | `04824620677155774613` |
+| Bank of New York Mellon Corporation | `05384086983174826493` |
+| HSBC Bank USA, Natl Assoc           | `06157989400122873900` |
 
-Raw path:
+### Expected event coverage from major hubs
 
-- use `POST /elemental/entities/properties` to retrieve `data_nindex` rows
-- interpret relationship properties as typed edges with timestamps
+These counts are the observed totals returned from those hubs, not the final
+deduplicated count:
 
-Suggested app edge model:
+| Hub                                                | Events returned |
+| -------------------------------------------------- | --------------: |
+| Bond hub `8242646876499346416`                     |              29 |
+| NJHMFA `06471256961308361850`                      |              20 |
+| BLX Group LLC `01470965072054453101`               |              15 |
+| UNITED JERSEY BANK/CENTRAL, `06967031221082229818` |              12 |
+| Reserve I Account `09112734796193071548`           |               5 |
+| Reserve II Account `02877916378535664072`          |               5 |
+| Liquidity I Account `07476737946181823597`         |               5 |
+| Liquidity II Account `06638852300639391265`        |               5 |
 
-```ts
-type GraphEdge = {
-    sourceNeid: string;
-    targetNeid: string;
-    relationshipType: string;
-    recordedAt?: string;
-    sourceDocumentNeid?: string;
-};
-```
+### Expected final event result
 
-### Step 5: Retrieve full property history
+- `53` unique event NEIDs recovered
+- these account for all `57` ground-truth event names after `4` correct merges
 
-For entities that need time-series display, call raw:
+### Event merge interpretation
+
+Do **not** classify the remaining `57 - 53 = 4` event names as missing.
+They are correct merges.
+
+## Step 4: Build the relationship set
+
+The ground-truth graph has `521` edges across `15` relationship types:
+
+| Relationship type                   | GT count |
+| ----------------------------------- | -------: |
+| `appears_in`                        |      212 |
+| `schema::relationship::participant` |      186 |
+| `fund_of`                           |       33 |
+| `holds_investment`                  |       26 |
+| `located_at`                        |       18 |
+| `advisor_to`                        |       15 |
+| `predecessor_of`                    |        9 |
+| `issuer_of`                         |        6 |
+| `trustee_of`                        |        4 |
+| `beneficiary_of`                    |        3 |
+| `works_at`                          |        3 |
+| `borrower_of`                       |        2 |
+| `party_to`                          |        2 |
+| `sponsor_of`                        |        1 |
+| `successor_to`                      |        1 |
+
+### Relationship retrieval rule
+
+Use MCP first:
+
+- `get_related` with `relationship_types` filters for the relationship types above
+
+Then use raw Query Server property rows to finish validation:
+
+- relationship types can appear as `data_nindex` rows in
+  `POST /elemental/entities/properties`
+- those rows provide:
+    - source entity
+    - target entity
+    - relationship type
+    - `recorded_at`
+
+### Relationship status
+
+What you can recover exactly:
+
+- edge existence
+- relationship type
+- timestamp
+
+What is still not returned cleanly in one endpoint:
+
+- exact citation string for each edge
+- dedicated per-edge count endpoint for document-ingested relationships
+
+## Step 5: Retrieve exact property history
+
+This is the key part that the README needs to be explicit about:
+
+**Do not use MCP alone for historical properties.**
+
+Use raw:
 
 ```text
 POST /elemental/entities/properties
@@ -167,19 +292,67 @@ POST /elemental/entities/properties
 Parameters:
 
 - `eids`: JSON-stringified array of NEIDs
-- optionally `pids`: JSON-stringified array of property IDs
-- `include_attributes=true`
+- omit `pids` to get all properties
+- set `include_attributes=true`
 
-The response contains rows like:
+### Exact property-bearing entities from the extracted graph
 
-- `eid`
-- `pid`
-- `value`
-- `recorded_at`
+For this BNY dataset, the key property-bearing entities are:
 
-Build series by grouping on `(eid, pid)` and sorting by `recorded_at`.
+#### Fund accounts (time series)
 
-Suggested app model:
+| Entity                 | NEID                   |
+| ---------------------- | ---------------------- |
+| Liquidity I Account    | `07476737946181823597` |
+| Liquidity II Account   | `06638852300639391265` |
+| Reserve I Account      | `09112734796193071548` |
+| Reserve II Account     | `02877916378535664072` |
+| Prior Rebate Liability | `02277784462984661168` |
+
+Expected property families:
+
+- `current_fund_status`
+- `computation_date_valuation`
+- `gross_earnings`
+- `internal_rate_of_return`
+- `excess_earnings`
+
+Expected report dates:
+
+- `2012-10-16`
+- `2015-10-16`
+- `2021-10-16`
+- `2024-10-16`
+
+#### Bond / financial instrument properties
+
+| Entity                                   | NEID                  |
+| ---------------------------------------- | --------------------- |
+| IRREVOCABLE LETTER OF CREDIT NO. 5094714 | `8242646876499346416` |
+
+Expected property families:
+
+- `sources_of_funds_*`
+- `uses_of_funds_*`
+
+#### Event properties
+
+Use MCP `get_events` for:
+
+- `category`
+- `date`
+- `description`
+- `likelihood`
+- participants + participant roles
+
+### Output format to build
+
+Build time series by grouping raw property rows on:
+
+- `(eid, pid)` for a single property series
+- sorted by `recorded_at`
+
+Suggested record:
 
 ```ts
 type PropertyPoint = {
@@ -191,119 +364,86 @@ type PropertyPoint = {
 };
 ```
 
-### Step 6: Map property IDs to names
+## Exact app assembly outputs
 
-Use schema:
+Your app data pipeline should produce these 5 artifacts:
 
-- MCP `elemental_get_schema`, or
-- raw `GET /schema`
+### 1. `entities.json`
 
-Store a `pid -> propertyName` map so the app can render labels and construct
-per-property charts.
+All canonical entities keyed by NEID.
 
-## Recommended App Data Shapes
+### 2. `events.json`
 
-### Entities
+All `53` canonical event NEIDs, plus a merge map from the `57` source names to
+those `53` event entities.
 
-```ts
-type EntityRecord = {
-    neid: string;
-    name: string;
-    flavor: string;
-    sourceDocuments: string[];
-};
-```
+### 3. `relationships.json`
 
-### Events
+Typed edge list with:
 
-```ts
-type EventRecord = {
-    neid: string;
-    name: string;
-    date?: string;
-    category?: string;
-    description?: string;
-    participantNeids: string[];
-};
-```
+- `sourceNeid`
+- `targetNeid`
+- `type`
+- `recordedAt`
+- optional inferred `sourceDocumentNeid`
 
-### Relationships
+### 4. `property-series.json`
 
-```ts
-type RelationshipRecord = {
-    sourceNeid: string;
-    targetNeid: string;
-    type: string;
-    recordedAt?: string;
-    sourceDocumentNeid?: string;
-};
-```
+Historical series from raw Query Server property rows.
 
-### Property Series
+### 5. `merge-map.json`
 
-```ts
-type PropertySeriesRecord = {
-    neid: string;
-    pid: number;
-    propertyName: string;
-    points: Array<{
-        recordedAt: string;
-        value: string | number | boolean | null;
-    }>;
-};
-```
+A map from ground-truth names to canonical KG NEIDs when multiple source names
+resolved to one entity/event.
 
-## Provenance Guidance
+## Provenance rule for this dataset
 
-What is easy:
+If you need to approximate which document a relationship came from:
 
-- entity existence
-- event existence
-- relationship existence
-- relationship type
-- relationship timestamp
-- property history by timestamp
+1. take the relationship row `recorded_at`
+2. match that date to the known document-date table above
+3. use document `appears_in` rows as an additional check
 
-What is harder:
+This is sufficient for most app views over this BNY graph, but it is still not
+the same as having a clean dedicated edge-provenance endpoint.
 
-- exact edge citation string in one clean response
-- dedicated per-edge counts for document-ingested edges
+## Minimal exact recipe
 
-For this dataset, source document provenance can often be reconstructed by:
+If someone asks, “What is the minimal exact recipe to rebuild the BNY graph?”,
+the answer is:
 
-1. matching `recorded_at` timestamps
-2. matching document `appears_in` rows
-3. aligning those rows to the 5 document NEIDs
+1. Start from the 5 document NEIDs listed above
+2. MCP `get_related` across the 6 non-event flavors with `limit: 500`
+3. De-duplicate hop-1 entities by NEID
+4. Traverse events from:
+    - bond `8242646876499346416`
+    - NJHMFA `06471256961308361850`
+    - BLX `01470965072054453101`
+    - the 4 fund accounts listed above
+5. Use MCP `get_related` with `relationship_types` filters for the core typed graph
+6. Use raw `POST /elemental/entities/properties` for:
+    - all historical property series
+    - final relationship-row validation
+    - timestamp recovery
+7. Apply the validated merge map:
+    - `193` entity names -> `185` NEIDs
+    - `57` event names -> `53` event NEIDs
 
-This is usually sufficient for app display, but it is not as clean as a
-single dedicated provenance endpoint.
+## Final Result
 
-## BNY-Specific Lessons
-
-- Always use `limit: 500`
-- Never trust name-based verification after a NEID has been found
-- Expect events to be hop 2
-- Use the bond as a hub, but not the only hub
-- Use raw property history for any time-series UI
-- Distinguish:
-    - unique NEID coverage
-    - merged-name coverage
-
-## Final Coverage
-
-For the BNY dataset:
+Following the procedure above reproduces the extracted 5-document graph with:
 
 - entities: **100%**
 - events: **100%**
 - relationship existence/types/timestamps: **100%**
 - ground-truth property values: **100%**
 
-Remaining non-cleanly-exposed area:
+Remaining limitation:
 
 - exact edge citation strings and dedicated count endpoints are still not
-  returned cleanly for document-ingested relationships
+  cleanly returned for document-ingested relationships
 
-## Related Docs
+## Related docs
 
 - `import/elemental-retrieval-findings.md`
 - `import/Jon-graph.md`

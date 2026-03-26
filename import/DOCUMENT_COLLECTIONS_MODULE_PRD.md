@@ -2,7 +2,7 @@
 
 ## PRD for Separate MCP-Backed App
 
-**Version:** 0.2  
+**Version:** 0.3  
 **Date:** 2026-03-25  
 **Owner:** Lovelace  
 **Status:** Proposed
@@ -390,3 +390,237 @@ If collection-specific document enumeration or binary fetch requires an addition
 ## 18. Build Recommendation
 
 The implementation should start as an MCP-first standalone app with a thin normalization layer, not as a copy of the full FSI Monitor document-graph feature. The core rule is that collection documents plus collection-linked entities, relationships, and events come from `pip.stg` MCP, not from local ingestion, extraction, or database assembly inside the app.
+
+---
+
+## 19. Appendix: Reusable UX Patterns
+
+This appendix captures four interaction patterns already proven in the FSI app and related document-graph experiences. The standalone `Document Collections` app should reuse these patterns rather than reinventing them.
+
+### 19.1 Timeline UI Pattern
+
+The app currently uses two complementary timeline patterns, and both are relevant to the standalone document app:
+
+1. **Dense analytical timeline**
+2. **Narrative event card timeline**
+
+#### A. Dense analytical timeline
+
+For high-volume event exploration, the existing app uses a horizontally scrollable / zoomable SVG timeline with:
+
+- time-axis ticks
+- swim lanes by canonical event type or sentiment band
+- zoom presets
+- pan and wheel interaction
+- filter controls for event type, severity, date range, and search
+- a toggle between timeline and table views
+
+This is the right pattern when the user needs to inspect many events across a document collection and understand temporal clustering, event density, and category distribution.
+
+For the standalone app, this pattern should be used for:
+
+- collection-level event exploration
+- entity-specific event history
+- event filtering before graph pivots
+
+#### B. Narrative event card timeline
+
+For story-like or briefing-style views, the app also uses a reusable vertical timeline card pattern where each event renders as:
+
+- a connector line and dot
+- event date and optional time
+- event type badge
+- title and description
+- related entity chips
+- provenance/source link
+
+This is the right pattern when the user is reading a curated narrative rather than scanning a dense event set.
+
+For the standalone app, this pattern should be used for:
+
+- document collection summaries
+- AI-generated case briefs
+- "key developments" or "what changed" views
+
+#### Timeline implementation rule
+
+The standalone app should support both modes:
+
+- **analysis mode:** dense interactive timeline
+- **briefing mode:** vertical narrative timeline cards
+
+The app should not force a single timeline component to serve both jobs poorly.
+
+### 19.2 Citation Pattern
+
+The citation model in the broader Lovelace stack is evidence-first and should carry over directly.
+
+#### A. Data model
+
+Elemental MCP already supports session-scoped citation tracking:
+
+- individual properties can carry inline citation refs such as `[1]`
+- the MCP session bibliography provides the resolved citation list
+- citations can represent filings, articles, sanctions, events, and other source types
+
+The important implementation rule is:
+
+- answers and summaries should keep inline citation references in the body
+- the UI should also provide a structured supporting-sources panel
+
+#### B. UI presentation
+
+The existing UI uses two complementary citation surfaces:
+
+1. **Inline references inside generated prose**
+2. **Collapsible supporting citations below the answer**
+
+The collapsible citation section should include:
+
+- source name
+- source type
+- date or qualifier
+- short excerpt or detail
+- outbound link when available
+
+For filings and provenance strings, the app already uses compact provenance links that resolve into a clickable SEC filing URL. The standalone app should preserve that pattern for filing-style citations and use the same compact-chip presentation where possible.
+
+#### C. Standalone app requirement
+
+For the `Document Collections` app:
+
+- every material AI-generated claim should be traceable to a citation
+- MCP bibliography/session provenance should be normalized into a frontend citation model
+- citations should be readable without opening a separate debug view
+- citations should be clickable when the source URL or document route is available
+
+### 19.3 Tooltip Pattern
+
+The current app uses three tooltip layers, each for a different job.
+
+#### A. Lightweight hover hints
+
+For inline highlighted entities or simple controls, the app uses light hover hints such as:
+
+- native `title` text
+- small Vuetify tooltips
+
+These are appropriate when the user only needs a fast label or type hint.
+
+#### B. Rich explanatory tooltips
+
+For chips, risk indicators, and compact analytical UI, the app uses richer tooltips with:
+
+- a clear header
+- supporting explanation text
+- lists of contributing signals
+- short, domain-specific interpretation
+
+These are appropriate when the UI surface is compact but the concept needs explanation.
+
+#### C. Entity preview tooltips
+
+For graph nodes and entity previews, the app uses custom tooltip panels that can show:
+
+- entity name
+- type icon and color
+- ticker / CIK / identifier
+- degree or connection count
+- a "click for details" affordance
+
+These are appropriate when the user is hovering in a graph or over a compact entity surface and needs just enough preview context to decide whether to click.
+
+#### Tooltip implementation rule
+
+The standalone app should use tooltips intentionally:
+
+- **light hint** for inline references and controls
+- **rich tooltip** for compact explanatory metrics
+- **entity preview tooltip** for graph or network hover states
+
+Tooltips should not become mini-pages. If the user needs deeper context, hover should lead naturally into a click target or side panel.
+
+### 19.4 Clickable Entity Keywords in Responses
+
+This is an important existing pattern and should be treated as a first-class UX feature in the standalone app.
+
+#### A. Rendering model
+
+The current app renders markdown or answer HTML first, then post-processes the rendered HTML to wrap known entity names in clickable spans.
+
+The proven pattern is:
+
+1. build a list of known entities in scope
+2. sort longest names first to avoid partial-match collisions
+3. regex-wrap matching entity names in `<span>` elements
+4. attach metadata as `data-*` attributes such as:
+
+- `data-entity-id`
+- `data-entity-name`
+- `data-entity-type`
+- optional identifiers like CIK or jurisdiction
+
+5. style the wrapped text with:
+
+- semantic color
+- dashed underline
+- pointer cursor
+- hover title/tooltip
+
+This allows plain generated prose to become interactive without requiring the model itself to emit app-specific markup.
+
+#### B. Click handling model
+
+The current app uses delegated click handling on the container that owns the rendered `v-html` content.
+
+That is the correct pattern because:
+
+- the highlighted spans are created after markdown rendering
+- direct Vue event binding is not available inside raw HTML
+- delegated click handling keeps the implementation simple and robust
+
+On click, the app can:
+
+- open an entity side panel
+- select the entity in the graph
+- trigger a pivot to an entity detail screen
+- load additional detail from already-fetched collection data
+
+#### C. Hover behavior
+
+The clickable entities should also carry a lightweight hover affordance:
+
+- entity type in the tooltip/title
+- semantic color by type
+- visible underline or style change on hover
+
+This helps users recognize that the text is interactive before they click.
+
+#### D. Standalone app requirement
+
+For the `Document Collections` app:
+
+- AI responses should support clickable entity references by default
+- the entity list used for wrapping should come from the MCP-backed collection context
+- clicking an entity reference should open a side panel or graph pivot
+- the app should not depend on the LLM to emit its own entity tags
+
+### 19.5 Recommended Integration Sequence
+
+The standalone app should implement these four patterns in this order:
+
+1. Normalize MCP entities, relationships, events, and bibliography into a stable frontend model.
+2. Use that model to drive timeline views and provenance/citation surfaces.
+3. Post-process rendered AI responses to wrap collection-scoped entity names as clickable references.
+4. Attach delegated click handlers so hover and click behavior stay consistent across summaries, chat answers, and briefing panels.
+
+### 19.6 Why This Appendix Matters
+
+Without these patterns, the standalone app would still be able to show documents and graph data, but it would lose much of the usability and explainability already proven in the FSI app:
+
+- timelines make temporal reasoning legible
+- citations make claims defensible
+- tooltips make dense UI understandable
+- clickable entity references turn generated prose into navigation
+
+Those are not cosmetic features. They are a core part of how the app becomes analyst-usable rather than just data-accessible.

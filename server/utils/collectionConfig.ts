@@ -1,5 +1,60 @@
 const MCP_SERVER_NAME = 'elemental';
 
+export interface McpLogEntry {
+    id: number;
+    tool: string;
+    argsSummary: string;
+    responseSummary: string;
+    durationMs: number;
+    status: 'success' | 'error';
+    timestamp: string;
+    args?: Record<string, unknown>;
+    response?: unknown;
+}
+
+let _mcpLog: McpLogEntry[] = [];
+let _logIdCounter = 0;
+
+export function getMcpLog(): McpLogEntry[] {
+    return _mcpLog;
+}
+
+export function clearMcpLog(): void {
+    _mcpLog = [];
+    _logIdCounter = 0;
+}
+
+function summarizeArgs(tool: string, args: Record<string, unknown>): string {
+    const neid = (args.entity_id as any)?.id ?? (args.entity as string) ?? '';
+    const flavor = (args.related_flavor as string) ?? '';
+    const relTypes = (args.relationship_types as string[])?.join(',') ?? '';
+    if (tool === 'elemental_get_related')
+        return `${neid} → ${flavor}${relTypes ? ` [${relTypes}]` : ''}`;
+    if (tool === 'elemental_get_events') return `hub: ${neid}`;
+    if (tool === 'elemental_get_entity')
+        return `${neid}${args.history !== undefined ? ' +history' : ''}`;
+    return neid || JSON.stringify(args).slice(0, 80);
+}
+
+function summarizeResponse(tool: string, result: unknown): string {
+    if (!result || typeof result !== 'object') return String(result ?? '').slice(0, 80);
+    const r = result as Record<string, unknown>;
+    if (tool === 'elemental_get_related') {
+        const count = (r.relationships as unknown[])?.length ?? 0;
+        return `${count} relationships`;
+    }
+    if (tool === 'elemental_get_events') {
+        const count = (r.events as unknown[])?.length ?? 0;
+        return `${count} events`;
+    }
+    if (tool === 'elemental_get_entity') {
+        const name = (r.entity as any)?.name ?? '';
+        const histKeys = Object.keys((r.entity as any)?.historical_properties ?? {}).length;
+        return name + (histKeys ? ` (${histKeys} props)` : '');
+    }
+    return JSON.stringify(r).slice(0, 80);
+}
+
 function getGatewayConfig() {
     const config = useRuntimeConfig();
     const gatewayUrl = (config.public as any).gatewayUrl as string;
@@ -78,19 +133,45 @@ async function ensureMcpSession(): Promise<void> {
 
 export async function mcpCallTool(toolName: string, args: Record<string, any>): Promise<any> {
     await ensureMcpSession();
-    const response = await mcpRpc('tools/call', { name: toolName, arguments: args });
-    const content = response?.result?.content;
-    if (Array.isArray(content) && content.length > 0) {
-        const textItem = content.find((c: any) => c.type === 'text');
-        if (textItem?.text) {
-            try {
-                return JSON.parse(textItem.text);
-            } catch {
-                return textItem.text;
+    const startMs = Date.now();
+    let result: unknown;
+    let status: 'success' | 'error' = 'success';
+
+    try {
+        const response = await mcpRpc('tools/call', { name: toolName, arguments: args });
+        const content = response?.result?.content;
+        if (Array.isArray(content) && content.length > 0) {
+            const textItem = content.find((c: any) => c.type === 'text');
+            if (textItem?.text) {
+                try {
+                    result = JSON.parse(textItem.text);
+                } catch {
+                    result = textItem.text;
+                }
             }
         }
+        if (result === undefined) result = response?.result ?? response;
+    } catch (e) {
+        status = 'error';
+        result = null;
+        throw e;
+    } finally {
+        const durationMs = Date.now() - startMs;
+        const entry: McpLogEntry = {
+            id: ++_logIdCounter,
+            tool: toolName,
+            argsSummary: summarizeArgs(toolName, args),
+            responseSummary: status === 'error' ? 'error' : summarizeResponse(toolName, result),
+            durationMs,
+            status,
+            timestamp: new Date().toISOString(),
+            args,
+            response: result,
+        };
+        _mcpLog.push(entry);
     }
-    return response?.result ?? response;
+
+    return result;
 }
 
 export async function rawQsProperties(eids: string[], pids?: number[]): Promise<any> {
@@ -117,4 +198,5 @@ export async function rawQsProperties(eids: string[], pids?: number[]): Promise<
 export function resetMcpSession(): void {
     mcpSessionId = null;
     mcpInitialized = false;
+    clearMcpLog();
 }

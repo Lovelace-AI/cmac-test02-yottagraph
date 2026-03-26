@@ -129,6 +129,27 @@ export const HOP1_FLAVORS = [
     'legal_agreement',
 ] as const;
 
+// Exact event hub NEIDs from BNY-README — the specific entities that emit events in this dataset.
+export const EVENT_HUB_NEIDS = [
+    '8242646876499346416', // Bond hub: IRREVOCABLE LETTER OF CREDIT NO. 5094714
+    '06471256961308361850', // New Jersey Housing and Mortgage Finance Agency
+    '01470965072054453101', // BLX Group LLC
+    '09112734796193071548', // Reserve I Account
+    '02877916378535664072', // Reserve II Account
+    '07476737946181823597', // Liquidity I Account
+    '06638852300639391265', // Liquidity II Account
+] as const;
+
+// Property-bearing entities for historical time-series retrieval via elemental_get_entity history.
+export const PROPERTY_BEARING_NEIDS = [
+    '07476737946181823597', // Liquidity I Account
+    '06638852300639391265', // Liquidity II Account
+    '09112734796193071548', // Reserve I Account
+    '02877916378535664072', // Reserve II Account
+    '02277784462984661168', // Prior Rebate Liability
+    '8242646876499346416', // IRREVOCABLE LETTER OF CREDIT NO. 5094714
+] as const;
+
 export function emptyCollectionState(): CollectionState {
     return {
         meta: {

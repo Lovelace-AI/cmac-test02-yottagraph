@@ -10,19 +10,32 @@
                         </v-card-subtitle>
                     </v-card-item>
                     <v-card-text>
+                        <!-- Agent pipeline steps (show during loading) -->
+                        <div v-if="agentLoading" class="mb-4">
+                            <SummaryAgentSteps :steps="agentSteps" />
+                        </div>
+
                         <div class="d-flex flex-wrap ga-2 mb-4">
-                            <v-btn
+                            <v-tooltip
                                 v-for="action in actions"
                                 :key="action.id"
-                                size="small"
-                                variant="tonal"
-                                :prepend-icon="action.icon"
-                                :loading="agentLoading && activeAction === action.id"
-                                :disabled="!isReady"
-                                @click="runAction(action.id)"
+                                :text="action.tooltip"
+                                location="bottom"
                             >
-                                {{ action.label }}
-                            </v-btn>
+                                <template v-slot:activator="{ props: tp }">
+                                    <v-btn
+                                        v-bind="tp"
+                                        size="small"
+                                        variant="tonal"
+                                        :prepend-icon="action.icon"
+                                        :loading="agentLoading && activeAction === action.id"
+                                        :disabled="!isReady"
+                                        @click="runAction(action.id)"
+                                    >
+                                        {{ action.label }}
+                                    </v-btn>
+                                </template>
+                            </v-tooltip>
                         </div>
 
                         <v-divider class="mb-4" />
@@ -57,9 +70,28 @@
                         <v-card-title class="text-body-1">Entity Context</v-card-title>
                     </v-card-item>
                     <v-card-text>
-                        <div class="text-body-2 mb-1">{{ selectedEntity.name }}</div>
+                        <!-- Rich tooltip on entity name -->
+                        <v-tooltip location="right">
+                            <template v-slot:activator="{ props: tp }">
+                                <div v-bind="tp" class="text-body-2 mb-1 cursor-pointer">
+                                    {{ selectedEntity.name }}
+                                </div>
+                            </template>
+                            <div class="tooltip-rich">
+                                <div class="text-caption font-weight-bold mb-1">
+                                    {{ selectedEntity.name }}
+                                </div>
+                                <div class="text-caption">
+                                    Type: {{ selectedEntity.flavor.replace(/_/g, ' ') }}
+                                </div>
+                                <div class="text-caption">
+                                    Appears in
+                                    {{ selectedEntity.sourceDocuments.length }} document(s)
+                                </div>
+                            </div>
+                        </v-tooltip>
                         <v-chip size="x-small" variant="tonal" class="mb-2">
-                            {{ selectedEntity.flavor }}
+                            {{ selectedEntity.flavor.replace(/_/g, ' ') }}
                         </v-chip>
                         <div class="d-flex ga-2">
                             <v-btn
@@ -67,6 +99,7 @@
                                 variant="tonal"
                                 prepend-icon="mdi-brain"
                                 :loading="agentLoading && activeAction === 'explain_entity'"
+                                :title="`Analyze ${selectedEntity.name} in the context of this collection`"
                                 @click="explainSelected"
                             >
                                 Explain This Entity
@@ -76,39 +109,45 @@
                 </v-card>
                 <v-card v-else>
                     <v-card-text class="text-center text-medium-emphasis py-6">
-                        Select an entity from the graph or table to enable entity-specific actions.
+                        <v-icon size="32" class="mb-2">mdi-cursor-default-click-outline</v-icon>
+                        <div class="text-body-2">
+                            Select an entity from the graph or table to enable entity-specific
+                            actions.
+                        </div>
                     </v-card-text>
                 </v-card>
             </v-col>
         </v-row>
 
-        <v-card v-if="agentResult">
+        <!-- Agent result output -->
+        <v-card v-if="agentResult && !agentLoading">
             <v-card-item>
                 <v-card-title class="text-body-1 d-flex align-center ga-2">
                     <v-icon size="small" color="warning">mdi-robot</v-icon>
                     Agent Output
-                    <v-chip size="x-small" variant="tonal" color="warning">
-                        agent-generated
-                    </v-chip>
+                    <v-chip size="x-small" variant="tonal" color="warning">agent-generated</v-chip>
                 </v-card-title>
             </v-card-item>
             <v-card-text>
-                <div class="agent-output text-body-2" v-html="renderMarkdown(agentResult.output)" />
+                <!-- Clickable entity keywords via delegated handler -->
+                <div
+                    class="agent-output text-body-2"
+                    v-html="wrapKeywords(renderMarkdown(agentResult.output))"
+                    @click="handleKeywordClick"
+                />
 
-                <div v-if="agentResult.citations.length" class="mt-3">
-                    <div class="text-caption text-medium-emphasis mb-1">Supporting Evidence</div>
-                    <v-chip
-                        v-for="(cite, i) in agentResult.citations"
-                        :key="i"
-                        size="small"
-                        variant="tonal"
-                        :color="citationColor(cite.type)"
-                        class="mr-1 mb-1 cursor-pointer"
-                        @click="selectEntity(cite.neid)"
-                    >
-                        <v-icon start size="small">{{ citationIcon(cite.type) }}</v-icon>
-                        {{ cite.label }}
-                    </v-chip>
+                <!-- Citations panel -->
+                <CitationPanel :citations="buildCitations(agentResult.citations)" />
+
+                <!-- Meta bar with token usage -->
+                <div class="mt-3">
+                    <SummaryMetaBar
+                        :entity-count="entities.length"
+                        :event-count="events.length"
+                        :show-feedback="true"
+                        :feedback="feedback"
+                        @feedback="(t) => (feedback = t)"
+                    />
                 </div>
             </v-card-text>
         </v-card>
@@ -116,27 +155,114 @@
 </template>
 
 <script setup lang="ts">
-    const { isReady, agentLoading, agentResult, selectedEntity, runAgentAction, selectEntity } =
-        useCollectionWorkspace();
+    import type { Citation } from '~/utils/citationTypes';
+    import type { RebuildStep } from '~/composables/useCollectionWorkspace';
+
+    const {
+        isReady,
+        agentLoading,
+        agentResult,
+        selectedEntity,
+        entities,
+        events,
+        runAgentAction,
+        selectEntity,
+    } = useCollectionWorkspace();
+
+    const { wrapKeywords, handleKeywordClick } = useEntityKeywords();
 
     const question = ref('');
     const activeAction = ref<string | null>(null);
+    const feedback = ref<'positive' | 'negative' | null>(null);
+
+    // Simulated agent steps for loading state
+    const agentSteps = ref<RebuildStep[]>([
+        { step: 1, status: 'working', label: 'Dialogue Agent', detail: 'Interpreting question...' },
+        {
+            step: 2,
+            status: 'pending',
+            label: 'Context Agent',
+            detail: 'Fetching relevant evidence...',
+        },
+        {
+            step: 3,
+            status: 'pending',
+            label: 'Composition Agent',
+            detail: 'Generating response...',
+        },
+    ]);
+
+    watch(agentLoading, (loading) => {
+        if (loading) {
+            agentSteps.value = [
+                {
+                    step: 1,
+                    status: 'working',
+                    label: 'Dialogue Agent',
+                    detail: 'Interpreting question...',
+                },
+                {
+                    step: 2,
+                    status: 'pending',
+                    label: 'Context Agent',
+                    detail: 'Fetching relevant evidence...',
+                },
+                {
+                    step: 3,
+                    status: 'pending',
+                    label: 'Composition Agent',
+                    detail: 'Generating response...',
+                },
+            ];
+            let idx = 0;
+            const timer = setInterval(() => {
+                if (!agentLoading.value || idx >= agentSteps.value.length - 1) {
+                    clearInterval(timer);
+                    return;
+                }
+                agentSteps.value[idx].status = 'completed';
+                agentSteps.value[idx].durationMs = 700 * (idx + 1);
+                idx++;
+                agentSteps.value[idx].status = 'working';
+            }, 700);
+        }
+    });
 
     const actions = [
-        { id: 'summarize_collection', label: 'Summarize Collection', icon: 'mdi-text-box-outline' },
-        { id: 'compare_contexts', label: 'Compare Contexts', icon: 'mdi-compare' },
-        { id: 'recommend_anchors', label: 'Recommend Anchors', icon: 'mdi-star-outline' },
+        {
+            id: 'summarize_collection',
+            label: 'Summarize Collection',
+            icon: 'mdi-text-box-outline',
+            tooltip: 'Generate a graph-backed summary of the BNY collection',
+        },
+        {
+            id: 'compare_contexts',
+            label: 'Compare Contexts',
+            icon: 'mdi-compare',
+            tooltip: 'Compare document-extracted data with enriched broader-graph context',
+        },
+        {
+            id: 'recommend_anchors',
+            label: 'Recommend Anchors',
+            icon: 'mdi-star-outline',
+            tooltip: 'Identify high-value entities for one-hop or two-hop graph expansion',
+        },
     ];
 
     async function runAction(actionId: string) {
         activeAction.value = actionId;
+        feedback.value = null;
         await runAgentAction(actionId);
         activeAction.value = null;
+        if (agentSteps.value) {
+            agentSteps.value.forEach((s) => (s.status = 'completed'));
+        }
     }
 
     async function askQuestion() {
         if (!question.value) return;
         activeAction.value = 'answer_question';
+        feedback.value = null;
         await runAgentAction('answer_question', { question: question.value });
         activeAction.value = null;
     }
@@ -144,32 +270,29 @@
     async function explainSelected() {
         if (!selectedEntity.value) return;
         activeAction.value = 'explain_entity';
+        feedback.value = null;
         await runAgentAction('explain_entity', { entityNeid: selectedEntity.value.neid });
         activeAction.value = null;
     }
 
     function renderMarkdown(text: string): string {
-        return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\[(\d+)\]/g, '<sup class="citation-ref-inline">[$1]</sup>')
+            .replace(/\n/g, '<br>');
     }
 
-    function citationColor(type: string): string {
-        const colors: Record<string, string> = {
-            entity: 'success',
-            event: 'warning',
-            document: 'info',
-            relationship: 'secondary',
-        };
-        return colors[type] ?? 'grey';
-    }
-
-    function citationIcon(type: string): string {
-        const icons: Record<string, string> = {
-            entity: 'mdi-circle-outline',
-            event: 'mdi-calendar',
-            document: 'mdi-file-pdf-box',
-            relationship: 'mdi-link-variant',
-        };
-        return icons[type] ?? 'mdi-tag';
+    function buildCitations(rawCitations: any[]): Citation[] {
+        if (!rawCitations?.length) return [];
+        return rawCitations.map((c, i) => ({
+            ref: String(i + 1),
+            sourceName: c.label ?? c.name ?? `Source ${i + 1}`,
+            sourceType: c.type ?? 'other',
+            date: c.date,
+            excerpt: c.excerpt,
+            url: c.url,
+            neid: c.neid,
+        }));
     }
 </script>
 
@@ -179,6 +302,20 @@
         border-radius: 8px;
         background: rgba(255, 159, 10, 0.05);
         border: 1px solid rgba(255, 159, 10, 0.15);
-        line-height: 1.6;
+        line-height: 1.7;
+    }
+
+    .agent-output :deep(.citation-ref-inline) {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 0.7em;
+        vertical-align: super;
+    }
+
+    .tooltip-rich {
+        min-width: 150px;
+    }
+
+    .cursor-pointer {
+        cursor: pointer;
     }
 </style>
