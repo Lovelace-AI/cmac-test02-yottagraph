@@ -1,4 +1,4 @@
-const MCP_SERVER_NAME = 'lovelace-elemental';
+const MCP_SERVER_NAME = 'elemental';
 
 function getGatewayConfig() {
     const config = useRuntimeConfig();
@@ -34,6 +34,10 @@ async function mcpRpc(method: string, params?: any): Promise<any> {
 
     const raw = await res.text();
     if (!raw.trim()) return {};
+
+    if (!res.ok) {
+        throw new Error(`MCP gateway returned ${res.status}: ${raw.slice(0, 200)}`);
+    }
 
     const ct = res.headers.get('content-type')?.toLowerCase() ?? '';
     if (ct.includes('application/json')) return JSON.parse(raw);

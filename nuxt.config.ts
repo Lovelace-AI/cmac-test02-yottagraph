@@ -88,6 +88,8 @@ export default defineNuxtConfig({
         }),
     },
 
+    components: [{ path: '~/components', pathPrefix: false }],
+
     modules: ['vuetify-nuxt-module'],
 
     vuetify: {
