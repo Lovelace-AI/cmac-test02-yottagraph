@@ -61,6 +61,14 @@
                     hide-details
                     style="max-width: 200px"
                 />
+                <v-btn
+                    size="small"
+                    variant="outlined"
+                    :prepend-icon="isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
+                    @click="toggleFullscreen"
+                >
+                    {{ isFullscreen ? 'Exit fullscreen' : 'Fullscreen' }}
+                </v-btn>
             </div>
         </div>
 
@@ -102,159 +110,124 @@
         </div>
 
         <!-- Graph canvas with legend overlay -->
-        <v-card
-            class="graph-card mb-3"
-            :style="{ height: graphHeight + 'px', position: 'relative' }"
-        >
+        <v-card class="graph-card" :class="{ 'graph-card-fullscreen': isFullscreen }">
             <div
-                ref="graphContainer"
-                class="sigma-container"
+                ref="graphFrame"
+                class="graph-frame"
                 :style="{
-                    height: graphHeight + 'px',
+                    height: `${graphHeight}px`,
                     background: currentThemeColors.graphBackground,
                 }"
-            />
-
-            <!-- Legend overlay -->
-            <div
-                class="graph-overlay pa-2"
-                :style="{
-                    background: currentThemeColors.graphOverlay,
-                    borderColor: currentThemeColors.graphOverlayBorder,
-                }"
             >
-                <div class="text-caption font-weight-medium mb-1 text-medium-emphasis">
-                    ENTITY TYPES
-                </div>
-                <button
-                    v-for="[flavor, color] in flavorColorEntries"
-                    :key="flavor"
-                    type="button"
-                    class="d-flex align-center ga-1 py-0 legend-row legend-button app-click-target"
-                    :class="{ 'opacity-40': hiddenFlavors.has(flavor) }"
-                    :title="`Toggle ${flavor}`"
-                    :aria-pressed="String(!hiddenFlavors.has(flavor))"
-                    @click="toggleFlavor(flavor)"
+                <v-btn
+                    v-if="isFullscreen"
+                    size="small"
+                    variant="tonal"
+                    prepend-icon="mdi-fullscreen-exit"
+                    class="fullscreen-exit-btn"
+                    @click.stop="toggleFullscreen"
                 >
-                    <div class="legend-dot" :style="{ background: color }" />
-                    <span class="text-caption" style="min-width: 100px">
-                        {{ flavor.replace(/_/g, ' ') }}
-                    </span>
-                    <span class="text-caption text-medium-emphasis">
-                        {{ flavorCounts.get(flavor) ?? 0 }}
-                    </span>
-                </button>
-
-                <v-divider class="my-1" />
-
-                <div class="text-caption font-weight-medium mb-1 text-medium-emphasis">
-                    REL TYPES
-                </div>
+                    Exit fullscreen
+                </v-btn>
                 <div
-                    v-for="[relType, count] in topRelTypes"
-                    :key="relType"
-                    class="d-flex align-center ga-1 py-0"
+                    ref="graphContainer"
+                    class="sigma-container"
+                    :style="{ height: `${graphHeight}px` }"
+                />
+
+                <!-- Legend overlay -->
+                <div
+                    class="graph-overlay pa-2"
+                    :style="{
+                        background: currentThemeColors.graphOverlay,
+                        borderColor: currentThemeColors.graphOverlayBorder,
+                    }"
                 >
-                    <div class="legend-line" :style="{ background: getRelTypeColor(relType) }" />
-                    <span class="text-caption" style="min-width: 110px">
-                        {{ relType.replace(/schema::relationship::/, '').replace(/_/g, ' ') }}
-                    </span>
-                    <span class="text-caption text-medium-emphasis">{{ count }}</span>
-                </div>
-            </div>
+                    <div class="text-caption font-weight-medium mb-1 text-medium-emphasis">
+                        ENTITY TYPES
+                    </div>
+                    <button
+                        v-for="[flavor, color] in flavorColorEntries"
+                        :key="flavor"
+                        type="button"
+                        class="d-flex align-center ga-1 py-0 legend-row legend-button app-click-target"
+                        :class="{ 'opacity-40': hiddenFlavors.has(flavor) }"
+                        :title="`Toggle ${flavor}`"
+                        :aria-pressed="String(!hiddenFlavors.has(flavor))"
+                        @click="toggleFlavor(flavor)"
+                    >
+                        <div class="legend-dot" :style="{ background: color }" />
+                        <span class="text-caption" style="min-width: 100px">
+                            {{ flavor.replace(/_/g, ' ') }}
+                        </span>
+                        <span class="text-caption text-medium-emphasis">
+                            {{ flavorCounts.get(flavor) ?? 0 }}
+                        </span>
+                    </button>
 
-            <!-- Hover tooltip -->
-            <div
-                v-if="tooltip"
-                class="node-tooltip"
-                :style="{
-                    left: tooltip.x + 'px',
-                    top: tooltip.y + 'px',
-                    background: currentThemeColors.tooltipBackground,
-                    borderColor: currentThemeColors.tooltipBorder,
-                }"
-            >
-                <div class="d-flex align-center ga-1 mb-1">
-                    <v-icon size="14" :color="tooltip.color">{{
-                        flavorIcon(tooltip.flavor)
-                    }}</v-icon>
-                    <span class="text-caption font-weight-bold">{{ tooltip.name }}</span>
-                </div>
-                <div class="text-caption text-medium-emphasis">
-                    {{ tooltip.flavor.replace(/_/g, ' ') }}
-                </div>
-                <div class="text-caption text-medium-emphasis">
-                    {{ tooltip.degree }} connections
-                </div>
-                <div v-if="tooltip.events > 0" class="text-caption" style="color: #ffa726">
-                    {{ tooltip.events }} events
-                </div>
-                <div class="text-caption text-medium-emphasis" style="font-style: italic">
-                    Click for details
-                </div>
-            </div>
+                    <v-divider class="my-1" />
 
-            <div v-if="entities.length === 0" class="graph-empty">
-                <v-icon size="48" class="mb-3 text-medium-emphasis">mdi-graph-outline</v-icon>
-                <div class="text-body-2 text-medium-emphasis">
-                    Load the graph to explore entities and relationships.
+                    <div class="text-caption font-weight-medium mb-1 text-medium-emphasis">
+                        REL TYPES
+                    </div>
+                    <div
+                        v-for="[relType, count] in topRelTypes"
+                        :key="relType"
+                        class="d-flex align-center ga-1 py-0"
+                    >
+                        <div
+                            class="legend-line"
+                            :style="{ background: getRelTypeColor(relType) }"
+                        />
+                        <span class="text-caption" style="min-width: 110px">
+                            {{ relType.replace(/schema::relationship::/, '').replace(/_/g, ' ') }}
+                        </span>
+                        <span class="text-caption text-medium-emphasis">{{ count }}</span>
+                    </div>
                 </div>
-            </div>
-        </v-card>
 
-        <!-- Entity table below -->
-        <v-card>
-            <v-card-item>
-                <v-card-title class="text-body-1">
-                    Entities
-                    <v-chip size="x-small" variant="tonal" class="ml-2">
-                        {{ filteredEntities.length }}
-                    </v-chip>
-                </v-card-title>
-                <template v-slot:append>
-                    <v-select
-                        v-model="filterFlavor"
-                        :items="flavorOptions"
-                        label="Filter type"
-                        density="compact"
-                        variant="outlined"
-                        clearable
-                        hide-details
-                        style="max-width: 160px"
-                    />
-                </template>
-            </v-card-item>
-            <v-card-text class="pa-0">
-                <v-data-table
-                    :headers="entityHeaders"
-                    :items="filteredEntities"
-                    :items-per-page="15"
-                    density="compact"
-                    hover
-                    @click:row="(_: any, row: any) => selectEntity(row.item.neid)"
+                <!-- Hover tooltip -->
+                <div
+                    v-if="tooltip"
+                    class="node-tooltip"
+                    :style="{
+                        left: tooltip.x + 'px',
+                        top: tooltip.y + 'px',
+                        background: currentThemeColors.tooltipBackground,
+                        borderColor: currentThemeColors.tooltipBorder,
+                    }"
                 >
-                    <template v-slot:item.origin="{ item }">
-                        <v-chip
-                            size="x-small"
-                            variant="tonal"
-                            :color="item.origin === 'document' ? 'success' : 'info'"
-                        >
-                            {{ item.origin }}
-                        </v-chip>
-                    </template>
-                    <template v-slot:item.flavor="{ item }">
-                        <div class="d-flex align-center ga-1">
-                            <v-icon size="12" :color="flavorColor(item.flavor)">
-                                {{ flavorIcon(item.flavor) }}
-                            </v-icon>
-                            <span class="text-caption">{{ item.flavor.replace(/_/g, ' ') }}</span>
-                        </div>
-                    </template>
-                    <template v-slot:item.sourceDocuments="{ item }">
-                        {{ item.sourceDocuments.length }}
-                    </template>
-                </v-data-table>
-            </v-card-text>
+                    <div class="d-flex align-center ga-1 mb-1">
+                        <v-icon size="14" :color="tooltip.color">{{
+                            flavorIcon(tooltip.flavor)
+                        }}</v-icon>
+                        <span class="text-caption font-weight-bold">{{ tooltip.name }}</span>
+                    </div>
+                    <div class="text-caption text-medium-emphasis">
+                        {{ tooltip.flavor.replace(/_/g, ' ') }}
+                    </div>
+                    <div class="text-caption text-medium-emphasis">
+                        {{ tooltip.degree }} connections
+                    </div>
+                    <div v-if="tooltip.events > 0" class="text-caption" style="color: #ffa726">
+                        {{ tooltip.events }} events
+                    </div>
+                    <div class="text-caption text-medium-emphasis" style="font-style: italic">
+                        Click for details
+                    </div>
+                </div>
+
+                <div v-if="entities.length === 0" class="graph-empty">
+                    <v-icon size="48" class="mb-3 text-medium-emphasis">mdi-graph-outline</v-icon>
+                    <div class="text-body-2 text-medium-emphasis">
+                        Load the graph to explore entities and relationships.
+                    </div>
+                </div>
+
+                <div v-if="selectedEntityNeid" class="entity-overlay">
+                    <EntityDetailPanel />
+                </div>
+            </div>
         </v-card>
     </div>
 </template>
@@ -265,7 +238,6 @@
     import { Sigma } from 'sigma';
     import forceAtlas2 from 'graphology-layout-forceatlas2';
     import louvain from 'graphology-communities-louvain';
-    import type { EntityRecord, RelationshipRecord } from '~/utils/collectionTypes';
 
     const ENTITY_COLORS: Record<string, string> = {
         organization: '#42A5F5',
@@ -308,10 +280,9 @@
     const { colorMode, currentThemeColors } = useAppColorMode();
 
     const graphContainer = ref<HTMLElement | null>(null);
-    const graphHeight = 520;
-    const filterFlavor = ref<string | null>(null);
+    const graphFrame = ref<HTMLElement | null>(null);
+    const viewportHeight = ref(900);
     const searchQuery = ref('');
-    const clusterMode = ref<'false' | 'true'>('false');
     const hiddenFlavors = ref<Set<string>>(new Set(['location']));
     const analysisMode = ref<'centrality' | 'relationship' | 'timeline' | 'source' | 'simplified'>(
         'centrality'
@@ -322,9 +293,12 @@
     const pathStart = ref<string | null>(null);
     const pathEnd = ref<string | null>(null);
     const shortestPathText = ref('');
+    const isFullscreen = ref(false);
+    const graphHeight = computed(() => (isFullscreen.value ? viewportHeight.value - 84 : 640));
 
     let sigmaInstance: Sigma | null = null;
     let graphInstance: Graph | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     interface TooltipState {
         name: string;
@@ -346,24 +320,14 @@
         { label: 'Clustered / Simplified', value: 'simplified' },
     ];
 
-    const flavorOptions = computed(() => {
-        const flavors = new Set(entities.value.map((e) => e.flavor));
-        return Array.from(flavors).sort();
+    const visibleEntities = computed(() => {
+        const q = searchQuery.value.trim().toLowerCase();
+        return entities.value.filter((e) => {
+            if (hiddenFlavors.value.has(e.flavor)) return false;
+            if (!q) return true;
+            return e.name.toLowerCase().includes(q);
+        });
     });
-
-    const filteredEntities = computed(() => {
-        let list = entities.value;
-        if (filterFlavor.value) list = list.filter((e) => e.flavor === filterFlavor.value);
-        if (searchQuery.value) {
-            const q = searchQuery.value.toLowerCase();
-            list = list.filter((e) => e.name.toLowerCase().includes(q));
-        }
-        return list;
-    });
-
-    const visibleEntities = computed(() =>
-        entities.value.filter((e) => !hiddenFlavors.value.has(e.flavor))
-    );
 
     const relationshipTypeOptions = computed(() =>
         Array.from(new Set(relationships.value.map((r) => r.type))).sort()
@@ -430,13 +394,6 @@
             .sort((a, b) => a.title.localeCompare(b.title))
     );
 
-    const entityHeaders = [
-        { title: 'Name', key: 'name', sortable: true },
-        { title: 'Type', key: 'flavor', sortable: true },
-        { title: 'Origin', key: 'origin', sortable: true },
-        { title: 'Docs', key: 'sourceDocuments', sortable: false },
-    ];
-
     function flavorIcon(flavor: string): string {
         const icons: Record<string, string> = {
             organization: 'mdi-domain',
@@ -447,10 +404,6 @@
             legal_agreement: 'mdi-file-document-outline',
         };
         return icons[flavor] ?? 'mdi-circle-small';
-    }
-
-    function flavorColor(flavor: string): string {
-        return ENTITY_COLORS[flavor] ?? '#9E9E9E';
     }
 
     function getRelTypeColor(relType: string): string {
@@ -480,7 +433,6 @@
         }
         if (analysisMode.value === 'simplified') {
             ents = ents.filter((entity) => (degreeByNeid.value.get(entity.neid) ?? 0) >= 2);
-            clusterMode.value = 'true';
         }
         const rels = visibleRelationships.value;
 
@@ -488,8 +440,6 @@
 
         const g = new Graph({ type: 'mixed', multi: false });
         graphInstance = g;
-
-        const nodeSet = new Set(ents.map((e) => e.neid));
 
         // Add nodes
         for (const entity of ents) {
@@ -564,7 +514,7 @@
         }
 
         // Community detection in cluster mode
-        if ((clusterMode.value === 'true' || analysisMode.value === 'simplified') && g.order > 2) {
+        if (analysisMode.value === 'simplified' && g.order > 2) {
             try {
                 const communities = louvain(g);
                 const communityColors = [
@@ -672,6 +622,7 @@
         });
 
         applySelectedHighlight();
+        refreshSigma();
     }
 
     function hexAlpha(hex: string, alpha: number): string {
@@ -689,6 +640,7 @@
             relationshipTypeFilter,
             sourceBackedOnly,
             highConfidenceOnly,
+            searchQuery,
         ],
         () => {
             nextTick(() => buildGraph());
@@ -696,12 +648,44 @@
         { deep: false }
     );
 
-    watch(clusterMode, () => buildGraph());
     watch(colorMode, () => buildGraph());
     watch(selectedEntityNeid, () => applySelectedHighlight());
+    watch(graphHeight, () => refreshSigma());
+
+    function refreshSigma() {
+        nextTick(() => {
+            sigmaInstance?.refresh();
+        });
+    }
+
+    function syncViewportHeight() {
+        viewportHeight.value = window.innerHeight;
+    }
+
+    async function toggleFullscreen() {
+        if (!graphFrame.value) return;
+        if (document.fullscreenElement) {
+            await document.exitFullscreen();
+        } else {
+            await graphFrame.value.requestFullscreen();
+        }
+    }
+
+    function handleFullscreenChange() {
+        isFullscreen.value = document.fullscreenElement === graphFrame.value;
+        syncViewportHeight();
+        refreshSigma();
+    }
 
     onMounted(() => {
+        syncViewportHeight();
         nextTick(() => buildGraph());
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        window.addEventListener('resize', syncViewportHeight);
+        if (graphFrame.value) {
+            resizeObserver = new ResizeObserver(() => refreshSigma());
+            resizeObserver.observe(graphFrame.value);
+        }
     });
 
     onBeforeUnmount(() => {
@@ -709,6 +693,10 @@
             sigmaInstance.kill();
             sigmaInstance = null;
         }
+        document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        window.removeEventListener('resize', syncViewportHeight);
+        resizeObserver?.disconnect();
+        resizeObserver = null;
     });
 
     function applySelectedHighlight() {
@@ -778,6 +766,17 @@
 
     .graph-card {
         overflow: hidden;
+        border: 1px solid var(--app-divider);
+    }
+
+    .graph-card-fullscreen {
+        border-radius: 0;
+        border: 0;
+    }
+
+    .graph-frame {
+        position: relative;
+        width: 100%;
     }
 
     .sigma-container {
@@ -852,5 +851,19 @@
 
     .opacity-40 {
         opacity: 0.88;
+    }
+
+    .entity-overlay {
+        position: absolute;
+        inset: 12px 12px 12px auto;
+        width: min(420px, calc(100% - 24px));
+        z-index: 30;
+    }
+
+    .fullscreen-exit-btn {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 40;
     }
 </style>

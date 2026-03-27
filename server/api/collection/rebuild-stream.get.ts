@@ -253,7 +253,7 @@ export default defineEventHandler(async (event) => {
                         limit: 500,
                         direction: 'both',
                     },
-                    { timeoutMs: 45_000, attempts: 2 }
+                    { timeoutMs: 45_000, attempts: 1 }
                 );
 
                 const related = result?.relationships ?? [];
@@ -292,7 +292,7 @@ export default defineEventHandler(async (event) => {
                 );
             }
         },
-        2
+        8
     );
 
     for (const { docNeid, flavor } of phase1Failures) {
@@ -380,7 +380,7 @@ export default defineEventHandler(async (event) => {
                 return { hubNeid, events: [] };
             }
         },
-        2
+        4
     );
 
     for (const { hubNeid, events } of eventResults) {
@@ -600,7 +600,7 @@ export default defineEventHandler(async (event) => {
                 return { values: [] };
             }
         },
-        2
+        4
     );
 
     const rawRows = rawResults.flatMap((result) => result?.values ?? []);

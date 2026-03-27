@@ -60,7 +60,10 @@
         </v-expand-transition>
 
         <!-- Post-rebuild meta bar -->
-        <div v-if="isReady && !rebuilding" class="meta-bar flex-shrink-0 px-4 py-1">
+        <div
+            v-if="isReady && !rebuilding && currentTab !== 'overview'"
+            class="meta-bar flex-shrink-0 px-4 py-1"
+        >
             <SummaryMetaBar
                 :entity-count="meta.entityCount"
                 :event-count="meta.eventCount"
@@ -69,12 +72,15 @@
             />
         </div>
 
-        <div class="flex-grow-1 overflow-y-auto px-4 py-4">
+        <div
+            class="flex-grow-1 overflow-y-auto px-4"
+            :class="currentTab === 'overview' ? 'py-2' : 'py-4'"
+        >
             <v-alert v-if="collection.error" type="error" variant="tonal" class="mb-4" closable>
                 {{ collection.error }}
             </v-alert>
             <v-alert
-                v-if="!isReady && !rebuilding && !collection.error"
+                v-if="!isReady && !rebuilding && !collection.error && currentTab !== 'overview'"
                 type="info"
                 variant="tonal"
                 class="mb-4"
@@ -91,8 +97,6 @@
             <AgentWorkspace v-else-if="currentTab === 'agent'" />
             <EnrichmentView v-else-if="currentTab === 'enrichment'" />
         </div>
-
-        <EntityDetailPanel />
 
         <!-- Settings Dialog -->
         <v-dialog v-model="settingsOpen" max-width="860" scrollable>
