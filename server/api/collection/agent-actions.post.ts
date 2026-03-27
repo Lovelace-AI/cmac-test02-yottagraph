@@ -60,37 +60,63 @@ function summarizeCollection(
     documents: any[],
     meta: any
 ): AgentActionResponse {
-    const flavorCounts = new Map<string, number>();
-    for (const e of entities) flavorCounts.set(e.flavor, (flavorCounts.get(e.flavor) || 0) + 1);
-
+    const flavorCounts = countBy(entities, (entity) => entity.flavor);
     const flavorSummary = Array.from(flavorCounts.entries())
         .sort((a, b) => b[1] - a[1])
-        .map(([f, c]) => `${c} ${f}`)
+        .slice(0, 4)
+        .map(([flavor, count]) => `${count} ${flavor.replace(/_/g, ' ')}`)
         .join(', ');
 
-    const eventCategories = new Map<string, number>();
-    for (const e of events) {
-        const cat = e.category || 'uncategorized';
-        eventCategories.set(cat, (eventCategories.get(cat) || 0) + 1);
-    }
-
+    const eventCategories = countBy(events, (eventItem) => eventItem.category || 'uncategorized');
     const eventSummary = Array.from(eventCategories.entries())
         .sort((a, b) => b[1] - a[1])
-        .map(([c, n]) => `${n} ${c}`)
+        .slice(0, 3)
+        .map(([category, count]) => `${count} ${category}`)
         .join(', ');
 
+    const centralEntities = rankEntitiesByConnectivity(
+        entities,
+        collectionLinksFromEvents(events, entities)
+    );
+    const evidenceBackedLinks = collectionLinksFromEvents(
+        events,
+        entities
+    ).evidenceBackedRelationships;
+    const inferredLinks = collectionLinksFromEvents(events, entities).inferredRelationships;
+    const dateRange = getEventDateRange(events);
+
+    const topEntityLine =
+        centralEntities.length > 0
+            ? `Most central party: ${centralEntities[0].name} (${centralEntities[0].connections} links).`
+            : 'No central party could be identified yet.';
+    const timelineLine = dateRange
+        ? `Timeline coverage spans ${dateRange.start} to ${dateRange.end}.`
+        : 'Timeline coverage is limited because event dates are missing.';
+    const confidenceLine =
+        evidenceBackedLinks >= inferredLinks
+            ? 'Confidence is medium-high because most links are source-backed.'
+            : 'Confidence is moderate; inferred links outnumber source-backed links and should be verified.';
+
     const output = [
-        `**${meta.name}**`,
+        `**Collection summary: ${meta.name}**`,
         '',
-        meta.description,
+        meta.description || 'No collection description provided.',
         '',
-        `This collection contains ${documents.length} source documents that produced ${entities.length} unique entities (${flavorSummary}).`,
+        `This collection contains ${documents.length} source documents with ${entities.length} entities and ${events.length} events.`,
+        `Primary entity mix: ${flavorSummary || 'not enough data yet'}.`,
         '',
         events.length > 0
-            ? `${events.length} events were discovered at hop 2: ${eventSummary}.`
+            ? `Most common event categories: ${eventSummary}.`
             : 'No events have been loaded yet.',
         '',
-        `${meta.relationshipCount} relationships connect these entities across ${new Set(entities.map((e) => e.flavor)).size} entity types.`,
+        topEntityLine,
+        timelineLine,
+        confidenceLine,
+        '',
+        '**Recommended next checks**',
+        '- Review top entities and validate their linked documents.',
+        '- Inspect inferred links before presenting conclusions externally.',
+        '- Ask for an executive summary if this will be shared with non-technical stakeholders.',
     ].join('\n');
 
     const citations = documents.map((d) => ({
@@ -126,17 +152,24 @@ function explainEntity(
         (r) => r.sourceNeid === entityNeid || r.targetNeid === entityNeid
     );
     const relatedEvents = events.filter((e) => e.participantNeids.includes(entityNeid));
+    const evidenceBacked = rels.filter(
+        (rel) => Boolean(rel.sourceDocumentNeid) || (rel.citations?.length ?? 0) > 0
+    ).length;
 
     const output = [
-        `**${entity.name}** (${entity.flavor})`,
+        `**Entity brief: ${entity.name}**`,
         '',
-        `Found in ${entity.sourceDocuments.length} source document(s).`,
-        `Connected by ${rels.length} relationship(s) to other entities in the collection.`,
+        `${entity.name} is a ${entity.flavor.replace(/_/g, ' ')} found in ${entity.sourceDocuments.length} source document(s).`,
+        `It has ${rels.length} relationship(s), with ${evidenceBacked} currently source-backed.`,
         relatedEvents.length > 0
-            ? `Participates in ${relatedEvents.length} event(s).`
+            ? `It participates in ${relatedEvents.length} event(s), which can be used to trace timeline impact.`
             : 'No events linked to this entity.',
         '',
-        `Origin: ${entity.origin}`,
+        `Origin classification: ${entity.origin}.`,
+        '',
+        '**Why this matters**',
+        `- This entity appears central to collection context when interpreted with its linked relationships.`,
+        `- Use the Graph & Entities view to inspect strongest links and the Timeline view for event progression.`,
     ].join('\n');
 
     const citations: AgentActionResponse['citations'] = [
@@ -164,7 +197,10 @@ function answerQuestion(
         return { action: 'answer_question', output: 'No question provided.', citations: [] };
     }
 
-    const q = question.toLowerCase();
+    const q = question.toLowerCase().trim();
+    const links = collectionLinksFromEvents(events, entities);
+    const rankedEntities = rankEntitiesByConnectivity(entities, links);
+    const datedEvents = events.filter((eventItem) => Boolean(eventItem.date)).length;
     const matchingEntities = entities.filter(
         (e) => e.name.toLowerCase().includes(q) || e.flavor.toLowerCase().includes(q)
     );
@@ -176,25 +212,58 @@ function answerQuestion(
     );
 
     const parts: string[] = [];
+    if (q.includes('central entit') || q.includes('most central')) {
+        const top = rankedEntities.slice(0, 5);
+        parts.push(
+            `Most central entities are ${top.map((entry) => `${entry.name} (${entry.connections} links)`).join(', ')}.`
+        );
+    } else if (q.includes('evidence thin') || q.includes('incomplete') || q.includes('coverage')) {
+        parts.push(
+            `Coverage summary: ${links.evidenceBackedRelationships} source-backed links and ${links.inferredRelationships} inferred links.`
+        );
+        if (datedEvents === 0) {
+            parts.push('Event timeline confidence is limited because no dated events were found.');
+        } else {
+            parts.push(`${datedEvents} events include dates, supporting timeline interpretation.`);
+        }
+    } else if (q.includes('changed') || q.includes('over time')) {
+        const byYear = countBy(
+            events.filter((eventItem) => Boolean(eventItem.date)),
+            (eventItem) => (eventItem.date || '').slice(0, 4)
+        );
+        const yearSummary = Array.from(byYear.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([year, count]) => `${year}: ${count}`)
+            .join(', ');
+        parts.push(
+            yearSummary
+                ? `Observed event progression by year: ${yearSummary}.`
+                : 'Unable to infer change over time because event dates are sparse.'
+        );
+    }
+
     if (matchingEntities.length > 0) {
         parts.push(
-            `Found ${matchingEntities.length} matching entities: ${matchingEntities
+            `Related entities: ${matchingEntities
                 .slice(0, 5)
-                .map((e) => `${e.name} (${e.flavor})`)
+                .map((entity) => `${entity.name} (${entity.flavor.replace(/_/g, ' ')})`)
                 .join(', ')}.`
         );
     }
     if (matchingEvents.length > 0) {
         parts.push(
-            `Found ${matchingEvents.length} matching events: ${matchingEvents
+            `Related events: ${matchingEvents
                 .slice(0, 5)
-                .map((e) => e.name)
+                .map((eventItem) => eventItem.name)
                 .join(', ')}.`
         );
     }
     if (parts.length === 0) {
         parts.push(
             `No direct matches found for "${question}" in the current collection of ${meta.entityCount} entities and ${meta.eventCount} events.`
+        );
+        parts.push(
+            'Try asking about key entities, evidence gaps, timeline changes, or agreement context.'
         );
     }
 
@@ -225,19 +294,19 @@ function compareContexts(entities: EntityRecord[]): AgentActionResponse {
         enrichFlavors.set(e.flavor, (enrichFlavors.get(e.flavor) || 0) + 1);
 
     const output = [
-        `**Document-Derived Context:** ${docEntities.length} entities across ${docFlavors.size} types`,
+        `**Document-derived context:** ${docEntities.length} entities across ${docFlavors.size} types`,
         Array.from(docFlavors.entries())
             .map(([f, c]) => `  - ${f}: ${c}`)
             .join('\n'),
         '',
         enrichedEntities.length > 0
             ? [
-                  `**Enriched Context:** ${enrichedEntities.length} entities across ${enrichFlavors.size} types`,
+                  `**Enriched context:** ${enrichedEntities.length} entities across ${enrichFlavors.size} types`,
                   Array.from(enrichFlavors.entries())
                       .map(([f, c]) => `  - ${f}: ${c}`)
                       .join('\n'),
               ].join('\n')
-            : '**Enriched Context:** No enrichment has been run yet. Select anchor entities and expand to see broader graph context.',
+            : '**Enriched context:** No enrichment has been run yet. Select anchor entities and expand to see broader graph context.',
     ].join('\n');
 
     return { action: 'compare_contexts', output, citations: [] };
@@ -281,4 +350,60 @@ function recommendAnchors(entities: EntityRecord[], relationships: any[]): Agent
     ]);
 
     return { action: 'recommend_anchors', output, citations };
+}
+
+function countBy<T>(items: T[], keyFn: (item: T) => string): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+        const key = keyFn(item);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+}
+
+function collectionLinksFromEvents(events: EventRecord[], entities: EntityRecord[]) {
+    const relationshipCountByNeid = new Map<string, number>();
+    let evidenceBackedRelationships = 0;
+    let inferredRelationships = 0;
+
+    for (const entity of entities) {
+        relationshipCountByNeid.set(entity.neid, 0);
+    }
+
+    for (const eventItem of events) {
+        const evidenceBoost = eventItem.sourceDocuments.length > 0 ? 1 : 0;
+        for (const neid of eventItem.participantNeids) {
+            relationshipCountByNeid.set(
+                neid,
+                (relationshipCountByNeid.get(neid) ?? 0) + 1 + evidenceBoost
+            );
+        }
+    }
+
+    for (const entity of entities) {
+        if (entity.sourceDocuments.length > 0) evidenceBackedRelationships += 1;
+        else inferredRelationships += 1;
+    }
+
+    return { relationshipCountByNeid, evidenceBackedRelationships, inferredRelationships };
+}
+
+function rankEntitiesByConnectivity(
+    entities: EntityRecord[],
+    links: { relationshipCountByNeid: Map<string, number> }
+) {
+    return entities
+        .map((entity) => ({
+            neid: entity.neid,
+            name: entity.name,
+            connections: links.relationshipCountByNeid.get(entity.neid) ?? 0,
+        }))
+        .sort((a, b) => b.connections - a.connections);
+}
+
+function getEventDateRange(events: EventRecord[]) {
+    const dates = events.map((eventItem) => eventItem.date).filter(Boolean) as string[];
+    if (dates.length === 0) return null;
+    const sorted = [...dates].sort();
+    return { start: sorted[0].slice(0, 10), end: sorted[sorted.length - 1].slice(0, 10) };
 }

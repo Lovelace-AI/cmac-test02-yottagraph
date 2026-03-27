@@ -37,29 +37,37 @@ import {
 //   organization   --party_to-->            legal_agreement
 //   person         --works_at-->            organization
 // direction:'both' lets MCP find edges regardless of which end we query from.
-const RELATIONSHIP_PROBES: Array<{
+const RELATIONSHIP_PROBE_GROUPS: Array<{
     sourceFlav: string;
-    relType: string;
     targetFlav: string;
+    relTypes: string[];
 }> = [
-    // GT: fund_account --fund_of--> financial_instrument (the bond)
-    { sourceFlav: 'fund_account', relType: 'fund_of', targetFlav: 'financial_instrument' },
+    // GT: fund_account --fund_of/holds_investment--> financial_instrument
+    {
+        sourceFlav: 'fund_account',
+        targetFlav: 'financial_instrument',
+        relTypes: ['fund_of', 'holds_investment'],
+    },
     // GT: financial_instrument --issuer/trustee/beneficiary/borrower_of--> organization
-    { sourceFlav: 'financial_instrument', relType: 'issuer_of', targetFlav: 'organization' },
-    { sourceFlav: 'financial_instrument', relType: 'trustee_of', targetFlav: 'organization' },
-    { sourceFlav: 'financial_instrument', relType: 'beneficiary_of', targetFlav: 'organization' },
-    { sourceFlav: 'financial_instrument', relType: 'borrower_of', targetFlav: 'organization' },
-    // GT: fund_account --holds_investment--> financial_instrument
-    { sourceFlav: 'fund_account', relType: 'holds_investment', targetFlav: 'financial_instrument' },
-    // GT: organization --advisor_to--> organization | legal_agreement
-    { sourceFlav: 'organization', relType: 'advisor_to', targetFlav: 'organization' },
-    { sourceFlav: 'organization', relType: 'advisor_to', targetFlav: 'legal_agreement' },
-    { sourceFlav: 'organization', relType: 'located_at', targetFlav: 'location' },
-    { sourceFlav: 'organization', relType: 'sponsor_of', targetFlav: 'organization' },
-    { sourceFlav: 'organization', relType: 'predecessor_of', targetFlav: 'organization' },
-    { sourceFlav: 'organization', relType: 'successor_to', targetFlav: 'organization' },
-    { sourceFlav: 'organization', relType: 'party_to', targetFlav: 'legal_agreement' },
-    { sourceFlav: 'person', relType: 'works_at', targetFlav: 'organization' },
+    {
+        sourceFlav: 'financial_instrument',
+        targetFlav: 'organization',
+        relTypes: ['issuer_of', 'trustee_of', 'beneficiary_of', 'borrower_of'],
+    },
+    // GT: organization --advisor_to/sponsor_of/predecessor_of/successor_to--> organization
+    {
+        sourceFlav: 'organization',
+        targetFlav: 'organization',
+        relTypes: ['advisor_to', 'sponsor_of', 'predecessor_of', 'successor_to'],
+    },
+    // GT: organization --advisor_to/party_to--> legal_agreement
+    {
+        sourceFlav: 'organization',
+        targetFlav: 'legal_agreement',
+        relTypes: ['advisor_to', 'party_to'],
+    },
+    { sourceFlav: 'organization', targetFlav: 'location', relTypes: ['located_at'] },
+    { sourceFlav: 'person', targetFlav: 'organization', relTypes: ['works_at'] },
 ];
 
 const FUND_ACCOUNT_HISTORY_PROPERTIES = [
@@ -456,107 +464,76 @@ export default defineEventHandler(async (event) => {
     );
 
     // ─── Phase 3: Typed Relationship Assembly (parallel) ──────────
-    // Build all (probe, source) pairs then fan out — each call is independent.
+    // Primary source of typed edges: MCP get_related with grouped relationship_types.
+    // Secondary source: raw QS rows to add repeated document-scoped occurrences.
     t0 = Date.now();
 
-    const probeTasks = RELATIONSHIP_PROBES.flatMap((probe) =>
+    const probeTasks = RELATIONSHIP_PROBE_GROUPS.flatMap((group) =>
         Array.from(entityMap.values())
-            .filter((e) => e.flavor === probe.sourceFlav)
-            .map((source) => ({ probe, source }))
+            .filter((entity) => entity.flavor === group.sourceFlav)
+            .map((source) => ({ group, source }))
     );
-    const phase3Failures: Array<{
-        probe: (typeof RELATIONSHIP_PROBES)[number];
-        source: EntityRecord;
-    }> = [];
 
     sendStep(
         3,
         'working',
         'Relationship Assembly',
-        `Probing ${RELATIONSHIP_PROBES.length} relationship types (${probeTasks.length} parallel calls)...`
+        `Probing ${RELATIONSHIP_PROBE_GROUPS.length} grouped relationship sets (${probeTasks.length} calls)...`
     );
 
-    // Collect results, then merge (single-thread: no races at merge step)
     const phase3Results = await pMap(
         probeTasks,
-        async ({ probe, source }) => {
+        async ({ group, source }) => {
             try {
                 const result = await callToolWithRetry<any>(
                     'elemental_get_related',
                     {
                         entity_id: { id_type: 'neid', id: source.neid },
-                        related_flavor: probe.targetFlav,
-                        relationship_types: [probe.relType],
+                        related_flavor: group.targetFlav,
+                        relationship_types: group.relTypes,
                         limit: 100,
                         direction: 'both',
                     },
                     { timeoutMs: 45_000, attempts: 2 }
                 );
-                return { probe, source, relationships: result?.relationships ?? [] };
+                return { group, source, relationships: result?.relationships ?? [] };
             } catch (e: any) {
-                phase3Failures.push({ probe, source });
                 console.error(
-                    `[Phase3] ${probe.relType} from ${source.neid} FAILED:`,
+                    `[Phase3] ${group.relTypes.join(',')} from ${source.neid} FAILED:`,
                     e?.message ?? String(e)
                 );
-                return { probe, source, relationships: [] };
+                return { group, source, relationships: [] };
             }
         },
-        2
+        6
     );
 
-    for (const { probe, source, relationships: related } of phase3Results) {
-        let added = 0;
+    for (const { group, source, relationships: related } of phase3Results) {
         for (const rel of related) {
             if (!rel.neid) continue;
-            const targetNeid = normalizeNeid(rel.neid);
+            const targetNeid = normalizeNeid(rel.neid as string);
             if (!entityMap.has(targetNeid)) continue;
             if (targetNeid === source.neid) continue;
-            addRelationship(relationships, relSeen, {
-                sourceNeid: source.neid,
-                targetNeid,
-                type: probe.relType,
-                origin: 'document',
-            });
-            added++;
-        }
-        if (related.length > 0) {
-            console.log(
-                `[Phase3] ${probe.relType} from ${source.name}: ${related.length} returned, ${added} in entityMap`
-            );
-        }
-    }
 
-    for (const { probe, source } of phase3Failures) {
-        try {
-            const result = await callToolWithRetry<any>(
-                'elemental_get_related',
-                {
-                    entity_id: { id_type: 'neid', id: source.neid },
-                    related_flavor: probe.targetFlav,
-                    relationship_types: [probe.relType],
-                    limit: 100,
-                    direction: 'both',
-                },
-                { timeoutMs: 45_000, attempts: 1 }
-            );
-            for (const rel of result?.relationships ?? []) {
-                if (!rel.neid) continue;
-                const targetNeid = normalizeNeid(rel.neid);
-                if (!entityMap.has(targetNeid)) continue;
-                if (targetNeid === source.neid) continue;
+            const responseTypes = Array.isArray(rel.relationship_types)
+                ? (rel.relationship_types as string[])
+                : [];
+            const typedMatches = responseTypes.filter((type) => group.relTypes.includes(type));
+            const typesToAdd =
+                typedMatches.length > 0
+                    ? typedMatches
+                    : group.relTypes.length === 1
+                      ? [group.relTypes[0]]
+                      : [];
+
+            for (const relType of typesToAdd) {
                 addRelationship(relationships, relSeen, {
                     sourceNeid: source.neid,
                     targetNeid,
-                    type: probe.relType,
+                    type: relType,
                     origin: 'document',
                 });
             }
-        } catch (e: any) {
-            console.error(
-                `[Phase3] retry failed ${probe.relType} from ${source.neid}:`,
-                e?.message ?? String(e)
-            );
         }
     }
 
@@ -600,16 +577,10 @@ export default defineEventHandler(async (event) => {
         return { direct, reverse };
     }
 
-    const guidedRelationships: RelationshipRecord[] = [];
-    const guidedSeen = new Set<string>();
-
-    // Preserve participant edges from MCP — raw rows are best for entity-entity and
-    // entity-document relationships, but event participants are already well-modeled
-    // in get_events(include_participants: true).
-    for (const rel of filteredRelationships.filter(
-        (r) => r.type === 'schema::relationship::participant'
-    )) {
-        addRelationship(guidedRelationships, guidedSeen, rel);
+    const finalRelationships: RelationshipRecord[] = [];
+    const finalSeen = new Set<string>();
+    for (const rel of filteredRelationships) {
+        addRelationship(finalRelationships, finalSeen, rel);
     }
 
     // Recover repeated document-scoped relationship occurrences from raw property rows.
@@ -659,7 +630,7 @@ export default defineEventHandler(async (event) => {
                 match.citations.map((citation) => resolveCitationToDocumentNeid(citation))
             );
             for (const docNeid of docNeids.length ? docNeids : [undefined]) {
-                addRelationship(guidedRelationships, guidedSeen, {
+                addRelationship(finalRelationships, finalSeen, {
                     sourceNeid:
                         normalizeName(match.sourceName) === normalizeName(sourceName)
                             ? sourceNeid
@@ -678,48 +649,11 @@ export default defineEventHandler(async (event) => {
         }
     }
 
-    // Fallback: if a typed MCP relationship was not recoverable from raw rows,
-    // keep a single live edge so the graph stays connected.
-    const MCP_TRUSTED_FALLBACK_TYPES = new Set([
-        'fund_of',
-        'holds_investment',
-        'issuer_of',
-        'trustee_of',
-        'beneficiary_of',
-        'borrower_of',
-        'located_at',
-        'party_to',
-        'works_at',
-    ]);
-    for (const rel of filteredRelationships.filter(
-        (r) => r.type !== 'schema::relationship::participant'
-    )) {
-        if (rel.sourceNeid === rel.targetNeid) continue;
-        if (!MCP_TRUSTED_FALLBACK_TYPES.has(rel.type)) {
-            const { direct, reverse } = getGuideMatchesEitherDirection(
-                rel.sourceNeid,
-                rel.targetNeid,
-                rel.recordedAt
-            );
-            const guideSupportsType = [...direct, ...reverse].some(
-                (match) => match.type === rel.type
-            );
-            if (!guideSupportsType) continue;
-        }
-        const existing = guidedRelationships.some(
-            (item) =>
-                item.sourceNeid === rel.sourceNeid &&
-                item.targetNeid === rel.targetNeid &&
-                item.type === rel.type
-        );
-        if (!existing) addRelationship(guidedRelationships, guidedSeen, rel);
-    }
-
     sendStep(
         3,
         'completed',
         'Relationship Assembly',
-        `Assembled ${guidedRelationships.length} typed edges`,
+        `Assembled ${finalRelationships.length} typed edges`,
         Date.now() - t0
     );
 
@@ -824,13 +758,13 @@ export default defineEventHandler(async (event) => {
             documentCount: BNY_DOCUMENTS.length,
             entityCount: entities.length,
             eventCount: events.length,
-            relationshipCount: guidedRelationships.length,
+            relationshipCount: finalRelationships.length,
             agreementCount: agreements.length,
             lastRebuilt: new Date().toISOString(),
         },
         documents: [...BNY_DOCUMENTS],
         entities,
-        relationships: guidedRelationships,
+        relationships: finalRelationships,
         events,
         propertySeries,
         status: 'ready',
@@ -842,7 +776,7 @@ export default defineEventHandler(async (event) => {
         5,
         'completed',
         'Finalizing',
-        `Graph complete: ${entities.length} entities, ${events.length} events, ${guidedRelationships.length} edges, ${propertySeries.length} property series`,
+        `Graph complete: ${entities.length} entities, ${events.length} events, ${finalRelationships.length} edges, ${propertySeries.length} property series`,
         Date.now() - t0
     );
 

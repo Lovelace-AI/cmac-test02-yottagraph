@@ -225,7 +225,7 @@
     .timeline-scroll-wrapper {
         overflow-x: auto;
         overflow-y: hidden;
-        background: rgba(0, 0, 0, 0.2);
+        background: var(--app-subtle-surface);
         border-radius: 6px;
         position: relative;
     }
@@ -236,8 +236,8 @@
 
     .dense-tooltip {
         position: absolute;
-        background: rgba(20, 20, 30, 0.95);
-        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: var(--dynamic-surface);
+        border: 1px solid var(--app-divider-strong);
         border-radius: 6px;
         padding: 6px 8px;
         pointer-events: none;

@@ -16,6 +16,21 @@
         <!-- Spacer to center the title -->
         <v-spacer></v-spacer>
 
+        <v-tooltip :text="themeToggleLabel">
+            <template v-slot:activator="{ props: tooltipProps }">
+                <v-btn
+                    icon
+                    v-bind="tooltipProps"
+                    class="ml-1"
+                    color="white"
+                    :aria-label="themeToggleLabel"
+                    @click="toggleColorMode"
+                >
+                    <v-icon :icon="isDarkMode ? 'mdi-weather-sunny' : 'mdi-weather-night'"></v-icon>
+                </v-btn>
+            </template>
+        </v-tooltip>
+
         <!-- Settings Gear -->
         <v-tooltip :text="`Settings (${modKey}G)`">
             <template v-slot:activator="{ props: tooltipProps }">
@@ -23,6 +38,7 @@
                     icon
                     v-bind="tooltipProps"
                     data-testid="settings-button"
+                    aria-label="Open settings"
                     @click="state.showSettingsDialog = true"
                     class="ml-1"
                     color="white"
@@ -41,6 +57,7 @@
                             icon
                             v-bind="mergeProps(menu, tooltip)"
                             data-testid="user-menu-button"
+                            :aria-label="`Open user menu for ${userName}`"
                             class="ml-1"
                             color="white"
                         >
@@ -75,13 +92,13 @@
 <script setup lang="ts">
     import { mergeProps, watch } from 'vue';
 
-    import { useCustomTheme } from '~/composables/useCustomTheme';
+    import { useAppColorMode } from '~/composables/useAppColorMode';
     import { useUserState } from '~/composables/useUserState';
     import { useProxiedAvatar } from '~/composables/useProxiedAvatar';
 
     import { state } from '~/utils/appState';
 
-    const { currentThemeColors } = useCustomTheme();
+    const { currentThemeColors, isDarkMode, toggleColorMode } = useAppColorMode();
     const { clearUser, userPicture, userName } = useUserState();
     const { appName } = useAppInfo();
     const router = useRouter();
@@ -105,6 +122,9 @@
     });
 
     const modKey = computed(() => (isMacPlatform.value ? '⇧⌘' : 'Alt+Shift+'));
+    const themeToggleLabel = computed(() =>
+        isDarkMode.value ? 'Switch to light mode' : 'Switch to dark mode'
+    );
 
     // Compute user initials for fallback avatar
     const userInitials = computed(() => {
@@ -141,9 +161,21 @@
 </script>
 
 <style scoped>
+    :deep(.v-toolbar__content) {
+        min-height: 64px !important;
+        height: auto !important;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        row-gap: 8px;
+        flex-wrap: wrap;
+    }
+
     .app-header-title {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-width: 0;
     }
 
     .header-logo {
@@ -165,7 +197,7 @@
         font-family: var(--font-mono);
         font-weight: 400;
         font-size: 0.7rem;
-        opacity: 0.5;
+        color: rgba(255, 255, 255, 0.82);
         margin-left: 8px;
         position: relative;
         top: 2px;

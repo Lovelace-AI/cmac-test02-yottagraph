@@ -1,0 +1,133 @@
+:root {
+    --app-divider: rgba(255, 255, 255, 0.06);
+    --app-divider-strong: rgba(255, 255, 255, 0.1);
+    --app-subtle-surface: rgba(0, 0, 0, 0.2);
+    --app-subtle-surface-2: rgba(0, 0, 0, 0.1);
+    --app-code-bg: rgba(255, 255, 255, 0.08);
+    --app-code-text: var(--dynamic-primary);
+    --app-focus-ring: #9ad7ff;
+    --app-focus-ring-shadow: rgba(154, 215, 255, 0.28);
+    --app-min-target-size: 24px;
+}
+
+:root[data-app-color-mode='dark'] {
+    color-scheme: dark;
+    --app-divider: rgba(255, 255, 255, 0.06);
+    --app-divider-strong: rgba(255, 255, 255, 0.12);
+    --app-subtle-surface: rgba(0, 0, 0, 0.2);
+    --app-subtle-surface-2: rgba(0, 0, 0, 0.1);
+    --app-code-bg: rgba(255, 255, 255, 0.08);
+    --app-code-text: var(--dynamic-primary);
+}
+
+:root[data-app-color-mode='light'] {
+    color-scheme: light;
+    --app-divider: rgba(16, 24, 40, 0.08);
+    --app-divider-strong: rgba(16, 24, 40, 0.14);
+    --app-subtle-surface: rgba(16, 24, 40, 0.04);
+    --app-subtle-surface-2: rgba(16, 24, 40, 0.06);
+    --app-code-bg: rgba(16, 24, 40, 0.05);
+    --app-code-text: #175c00;
+    --app-focus-ring: #005fcc;
+    --app-focus-ring-shadow: rgba(0, 95, 204, 0.2);
+}
+
+html,
+body {
+    background: var(--dynamic-background) !important;
+    color: var(--dynamic-text-primary) !important;
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease;
+}
+
+body,
+.v-application,
+.v-main {
+    color: var(--dynamic-text-primary);
+}
+
+.text-medium-emphasis {
+    color: var(--dynamic-text-secondary) !important;
+    opacity: 1 !important;
+}
+
+.text-disabled,
+.text-grey {
+    color: var(--dynamic-text-muted) !important;
+    opacity: 1 !important;
+}
+
+code {
+    background: var(--app-code-bg) !important;
+    color: var(--app-code-text) !important;
+}
+
+:where(
+        button,
+        [role='button'],
+        a[href],
+        summary,
+        input:not([type='hidden']),
+        select,
+        textarea,
+        .v-btn,
+        .v-tab,
+        .v-list-item[tabindex],
+        .v-chip[tabindex]
+    ):focus-visible {
+    outline: 2px solid var(--app-focus-ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px var(--app-focus-ring-shadow);
+}
+
+:where(button, [role='button'], a[href], summary, .v-btn, .v-tab) {
+    min-width: var(--app-min-target-size);
+    min-height: var(--app-min-target-size);
+}
+
+.app-chip-button {
+    min-width: var(--app-min-target-size);
+    min-height: var(--app-min-target-size);
+}
+
+.app-chip-button:focus-visible {
+    outline: 2px solid var(--app-focus-ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px var(--app-focus-ring-shadow);
+}
+
+.app-click-target {
+    min-width: var(--app-min-target-size);
+    min-height: var(--app-min-target-size);
+}
+
+.app-visually-muted {
+    color: var(--dynamic-text-secondary) !important;
+    opacity: 1 !important;
+}
+
+:root[data-app-color-mode='light'] .v-btn-toggle .v-btn:not(.v-btn--active),
+:root[data-app-color-mode='light'] .v-btn-group .v-btn:not(.v-btn--active) {
+    color: rgba(16, 24, 40, 0.82) !important;
+}
+
+:root[data-app-color-mode='light'] .v-btn-toggle .v-btn:not(.v-btn--active):hover,
+:root[data-app-color-mode='light'] .v-btn-group .v-btn:not(.v-btn--active):hover {
+    background-color: rgba(16, 24, 40, 0.06) !important;
+}
+
+:root[data-app-color-mode='light'] .v-field--focused {
+    background-color: rgba(16, 24, 40, 0.04);
+}
+
+:root[data-app-color-mode='light'] .v-field__input {
+    color: rgb(var(--v-theme-on-surface)) !important;
+}
+
+.v-btn--size-x-small,
+.v-btn--size-small,
+.v-chip--size-x-small,
+.v-chip--size-small {
+    min-height: var(--app-min-target-size);
+}

@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-    import { useCustomTheme } from '~/composables/useCustomTheme';
+    import { useAppColorMode } from '~/composables/useAppColorMode';
 
     interface Props {
         title: string;
@@ -29,11 +29,18 @@
 
     defineProps<Props>();
 
-    const { currentThemeColors } = useCustomTheme();
+    const { currentThemeColors } = useAppColorMode();
 </script>
 
 <style scoped>
     /* Ensure all text and icons in the toolbar are white */
+    :deep(.v-toolbar__content) {
+        min-height: 56px !important;
+        height: auto !important;
+        flex-wrap: wrap;
+        row-gap: 8px;
+    }
+
     :deep(.v-toolbar__content) {
         color: white;
     }

@@ -6,7 +6,8 @@
                     <v-card-item>
                         <v-card-title class="text-body-1">Select Anchor Entities</v-card-title>
                         <v-card-subtitle>
-                            Choose document-derived entities to expand into the broader graph
+                            Choose the parties that matter most. Expansion reveals related context
+                            outside the source documents.
                         </v-card-subtitle>
                     </v-card-item>
                     <v-card-text>
@@ -55,7 +56,7 @@
                     </v-card-item>
                     <v-card-text>
                         <div class="text-body-2 mb-2">
-                            Selected: {{ selectedAnchors.size }} anchor(s)
+                            Selected anchors: {{ selectedAnchors.size }}
                         </div>
 
                         <v-radio-group v-model="hops" inline hide-details class="mb-3">
@@ -71,7 +72,7 @@
                             :disabled="selectedAnchors.size === 0"
                             @click="runEnrichment"
                         >
-                            Expand Graph
+                            Expand Context
                         </v-btn>
 
                         <v-btn
@@ -81,14 +82,14 @@
                             :disabled="!isReady"
                             @click="autoSelectAnchors"
                         >
-                            Auto-select top anchors
+                            Auto-select highest-impact anchors
                         </v-btn>
                     </v-card-text>
                 </v-card>
 
                 <v-card class="mt-3">
                     <v-card-item>
-                        <v-card-title class="text-body-1">Enrichment Summary</v-card-title>
+                        <v-card-title class="text-body-1">What This Changes</v-card-title>
                     </v-card-item>
                     <v-card-text>
                         <div class="d-flex justify-space-between py-1">
@@ -98,17 +99,21 @@
                             </span>
                         </div>
                         <div class="d-flex justify-space-between py-1">
-                            <span class="text-body-2">Enriched entities</span>
+                            <span class="text-body-2">New context entities</span>
                             <span class="text-body-2 font-weight-medium text-blue">
                                 {{ enrichedEntities.length }}
                             </span>
                         </div>
                         <v-divider class="my-2" />
                         <div class="d-flex justify-space-between py-1">
-                            <span class="text-body-2 font-weight-medium">Total</span>
+                            <span class="text-body-2 font-weight-medium">Combined total</span>
                             <span class="text-body-2 font-weight-medium">
                                 {{ documentEntities.length + enrichedEntities.length }}
                             </span>
+                        </div>
+                        <div class="text-caption text-medium-emphasis mt-2">
+                            Keep document-derived and enriched context separate when presenting
+                            conclusions.
                         </div>
                     </v-card-text>
                 </v-card>

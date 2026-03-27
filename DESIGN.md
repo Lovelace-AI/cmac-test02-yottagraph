@@ -12,7 +12,7 @@ documents.
 **Created:** 2026-03-25  
 **App ID:** cmac-test02  
 **Description:** Aether app: cmac-test02  
-**Last updated:** 2026-03-26 (v1 implemented)
+**Last updated:** 2026-03-27 (UX refresh: analytical workflow and trust framing)
 
 ## Vision
 
@@ -77,15 +77,16 @@ document-derived graph exploration, validation, agent actions, and enrichment.
 Implementation status: **v1 complete**  
 Details:
 
-- Single-page workspace with 7 in-page tabs: overview, graph, events, agreements, validation, agent, enrichment.
-- Overview shows collection identity, source documents (5 BNY docs), and summary metrics.
-- Graph tab shows document-derived entities with SVG visualization, entity table with search/filter, and origin styling (green = extracted, blue = enriched).
-- Events tab shows events discovered at hop 2 from hub entities, with filtering by category and search.
-- Agreements tab shows legal_agreement entities as cards with related parties.
-- Validation tab explains the two-layer retrieval model, coverage vs expected counts, origin breakdown, and known limitations.
-- Agent tab offers guided actions (summarize, compare contexts, recommend anchors, explain entity, answer question) with evidence-backed output and citations that link back to graph nodes.
-- Enrichment tab lets users select anchor entities, configure 1-hop or 2-hop expansion, and view enriched entities separately.
+- Single-page workspace with task-oriented tabs: overview, graph & entities, timeline, agreements, trust & coverage, ask copilot, advanced enrichment.
+- Overview is an executive summary with narrative context, top actions, ranked entities/events, trust summary, relationship highlights, and issue/gap notes.
+- Graph tab now supports analytical view modes, relationship filters, evidence-focused toggles, and shortest-path inspection between entities.
+- Timeline tab emphasizes significance and confidence, supports richer filtering (domain, confidence, participant, source document, date), and keeps table/episode/timeline views aligned.
+- Agreements tab reduces metadata clutter and uses expandable related-party summaries for easier scanning.
+- Trust & Coverage tab reframes validation into completeness, partial coverage, provenance, and next recommended checks.
+- Ask Copilot tab offers contextual prompts, confidence framing, and evidence-linked outputs grounded in entities/events/documents.
+- Advanced Enrichment clarifies why anchor selection matters and what expansion adds beyond source-derived content.
 - Entity detail panel (right drawer) shows entity name, flavor, origin, NEID, source documents, relationships, events, properties, and quick actions (explain, expand).
+- App shell supports both dark mode and light mode, with a header toggle and settings control for switching.
 - Server routes under `/api/collection/` handle bootstrap, rebuild (MCP traversal + event discovery), entity detail, property history (raw QS), enrichment, and agent actions.
 - All data is normalized into stable models: documents, entities, relationships, events, and property series with explicit origin labels.
 - `composables/useCollectionWorkspace.ts` manages all client state.

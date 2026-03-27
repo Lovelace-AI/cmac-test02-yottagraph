@@ -33,6 +33,15 @@
                     NEID: {{ selectedEntity.neid }}
                 </div>
 
+                <v-card variant="tonal" class="mb-3">
+                    <v-card-text class="py-2 px-3">
+                        <div class="text-caption text-medium-emphasis mb-1">
+                            Why this entity matters
+                        </div>
+                        <div class="text-body-2">{{ entityRoleSummary }}</div>
+                    </v-card-text>
+                </v-card>
+
                 <v-divider class="mb-3" />
 
                 <div class="text-subtitle-2 mb-2">Source Documents</div>
@@ -42,8 +51,12 @@
                         :key="docNeid"
                         size="small"
                         variant="tonal"
-                        class="mr-1 mb-1"
+                        class="mr-1 mb-1 app-chip-button"
+                        tabindex="0"
+                        role="button"
                         @click="selectEntity(docNeid)"
+                        @keydown.enter.prevent="selectEntity(docNeid)"
+                        @keydown.space.prevent="selectEntity(docNeid)"
                     >
                         {{ resolveEntityName(docNeid) }}
                     </v-chip>
@@ -55,7 +68,7 @@
                 <v-divider class="mb-3" />
 
                 <div class="text-subtitle-2 mb-2">
-                    Relationships
+                    Strongest Relationships
                     <v-chip size="x-small" variant="tonal" class="ml-1">
                         {{ selectedEntityRelationships.length }}
                     </v-chip>
@@ -66,10 +79,26 @@
                     class="pa-0 mb-4"
                 >
                     <v-list-item
-                        v-for="(rel, i) in selectedEntityRelationships.slice(0, 20)"
+                        v-for="(rel, i) in strongestRelationships"
                         :key="i"
                         class="px-0"
+                        tabindex="0"
+                        role="button"
                         @click="
+                            selectEntity(
+                                rel.sourceNeid === selectedEntity.neid
+                                    ? rel.targetNeid
+                                    : rel.sourceNeid
+                            )
+                        "
+                        @keydown.enter.prevent="
+                            selectEntity(
+                                rel.sourceNeid === selectedEntity.neid
+                                    ? rel.targetNeid
+                                    : rel.sourceNeid
+                            )
+                        "
+                        @keydown.space.prevent="
                             selectEntity(
                                 rel.sourceNeid === selectedEntity.neid
                                     ? rel.targetNeid
@@ -141,6 +170,20 @@
 
                 <div class="text-subtitle-2 mb-2">Evidence</div>
                 <CitationPanel :citations="entityCitations" @select="handleCitationSelect" />
+
+                <v-divider class="my-3" />
+
+                <div class="text-subtitle-2 mb-2">Recommended next checks</div>
+                <v-list density="compact" class="pa-0 mb-3">
+                    <v-list-item v-for="step in recommendedChecks" :key="step" class="px-0">
+                        <template #prepend>
+                            <v-icon size="14" color="primary" class="mr-2">mdi-arrow-right</v-icon>
+                        </template>
+                        <v-list-item-title class="text-body-2 text-wrap">{{
+                            step
+                        }}</v-list-item-title>
+                    </v-list-item>
+                </v-list>
 
                 <v-divider class="my-3" />
 
@@ -277,6 +320,41 @@
             seen.add(key);
             return true;
         });
+    });
+
+    const strongestRelationships = computed(() =>
+        [...selectedEntityRelationships.value]
+            .sort((a, b) => {
+                const aEvidence = (a.citations?.length ?? 0) + (a.sourceDocumentNeid ? 1 : 0);
+                const bEvidence = (b.citations?.length ?? 0) + (b.sourceDocumentNeid ? 1 : 0);
+                if (bEvidence !== aEvidence) return bEvidence - aEvidence;
+                return (b.recordedAt || '').localeCompare(a.recordedAt || '');
+            })
+            .slice(0, 10)
+    );
+
+    const entityRoleSummary = computed(() => {
+        if (!selectedEntity.value) return '';
+        const relCount = selectedEntityRelationships.value.length;
+        const eventCount = selectedEntityEvents.value.length;
+        const sourceCount = selectedEntity.value.sourceDocuments.length;
+        const flavor = selectedEntity.value.flavor.replace(/_/g, ' ');
+        return `${selectedEntity.value.name} is a ${flavor} connected by ${relCount} relationship${relCount === 1 ? '' : 's'}, participating in ${eventCount} event${eventCount === 1 ? '' : 's'}, and backed by ${sourceCount} source document${sourceCount === 1 ? '' : 's'}.`;
+    });
+
+    const recommendedChecks = computed(() => {
+        if (!selectedEntity.value) return [];
+        const checks = [
+            'Review linked source documents for direct evidence.',
+            'Inspect strongest relationships to validate direction and type.',
+        ];
+        if (selectedEntityEvents.value.length > 0) {
+            checks.push('Trace associated events to understand timeline impact.');
+        } else {
+            checks.push('No linked events found. Confirm whether timeline evidence is missing.');
+        }
+        checks.push('Use copilot Explain to generate an evidence-linked narrative.');
+        return checks;
     });
 
     function originColor(origin: string): string {

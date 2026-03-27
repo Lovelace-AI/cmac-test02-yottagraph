@@ -40,6 +40,45 @@ export interface GeminiUsageEntry {
     label: string;
 }
 
+export interface RankedEntityInsight {
+    neid: string;
+    name: string;
+    flavor: string;
+    score: number;
+    relationshipCount: number;
+    eventCount: number;
+    sourceCount: number;
+    origin: 'document' | 'enriched' | 'agent';
+}
+
+export interface RankedEventInsight {
+    neid: string;
+    name: string;
+    category?: string;
+    date?: string;
+    likelihood?: string;
+    score: number;
+    participantCount: number;
+    sourceCount: number;
+}
+
+export interface TrustCoverageSummary {
+    coverageScore: number;
+    evidenceBackedRelationships: number;
+    inferredRelationships: number;
+    enrichedEntityShare: number;
+    sourceCoverageShare: number;
+    confidenceLabel: 'high' | 'medium' | 'low';
+    confidenceReason: string;
+}
+
+export interface CollectionAction {
+    id: string;
+    label: string;
+    description: string;
+    tab: WorkspaceTab;
+}
+
 const INITIAL_STEPS: RebuildStep[] = [
     {
         step: 1,
@@ -137,6 +176,219 @@ export function useCollectionWorkspace() {
             counts.set(r.type, (counts.get(r.type) || 0) + 1);
         }
         return counts;
+    });
+
+    const entityConnectionCount = computed(() => {
+        const counts = new Map<string, number>();
+        for (const rel of collection.value.relationships) {
+            counts.set(rel.sourceNeid, (counts.get(rel.sourceNeid) ?? 0) + 1);
+            counts.set(rel.targetNeid, (counts.get(rel.targetNeid) ?? 0) + 1);
+        }
+        return counts;
+    });
+
+    const eventCountByEntity = computed(() => {
+        const counts = new Map<string, number>();
+        for (const evt of collection.value.events) {
+            for (const neid of evt.participantNeids) {
+                counts.set(neid, (counts.get(neid) ?? 0) + 1);
+            }
+        }
+        return counts;
+    });
+
+    const topEntities = computed<RankedEntityInsight[]>(() =>
+        collection.value.entities
+            .map((entity) => {
+                const relationshipCount = entityConnectionCount.value.get(entity.neid) ?? 0;
+                const eventCount = eventCountByEntity.value.get(entity.neid) ?? 0;
+                const sourceCount = entity.sourceDocuments.length;
+                // Weighted score prioritizes graph centrality and event participation.
+                const score = relationshipCount * 2 + eventCount * 1.5 + sourceCount;
+                return {
+                    neid: entity.neid,
+                    name: entity.name,
+                    flavor: entity.flavor,
+                    score,
+                    relationshipCount,
+                    eventCount,
+                    sourceCount,
+                    origin: entity.origin,
+                };
+            })
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 8)
+    );
+
+    const topEvents = computed<RankedEventInsight[]>(() =>
+        collection.value.events
+            .map((event) => {
+                const participantCount = event.participantNeids.length;
+                const sourceCount = event.sourceDocuments.length;
+                const likelihoodBoost =
+                    event.likelihood === 'confirmed' ? 2 : event.likelihood === 'likely' ? 1 : 0.25;
+                const score = participantCount * 1.8 + sourceCount + likelihoodBoost;
+                return {
+                    neid: event.neid,
+                    name: event.name,
+                    category: event.category,
+                    date: event.date,
+                    likelihood: event.likelihood,
+                    participantCount,
+                    sourceCount,
+                    score,
+                };
+            })
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 10)
+    );
+
+    const relationshipHighlights = computed(() =>
+        Array.from(relationshipTypeCounts.value.entries())
+            .map(([type, count]) => ({ type, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 6)
+    );
+
+    const trustCoverageSummary = computed<TrustCoverageSummary>(() => {
+        const totalRelationships = collection.value.relationships.length;
+        const evidenceBackedRelationships = collection.value.relationships.filter(
+            (rel) =>
+                Boolean(rel.sourceDocumentNeid) ||
+                (Array.isArray(rel.citations) && rel.citations.length > 0)
+        ).length;
+        const inferredRelationships = Math.max(0, totalRelationships - evidenceBackedRelationships);
+        const totalEntities = Math.max(collection.value.entities.length, 1);
+        const enrichedEntities = collection.value.entities.filter(
+            (e) => e.origin === 'enriched'
+        ).length;
+        const sourceBackedEntities = collection.value.entities.filter(
+            (e) => Array.isArray(e.sourceDocuments) && e.sourceDocuments.length > 0
+        ).length;
+
+        const coverageScore = Math.round(
+            (sourceBackedEntities / totalEntities) * 60 +
+                (totalRelationships > 0
+                    ? (evidenceBackedRelationships / totalRelationships) * 40
+                    : 20)
+        );
+        const enrichedEntityShare = Math.round((enrichedEntities / totalEntities) * 100);
+        const sourceCoverageShare = Math.round((sourceBackedEntities / totalEntities) * 100);
+
+        let confidenceLabel: TrustCoverageSummary['confidenceLabel'] = 'medium';
+        let confidenceReason =
+            'Evidence is substantial, with some inferred links requiring review.';
+        if (coverageScore >= 78) {
+            confidenceLabel = 'high';
+            confidenceReason =
+                'Most entities and relationships are directly traceable to source evidence.';
+        } else if (coverageScore <= 52) {
+            confidenceLabel = 'low';
+            confidenceReason =
+                'Coverage relies heavily on inferred links or has sparse source references.';
+        }
+
+        return {
+            coverageScore,
+            evidenceBackedRelationships,
+            inferredRelationships,
+            enrichedEntityShare,
+            sourceCoverageShare,
+            confidenceLabel,
+            confidenceReason,
+        };
+    });
+
+    const keyCoverageNotes = computed(() => {
+        const notes: string[] = [];
+        if (collection.value.documents.length === 0) {
+            notes.push('No source documents are loaded yet.');
+        }
+        if (
+            trustCoverageSummary.value.inferredRelationships >
+            trustCoverageSummary.value.evidenceBackedRelationships
+        ) {
+            notes.push('Inferred relationships currently outnumber source-backed relationships.');
+        }
+        if (collection.value.propertySeries.length === 0) {
+            notes.push(
+                'Property history is limited; verify whether historical data is available for this collection.'
+            );
+        }
+        if (notes.length === 0) {
+            notes.push(
+                'Coverage looks stable. Verify high-impact entities and events for decision-grade reporting.'
+            );
+        }
+        return notes;
+    });
+
+    const collectionSummary = computed(() => {
+        const docCount = collection.value.documents.length;
+        const entityCount = collection.value.entities.length;
+        const eventCount = collection.value.events.length;
+        const topEntity = topEntities.value[0];
+        const topEvent = topEvents.value[0];
+        const entityLine = topEntity
+            ? `Most central entity: ${topEntity.name} (${topEntity.flavor.replace(/_/g, ' ')}).`
+            : 'No entities identified yet.';
+        const eventLine = topEvent
+            ? `Most significant event: ${topEvent.name}${topEvent.date ? ` (${topEvent.date.slice(0, 10)})` : ''}.`
+            : 'No significant events have been identified yet.';
+        return `${docCount} source document${docCount === 1 ? '' : 's'} produced ${entityCount} entities and ${eventCount} events. ${entityLine} ${eventLine}`;
+    });
+
+    const recommendedActions = computed<CollectionAction[]>(() => [
+        {
+            id: 'understand-collection',
+            label: 'Understand This Collection',
+            description: 'Read an executive summary and key trust notes.',
+            tab: 'overview',
+        },
+        {
+            id: 'review-key-parties',
+            label: 'Review Key Parties',
+            description: 'Inspect the highest-impact entities and their relationships.',
+            tab: 'graph',
+        },
+        {
+            id: 'trace-relationships',
+            label: 'Trace Financial Relationships',
+            description: 'Filter the graph to inspect relationship pathways and evidence.',
+            tab: 'graph',
+        },
+        {
+            id: 'inspect-timeline',
+            label: 'Inspect Event Timeline',
+            description: 'Review event progression and major episodes over time.',
+            tab: 'events',
+        },
+        {
+            id: 'check-trust',
+            label: 'Check Trust & Coverage',
+            description: 'See what is complete, partial, or inferred.',
+            tab: 'validation',
+        },
+        {
+            id: 'ask-grounded-question',
+            label: 'Ask A Grounded Question',
+            description: 'Use the copilot with source-linked evidence.',
+            tab: 'agent',
+        },
+    ]);
+
+    const contextualAgentPrompts = computed(() => {
+        const prompts = [
+            'Summarize this collection in plain English.',
+            'Identify the most central entities and explain why they matter.',
+            'What changed across the rebate analyses over time?',
+            'Where is evidence thin or incomplete?',
+            'Summarize this collection for an executive audience.',
+        ];
+        if (selectedEntity.value) {
+            prompts.unshift(`Explain the role of ${selectedEntity.value.name} in this collection.`);
+        }
+        return prompts;
     });
 
     async function bootstrap(): Promise<void> {
@@ -362,6 +614,14 @@ export function useCollectionWorkspace() {
         agreements,
         flavorCounts,
         relationshipTypeCounts,
+        topEntities,
+        topEvents,
+        relationshipHighlights,
+        trustCoverageSummary,
+        keyCoverageNotes,
+        collectionSummary,
+        recommendedActions,
+        contextualAgentPrompts,
         bootstrap,
         rebuild,
         enrich,

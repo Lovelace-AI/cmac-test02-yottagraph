@@ -13,8 +13,7 @@
         <v-chip
             v-if="eventCount != null"
             size="x-small"
-            color="grey"
-            variant="tonal"
+            variant="outlined"
             prepend-icon="mdi-calendar-alert"
         >
             {{ eventCount }} events
@@ -23,8 +22,7 @@
         <v-chip
             v-if="relationshipCount != null"
             size="x-small"
-            color="grey"
-            variant="tonal"
+            variant="outlined"
             prepend-icon="mdi-graph-outline"
         >
             {{ relationshipCount }} edges
@@ -33,20 +31,13 @@
         <v-chip
             v-if="propertySeries != null"
             size="x-small"
-            color="grey"
-            variant="tonal"
+            variant="outlined"
             prepend-icon="mdi-chart-line"
         >
             {{ propertySeries }} prop series
         </v-chip>
 
-        <v-chip
-            v-if="readTime"
-            size="x-small"
-            color="grey"
-            variant="tonal"
-            prepend-icon="mdi-clock-outline"
-        >
+        <v-chip v-if="readTime" size="x-small" variant="outlined" prepend-icon="mdi-clock-outline">
             {{ readTime }}
         </v-chip>
 
@@ -63,8 +54,7 @@
         <template v-if="showUsage && usage">
             <v-chip
                 size="x-small"
-                color="blue-grey"
-                variant="tonal"
+                variant="outlined"
                 prepend-icon="mdi-counter"
                 :title="`${usage.prompt_tokens} in / ${usage.completion_tokens} out`"
             >
@@ -82,7 +72,7 @@
                 :icon="feedback === 'positive' ? 'mdi-thumb-up' : 'mdi-thumb-up-outline'"
                 size="x-small"
                 variant="text"
-                :color="feedback === 'positive' ? 'success' : 'grey'"
+                :color="feedback === 'positive' ? 'success' : undefined"
                 :loading="feedbackLoading"
                 @click="emit('feedback', 'positive')"
             />
@@ -90,7 +80,7 @@
                 :icon="feedback === 'negative' ? 'mdi-thumb-down' : 'mdi-thumb-down-outline'"
                 size="x-small"
                 variant="text"
-                :color="feedback === 'negative' ? 'error' : 'grey'"
+                :color="feedback === 'negative' ? 'error' : undefined"
                 :loading="feedbackLoading"
                 @click="emit('feedback', 'negative')"
             />

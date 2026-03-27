@@ -6,12 +6,12 @@
                 <div>
                     <div class="text-h6 font-headline">Collection Intelligence</div>
                     <div class="text-caption text-medium-emphasis">
-                        BNY Rebate Analysis — 5 source documents
+                        Understand what this collection means, what is missing, and what to do next.
                     </div>
                 </div>
                 <div class="d-flex align-center ga-2">
                     <v-chip size="small" :color="isReady ? 'success' : 'default'" variant="tonal">
-                        {{ isReady ? 'Graph Loaded' : 'Not Loaded' }}
+                        {{ isReady ? 'Analysis Ready' : 'Analysis Not Ready' }}
                     </v-chip>
                     <v-btn
                         size="small"
@@ -21,12 +21,13 @@
                         :disabled="rebuilding"
                         @click="handleRebuild"
                     >
-                        {{ isReady ? 'Rebuild' : 'Load Graph' }}
+                        {{ isReady ? 'Re-run Extraction' : 'Run Initial Analysis' }}
                     </v-btn>
                     <v-btn
                         size="small"
                         variant="text"
                         icon="mdi-cog-outline"
+                        aria-label="Open workspace settings"
                         @click="settingsOpen = true"
                     />
                 </div>
@@ -72,6 +73,15 @@
             <v-alert v-if="collection.error" type="error" variant="tonal" class="mb-4" closable>
                 {{ collection.error }}
             </v-alert>
+            <v-alert
+                v-if="!isReady && !rebuilding && !collection.error"
+                type="info"
+                variant="tonal"
+                class="mb-4"
+            >
+                Run initial analysis to extract entities, events, relationships, and evidence-linked
+                summaries from this document collection.
+            </v-alert>
 
             <CollectionOverview v-if="currentTab === 'overview'" />
             <GraphWorkspace v-else-if="currentTab === 'graph'" />
@@ -90,7 +100,12 @@
                 <v-card-item>
                     <v-card-title>Settings & Diagnostics</v-card-title>
                     <template v-slot:append>
-                        <v-btn icon="mdi-close" variant="text" @click="settingsOpen = false" />
+                        <v-btn
+                            icon="mdi-close"
+                            variant="text"
+                            aria-label="Close settings dialog"
+                            @click="settingsOpen = false"
+                        />
                     </template>
                 </v-card-item>
 
@@ -254,12 +269,12 @@
 
     const tabs: Array<{ value: WorkspaceTab; label: string; icon: string }> = [
         { value: 'overview', label: 'Overview', icon: 'mdi-view-dashboard-outline' },
-        { value: 'graph', label: 'Graph', icon: 'mdi-graph-outline' },
-        { value: 'events', label: 'Events', icon: 'mdi-calendar-outline' },
+        { value: 'graph', label: 'Graph & Entities', icon: 'mdi-graph-outline' },
+        { value: 'events', label: 'Timeline', icon: 'mdi-calendar-outline' },
         { value: 'agreements', label: 'Agreements', icon: 'mdi-file-document-outline' },
-        { value: 'validation', label: 'Validation', icon: 'mdi-check-decagram-outline' },
-        { value: 'agent', label: 'Agent', icon: 'mdi-robot-outline' },
-        { value: 'enrichment', label: 'Enrichment', icon: 'mdi-arrow-expand-all' },
+        { value: 'validation', label: 'Trust & Coverage', icon: 'mdi-shield-check-outline' },
+        { value: 'agent', label: 'Ask Copilot', icon: 'mdi-robot-outline' },
+        { value: 'enrichment', label: 'Advanced Enrichment', icon: 'mdi-arrow-expand-all' },
     ];
 
     const mcpHeaders = [
@@ -311,7 +326,7 @@
 
 <style scoped>
     .workspace-header {
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: 1px solid var(--app-divider);
     }
 
     .workspace-tabs :deep(.v-tab) {
@@ -323,18 +338,19 @@
     }
 
     .pipeline-panel {
-        background: rgba(0, 0, 0, 0.2);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        background: var(--app-subtle-surface);
+        border-bottom: 1px solid var(--app-divider);
     }
 
     .meta-bar {
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        background: rgba(0, 0, 0, 0.1);
+        border-bottom: 1px solid var(--app-divider);
+        background: var(--app-subtle-surface-2);
     }
 
     .mcp-payload {
         font-size: 0.72rem;
-        background: rgba(0, 0, 0, 0.3);
+        background: var(--app-subtle-surface);
+        border: 1px solid var(--app-divider-strong);
         border-radius: 4px;
         padding: 8px;
         max-height: 200px;

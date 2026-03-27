@@ -113,6 +113,22 @@ export default defineNuxtConfig({
                             'on-surface': '#e5e5e5',
                         },
                     },
+                    lovelaceLight: {
+                        dark: false,
+                        colors: {
+                            background: '#F6F8FB',
+                            surface: '#FFFFFF',
+                            'surface-variant': '#EEF2F8',
+                            primary: '#2F9D00',
+                            secondary: '#003BFF',
+                            warning: '#C77700',
+                            error: '#D92D20',
+                            info: '#003BFF',
+                            success: '#2F9D00',
+                            'on-background': '#101828',
+                            'on-surface': '#101828',
+                        },
+                    },
                 },
             },
             defaults: {
@@ -141,7 +157,7 @@ export default defineNuxtConfig({
 
     // fonts.css expects licensed font binaries in /public/fonts.
     // Keep global styles without attempting missing font downloads.
-    css: ['~/assets/brand-globals.css', '~/assets/theme-styles.css'],
+    css: ['~/assets/brand-globals.css', '~/assets/theme-styles.css', '~/assets/app-theme.css'],
 
     // Runtime configuration with sensible defaults
     // Nuxt automatically overrides these with environment variables following the pattern:

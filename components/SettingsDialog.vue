@@ -3,7 +3,12 @@
         <v-card-title class="d-flex align-center">
             <span>Settings</span>
             <v-spacer></v-spacer>
-            <v-btn icon variant="text" @click="state.showSettingsDialog = false">
+            <v-btn
+                icon
+                variant="text"
+                aria-label="Close settings"
+                @click="state.showSettingsDialog = false"
+            >
                 <v-icon>mdi-close</v-icon>
             </v-btn>
         </v-card-title>
@@ -13,6 +18,14 @@
         <v-card-text>
             <v-container>
                 <v-row>
+                    <v-col cols="12">
+                        <h3 class="text-h6 mb-2">Appearance</h3>
+                        <v-radio-group v-model="selectedColorMode" inline color="primary">
+                            <v-radio label="Dark mode" value="dark" />
+                            <v-radio label="Light mode" value="light" />
+                        </v-radio-group>
+                    </v-col>
+
                     <v-col cols="12">
                         <h3 class="text-h6 mb-2">Server Configuration</h3>
                         <div class="mt-3">
@@ -40,16 +53,24 @@
 </template>
 
 <script setup lang="ts">
+    import type { AppColorMode } from '~/composables/useAppColorMode';
+    import { useAppColorMode } from '~/composables/useAppColorMode';
     import { state } from '~/utils/appState';
 
     const config = useRuntimeConfig();
     const currentQueryServer = computed(() => config.public.queryServerAddress as string);
+    const { colorMode, setColorMode } = useAppColorMode();
+
+    const selectedColorMode = computed({
+        get: () => colorMode.value,
+        set: (mode: string) => setColorMode(mode as AppColorMode),
+    });
 </script>
 
 <style scoped>
     code {
         padding: 2px 4px;
-        background-color: rgba(0, 0, 0, 0.05);
+        background-color: var(--app-code-bg);
         border-radius: 3px;
         font-family: monospace;
     }

@@ -11,7 +11,11 @@
                     :key="doc.neid"
                     class="px-0"
                     :active="selectedDocumentNeid === doc.neid"
+                    tabindex="0"
+                    role="button"
                     @click="focusDocument(doc.neid)"
+                    @keydown.enter.prevent="focusDocument(doc.neid)"
+                    @keydown.space.prevent="focusDocument(doc.neid)"
                 >
                     <template v-slot:prepend>
                         <v-icon size="small" color="info" class="mr-2"> mdi-file-pdf-box </v-icon>
@@ -20,7 +24,7 @@
                     <v-list-item-subtitle class="text-caption">
                         <span v-if="doc.kind">{{ doc.kind }}</span>
                         <span v-if="doc.date"> &middot; {{ doc.date }}</span>
-                        <span class="font-mono ml-1" style="opacity: 0.5">
+                        <span class="font-mono ml-1 app-visually-muted">
                             {{ doc.documentId }}
                         </span>
                     </v-list-item-subtitle>

@@ -67,6 +67,6 @@
         border-radius: 8px;
     }
     .step-row + .step-row {
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        border-top: 1px solid var(--app-divider);
     }
 </style>

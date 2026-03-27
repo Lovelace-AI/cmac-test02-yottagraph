@@ -19,7 +19,7 @@
                 {{ message.text }}<span v-if="message.streaming" class="streaming-cursor" />
             </div>
 
-            <div class="text-caption text-medium-emphasis mt-1" style="opacity: 0.6">
+            <div class="text-caption text-medium-emphasis mt-1">
                 {{ formatTime(message.timestamp) }}
             </div>
         </div>
@@ -43,8 +43,8 @@
         border: 1px solid rgba(63, 234, 0, 0.25);
     }
     .agent-bubble {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: var(--app-subtle-surface-2);
+        border: 1px solid var(--app-divider-strong);
     }
     .error-bubble {
         background: rgba(239, 68, 68, 0.12);
@@ -80,7 +80,7 @@
         width: 6px;
         height: 6px;
         border-radius: 50%;
-        background: rgba(255, 255, 255, 0.4);
+        background: color-mix(in srgb, var(--dynamic-text-secondary) 55%, transparent);
         animation: typing-bounce 1.2s ease-in-out infinite;
     }
 

@@ -1,5 +1,5 @@
 <template>
-    <v-app class="theme-brand">
+    <v-app :class="['theme-brand', themeClass]">
         <template v-if="showAppFramework">
             <AppHeader />
 
@@ -30,6 +30,7 @@
 
     const route = useRoute();
     const { userName } = useUserState();
+    const { themeClass } = useAppColorMode();
 
     const noFrameworkRoutes = ['/login', '/a0callback', '/logout', '/pending'];
 

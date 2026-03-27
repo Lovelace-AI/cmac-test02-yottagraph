@@ -62,30 +62,29 @@
                             }}{{ evt.description.length > 200 ? '…' : '' }}
                         </div>
 
-                        <!-- Participant entity chips -->
+                        <!-- Participant summary -->
                         <div
                             v-if="participantEntities(evt).length > 0"
-                            class="d-flex flex-wrap ga-1"
+                            class="d-flex flex-wrap ga-1 align-center"
                         >
-                            <v-chip
+                            <span
                                 v-for="ent in participantEntities(evt).slice(0, 5)"
                                 :key="ent.neid"
-                                size="x-small"
-                                variant="outlined"
-                                :color="flavorColor(ent.flavor)"
-                                class="cursor-pointer"
+                                class="participant-link text-body-2"
+                                tabindex="0"
+                                role="button"
                                 @click="selectEntity(ent.neid)"
+                                @keydown.enter.prevent="selectEntity(ent.neid)"
+                                @keydown.space.prevent="selectEntity(ent.neid)"
                             >
                                 {{ ent.name }}
-                            </v-chip>
-                            <v-chip
+                            </span>
+                            <span
                                 v-if="participantEntities(evt).length > 5"
-                                size="x-small"
-                                variant="tonal"
-                                color="grey"
+                                class="text-caption text-medium-emphasis"
                             >
                                 +{{ participantEntities(evt).length - 5 }}
-                            </v-chip>
+                            </span>
                         </div>
                     </v-card-text>
                 </v-card>
@@ -120,18 +119,6 @@
         if (c.includes('legal') || c.includes('credit')) return '#EF5350';
         return '#AB47BC';
     }
-
-    function flavorColor(flavor: string): string {
-        const colors: Record<string, string> = {
-            organization: 'primary',
-            person: 'warning',
-            financial_instrument: 'success',
-            location: 'secondary',
-            fund_account: 'success',
-            legal_agreement: 'deep-purple',
-        };
-        return colors[flavor] ?? 'grey';
-    }
 </script>
 
 <style scoped>
@@ -150,12 +137,21 @@
     .timeline-line {
         width: 2px;
         flex-grow: 1;
-        background: rgba(255, 255, 255, 0.08);
+        background: var(--app-divider-strong);
         margin-top: 2px;
         margin-bottom: -12px;
     }
 
-    .cursor-pointer {
+    .participant-link {
         cursor: pointer;
+        color: rgb(var(--v-theme-primary));
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+
+    .participant-link:focus-visible {
+        outline: 2px solid var(--app-focus-ring);
+        outline-offset: 2px;
+        border-radius: 3px;
     }
 </style>

@@ -1,7 +1,7 @@
 <template>
-    <v-footer v-if="configuredServers.length > 0" app height="36" class="server-status-footer">
-        <v-container fluid class="pa-0 d-flex align-center" style="height: 100%">
-            <div class="d-flex align-center">
+    <v-footer v-if="configuredServers.length > 0" app class="server-status-footer">
+        <v-container fluid class="pa-0 d-flex align-center" style="min-height: 36px">
+            <div class="d-flex align-center flex-wrap py-1">
                 <span class="text-caption mr-3">Server Status:</span>
 
                 <div
@@ -94,7 +94,7 @@
             case 'checking':
                 return 'text-warning';
             default:
-                return 'text-grey';
+                return 'text-medium-emphasis';
         }
     }
 
@@ -107,6 +107,8 @@
 <style scoped>
     .server-status-footer {
         border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+        height: auto !important;
+        min-height: 36px;
     }
 
     .rotating {

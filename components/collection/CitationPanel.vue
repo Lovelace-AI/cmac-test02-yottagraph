@@ -27,11 +27,15 @@
                                     >
                                         {{ c.sourceType }}
                                     </v-chip>
-                                    <span
-                                        class="text-caption font-weight-medium"
-                                        :class="{ 'text-primary cursor-pointer': c.url || c.neid }"
+                                    <button
+                                        v-if="c.url || c.neid"
+                                        type="button"
+                                        class="text-caption font-weight-medium text-primary citation-link"
                                         @click="handleCitationClick(c)"
                                     >
+                                        {{ c.sourceName }}
+                                    </button>
+                                    <span v-else class="text-caption font-weight-medium">
                                         {{ c.sourceName }}
                                     </span>
                                     <span v-if="c.date" class="text-caption text-medium-emphasis">
@@ -80,9 +84,9 @@
             event: 'orange',
             property: 'success',
             relationship: 'info',
-            other: 'grey',
+            other: 'secondary',
         };
-        return map[type] ?? 'grey';
+        return map[type] ?? 'secondary';
     }
 
     function openUrl(url: string) {
@@ -104,19 +108,22 @@
     }
 
     .citation-list {
-        background: rgba(0, 0, 0, 0.15);
+        background: var(--app-subtle-surface);
     }
 
     .citation-item + .citation-item {
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        border-top: 1px solid var(--app-divider);
     }
 
     .citation-ref {
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--dynamic-text-muted);
         min-width: 28px;
     }
 
-    .cursor-pointer {
+    .citation-link {
+        border: 0;
+        background: transparent;
         cursor: pointer;
+        text-align: left;
     }
 </style>
