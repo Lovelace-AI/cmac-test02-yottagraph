@@ -471,6 +471,11 @@ export function useCollectionWorkspace() {
                 rebuilding.value = false;
                 break;
             }
+            case 'error': {
+                collection.value.status = 'error';
+                collection.value.error = (msg.message as string) || 'Rebuild failed';
+                break;
+            }
         }
     }
 
