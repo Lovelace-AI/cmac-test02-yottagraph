@@ -82,7 +82,12 @@ async function mcpRpc(method: string, params?: any): Promise<any> {
     const body: Record<string, any> = { jsonrpc: '2.0', method, ...(params ? { params } : {}) };
     if (!isNotification) body.id = Date.now();
 
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20_000),
+    });
 
     const returnedSession = res.headers.get('mcp-session-id');
     if (returnedSession) mcpSessionId = returnedSession;

@@ -13,6 +13,8 @@ import {
     type CollectionState,
 } from '~/utils/collectionTypes';
 
+// Each probe is limited to maxSources entities to keep total MCP calls bounded.
+// With ~13 probes × avg 8 sources = ~104 calls max, well within 3-4 minute window.
 const RELATIONSHIP_PROBES: Array<{
     sourceFlav: string;
     relType: string;
@@ -23,71 +25,77 @@ const RELATIONSHIP_PROBES: Array<{
         sourceFlav: 'financial_instrument',
         relType: 'fund_of',
         targetFlav: 'fund_account',
-        maxSources: 20,
+        maxSources: 10,
     },
     {
         sourceFlav: 'financial_instrument',
         relType: 'issuer_of',
         targetFlav: 'organization',
-        maxSources: 20,
+        maxSources: 10,
     },
     {
         sourceFlav: 'financial_instrument',
         relType: 'trustee_of',
         targetFlav: 'organization',
-        maxSources: 20,
+        maxSources: 10,
     },
     {
         sourceFlav: 'financial_instrument',
         relType: 'beneficiary_of',
         targetFlav: 'organization',
-        maxSources: 20,
+        maxSources: 10,
     },
     {
         sourceFlav: 'financial_instrument',
         relType: 'borrower_of',
         targetFlav: 'organization',
-        maxSources: 20,
+        maxSources: 10,
     },
     {
         sourceFlav: 'fund_account',
         relType: 'holds_investment',
         targetFlav: 'financial_instrument',
-        maxSources: 30,
+        maxSources: 10,
     },
     {
         sourceFlav: 'organization',
         relType: 'advisor_to',
         targetFlav: 'organization',
-        maxSources: 21,
+        maxSources: 8,
     },
-    { sourceFlav: 'organization', relType: 'located_at', targetFlav: 'location', maxSources: 21 },
+    { sourceFlav: 'organization', relType: 'located_at', targetFlav: 'location', maxSources: 8 },
     {
         sourceFlav: 'organization',
         relType: 'sponsor_of',
         targetFlav: 'organization',
-        maxSources: 21,
+        maxSources: 8,
     },
     {
         sourceFlav: 'organization',
         relType: 'successor_to',
         targetFlav: 'organization',
-        maxSources: 21,
+        maxSources: 8,
     },
     {
         sourceFlav: 'organization',
         relType: 'predecessor_of',
         targetFlav: 'organization',
-        maxSources: 21,
+        maxSources: 8,
     },
     {
         sourceFlav: 'organization',
         relType: 'party_to',
         targetFlav: 'legal_agreement',
-        maxSources: 21,
+        maxSources: 8,
     },
     { sourceFlav: 'person', relType: 'works_at', targetFlav: 'organization', maxSources: 5 },
 ];
+
+/** Strip leading zeros from NEIDs for consistent comparison across API responses. */
+function normalizeNeid(neid: string): string {
+    if (!neid) return neid;
+    return neid.replace(/^0+(?=\d)/, '') || '0';
+}
 
 function addRelationship(
     relationships: RelationshipRecord[],
@@ -147,8 +155,9 @@ export default defineEventHandler(async (event) => {
 
                 const related = result?.relationships ?? [];
                 for (const rel of related) {
-                    const neid = rel.neid as string;
-                    if (!neid) continue;
+                    const rawNeid = rel.neid as string;
+                    if (!rawNeid) continue;
+                    const neid = normalizeNeid(rawNeid);
                     const existing = entityMap.get(neid);
                     if (existing) {
                         if (!existing.sourceDocuments.includes(docNeid)) {
@@ -208,7 +217,7 @@ export default defineEventHandler(async (event) => {
 
             const events = result?.events ?? [];
             for (const evt of events) {
-                const evtNeid = evt.neid as string;
+                const evtNeid = normalizeNeid(evt.neid as string);
                 if (!evtNeid || eventMap.has(evtNeid)) continue;
 
                 const props = evt.properties ?? {};
@@ -218,27 +227,32 @@ export default defineEventHandler(async (event) => {
                 if (Array.isArray(evt.participants)) {
                     for (const p of evt.participants) {
                         if (p.neid) {
-                            participantNeids.push(p.neid);
-                            if (entityMap.has(p.neid)) hasDocumentParticipant = true;
+                            const pNeid = normalizeNeid(p.neid);
+                            participantNeids.push(pNeid);
+                            if (entityMap.has(pNeid)) hasDocumentParticipant = true;
                         }
                     }
                 }
-                if (!hasDocumentParticipant && entityMap.has(hubNeid))
+                const normalHubNeid = normalizeNeid(hubNeid);
+                if (!hasDocumentParticipant && entityMap.has(normalHubNeid))
                     hasDocumentParticipant = true;
                 if (!hasDocumentParticipant) continue;
 
                 for (const p of evt.participants ?? []) {
-                    if (p.neid && entityMap.has(p.neid)) {
-                        addRelationship(relationships, relSeen, {
-                            sourceNeid: p.neid,
-                            targetNeid: evtNeid,
-                            type: 'schema::relationship::participant',
-                            origin: 'document',
-                        });
+                    if (p.neid) {
+                        const pNeid = normalizeNeid(p.neid);
+                        if (entityMap.has(pNeid)) {
+                            addRelationship(relationships, relSeen, {
+                                sourceNeid: pNeid,
+                                targetNeid: evtNeid,
+                                type: 'schema::relationship::participant',
+                                origin: 'document',
+                            });
+                        }
                     }
                 }
 
-                const hub = entityMap.get(hubNeid);
+                const hub = entityMap.get(normalHubNeid);
                 eventMap.set(evtNeid, {
                     neid: evtNeid,
                     name: (evt.name as string) || evtNeid,
@@ -265,16 +279,33 @@ export default defineEventHandler(async (event) => {
 
     // ─── Phase 3: Typed Relationship Assembly ─────────────────────
     t0 = Date.now();
+
+    // Count total probe calls upfront so we can show progress
+    let totalProbes = 0;
+    for (const probe of RELATIONSHIP_PROBES) {
+        const sources = Array.from(entityMap.values()).filter((e) => e.flavor === probe.sourceFlav);
+        totalProbes += Math.min(sources.length, probe.maxSources ?? sources.length);
+    }
+
     sendStep(
         3,
         'working',
         'Relationship Assembly',
-        `Probing ${RELATIONSHIP_PROBES.length} relationship types across entities...`
+        `Probing ${RELATIONSHIP_PROBES.length} relationship types (~${totalProbes} calls)...`
     );
 
+    let probesDone = 0;
     for (const probe of RELATIONSHIP_PROBES) {
         const sources = Array.from(entityMap.values()).filter((e) => e.flavor === probe.sourceFlav);
         const toProbe = sources.slice(0, probe.maxSources ?? sources.length);
+
+        // Send sub-step progress at start of each probe type
+        sendStep(
+            3,
+            'working',
+            'Relationship Assembly',
+            `[${probesDone}/${totalProbes}] Probing ${probe.relType} (${toProbe.length} ${probe.sourceFlav} sources)...`
+        );
 
         for (const source of toProbe) {
             try {
@@ -282,33 +313,50 @@ export default defineEventHandler(async (event) => {
                     entity_id: { id_type: 'neid', id: source.neid },
                     related_flavor: probe.targetFlav,
                     relationship_types: [probe.relType],
-                    limit: 500,
+                    limit: 100,
                     direction: 'both',
                 });
 
                 const related = result?.relationships ?? [];
+                let added = 0;
                 for (const rel of related) {
-                    if (!rel.neid || !entityMap.has(rel.neid)) continue;
+                    if (!rel.neid) continue;
+                    const targetNeid = normalizeNeid(rel.neid);
+                    if (!entityMap.has(targetNeid)) continue;
                     addRelationship(relationships, relSeen, {
                         sourceNeid: source.neid,
-                        targetNeid: rel.neid,
+                        targetNeid,
                         type: probe.relType,
                         origin: 'document',
                     });
+                    added++;
                 }
-            } catch {
-                // Not all types exist for all entities
+                if (related.length > 0) {
+                    console.log(
+                        `[Phase3] ${probe.relType} from ${source.name} (${source.neid}): ${related.length} returned, ${added} in entityMap`
+                    );
+                }
+            } catch (e: any) {
+                console.error(
+                    `[Phase3] ${probe.relType} from ${source.neid} FAILED:`,
+                    e?.message ?? String(e)
+                );
             }
+            probesDone++;
         }
     }
 
-    // Filter out appears_in edges where target is NOT in entityMap (docs themselves are fine)
+    // Scope filter: allow edges where endpoints are documents, entities, or events
     const docNeidSet = new Set(BNY_DOCUMENT_NEIDS);
     const filteredRelationships = relationships.filter(
         (r) =>
             docNeidSet.has(r.sourceNeid) ||
             docNeidSet.has(r.targetNeid) ||
-            (entityMap.has(r.sourceNeid) && entityMap.has(r.targetNeid))
+            (entityMap.has(r.sourceNeid) && entityMap.has(r.targetNeid)) ||
+            // Allow participant edges: entity → event (event NEIDs are in eventMap, not entityMap)
+            (r.type === 'schema::relationship::participant' &&
+                entityMap.has(r.sourceNeid) &&
+                eventMap.has(r.targetNeid))
     );
 
     sendStep(
@@ -330,11 +378,12 @@ export default defineEventHandler(async (event) => {
 
     const propertySeries: PropertySeriesRecord[] = [];
 
-    for (const neid of PROPERTY_BEARING_NEIDS) {
+    for (const rawNeid of PROPERTY_BEARING_NEIDS) {
+        const neid = normalizeNeid(rawNeid);
         try {
             const result = await mcpCallTool('elemental_get_entity', {
                 entity_id: { id_type: 'neid', id: neid },
-                history: {},
+                history: { after: '2010-01-01', before: '2026-12-31', limit: 100 },
             });
 
             const entity = result?.entity ?? result;
@@ -355,6 +404,13 @@ export default defineEventHandler(async (event) => {
                         }))
                         .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt)),
                 });
+            }
+            if (Object.keys(historicalProps).length === 0) {
+                console.log(`[Phase4] No historical_properties for ${entity?.name ?? neid}`);
+            } else {
+                console.log(
+                    `[Phase4] ${entity?.name}: ${Object.keys(historicalProps).length} property series`
+                );
             }
         } catch (e: any) {
             console.error(`Phase 4: get_entity history failed neid=${neid}:`, e.message);
