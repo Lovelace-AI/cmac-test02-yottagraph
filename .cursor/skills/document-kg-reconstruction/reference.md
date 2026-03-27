@@ -5,7 +5,8 @@ Use the BNY rebate-analysis dataset as the reference pattern for a document-deri
 ## Inputs
 
 - 5 document NEIDs
-- tenant gateway access for raw Query Server calls
+- MCP access to `elemental_get_related`, `elemental_get_events`, and `elemental_get_entity`
+- optional raw Query Server access for extra relationship-row validation
 
 ## Final Coverage Model
 
@@ -38,18 +39,21 @@ Those hubs provide most of the event coverage.
 
 ## Property Retrieval Rule
 
-- MCP property calls are good for the latest snapshot
-- raw `POST /elemental/entities/properties` is required for full historical series
+- use `elemental_get_entity(history: ...)` for full historical series
+- use `get_related` properties for latest-snapshot traversal context
 
-This raw endpoint returned all historical values needed for:
+MCP history returns all historical values needed for:
 
 - fund-account time series
 - bond sources/uses history
-- final relationship-row validation
+- final relationship-row validation still benefits from raw Query Server access
 
 ## Remaining Limitation
 
-The raw data is sufficient to reconstruct the graph and time series for this dataset, but exact edge citation strings and dedicated per-edge count endpoints are still not cleanly exposed in one convenience API for document-ingested relationships.
+The current MCP surface is sufficient to reconstruct the graph and entity time
+series for this dataset, but exact edge citation strings and dedicated
+per-edge count endpoints are still not cleanly exposed in one convenience API
+for document-ingested relationships.
 
 ## Local Project Docs
 

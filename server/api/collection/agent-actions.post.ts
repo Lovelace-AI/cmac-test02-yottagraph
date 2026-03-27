@@ -42,9 +42,9 @@ export default defineEventHandler(async (event): Promise<AgentActionResponse> =>
         case 'summarize_collection':
             return summarizeCollection(entities, events, documents, meta);
         case 'explain_entity':
-            return explainEntity(body.entityNeid, entities, relationships, events);
+            return explainEntity(body.entityNeid, entities, relationships, events, documents);
         case 'answer_question':
-            return answerQuestion(body.question, entities, events, meta);
+            return answerQuestion(body.question, entities, events, meta, documents);
         case 'compare_contexts':
             return compareContexts(entities);
         case 'recommend_anchors':
@@ -106,7 +106,8 @@ function explainEntity(
     entityNeid: string | undefined,
     entities: EntityRecord[],
     relationships: any[],
-    events: EventRecord[]
+    events: EventRecord[],
+    documents?: any[]
 ): AgentActionResponse {
     if (!entityNeid) {
         return { action: 'explain_entity', output: 'No entity selected.', citations: [] };
@@ -141,6 +142,10 @@ function explainEntity(
     const citations: AgentActionResponse['citations'] = [
         { type: 'entity', neid: entity.neid, label: entity.name },
     ];
+    for (const docNeid of entity.sourceDocuments.slice(0, 3)) {
+        const doc = documents?.find((item) => item.neid === docNeid);
+        if (doc) citations.push({ type: 'document', neid: doc.neid, label: doc.title });
+    }
     for (const e of relatedEvents.slice(0, 3)) {
         citations.push({ type: 'event', neid: e.neid, label: e.name });
     }
@@ -152,7 +157,8 @@ function answerQuestion(
     question: string | undefined,
     entities: EntityRecord[],
     events: EventRecord[],
-    meta: any
+    meta: any,
+    documents?: any[]
 ): AgentActionResponse {
     if (!question) {
         return { action: 'answer_question', output: 'No question provided.', citations: [] };
@@ -195,6 +201,10 @@ function answerQuestion(
     const citations: AgentActionResponse['citations'] = [];
     for (const e of matchingEntities.slice(0, 3)) {
         citations.push({ type: 'entity', neid: e.neid, label: e.name });
+        for (const docNeid of e.sourceDocuments.slice(0, 1)) {
+            const doc = documents?.find((item) => item.neid === docNeid);
+            if (doc) citations.push({ type: 'document', neid: doc.neid, label: doc.title });
+        }
     }
     for (const e of matchingEvents.slice(0, 3)) {
         citations.push({ type: 'event', neid: e.neid, label: e.name });
@@ -257,11 +267,18 @@ function recommendAnchors(entities: EntityRecord[], relationships: any[]): Agent
         'These entities have the most relationships within the document-derived graph and are likely to yield the richest enrichment results.',
     ].join('\n');
 
-    const citations = ranked.map((r) => ({
-        type: 'entity' as const,
-        neid: r.entity.neid,
-        label: r.entity.name,
-    }));
+    const citations = ranked.flatMap((r) => [
+        {
+            type: 'entity' as const,
+            neid: r.entity.neid,
+            label: r.entity.name,
+        },
+        ...r.entity.sourceDocuments.slice(0, 1).map((docNeid) => ({
+            type: 'document' as const,
+            neid: docNeid,
+            label: docNeid,
+        })),
+    ]);
 
     return { action: 'recommend_anchors', output, citations };
 }

@@ -66,6 +66,7 @@ const INITIAL_STEPS: RebuildStep[] = [
 const collection = ref<CollectionState>(emptyCollectionState());
 const activeTab = ref<WorkspaceTab>('overview');
 const selectedEntityNeid = ref<string | null>(null);
+const selectedDocumentNeid = ref<string | null>(null);
 const rebuilding = ref(false);
 const rebuildSteps = ref<RebuildStep[]>(INITIAL_STEPS.map((s) => ({ ...s })));
 const enriching = ref(false);
@@ -315,6 +316,11 @@ export function useCollectionWorkspace() {
         selectedEntityNeid.value = neid;
     }
 
+    function focusDocument(neid: string | null): void {
+        selectedDocumentNeid.value = neid;
+        if (neid) activeTab.value = 'overview';
+    }
+
     function setTab(tab: WorkspaceTab): void {
         activeTab.value = tab;
     }
@@ -331,6 +337,7 @@ export function useCollectionWorkspace() {
         collection: computed(() => collection.value),
         activeTab: computed(() => activeTab.value),
         selectedEntityNeid: computed(() => selectedEntityNeid.value),
+        selectedDocumentNeid: computed(() => selectedDocumentNeid.value),
         selectedEntity,
         selectedEntityRelationships,
         selectedEntityEvents,
@@ -362,6 +369,7 @@ export function useCollectionWorkspace() {
         runAgentAction,
         addGeminiUsage,
         selectEntity,
+        focusDocument,
         setTab,
         resolveEntityName,
     };

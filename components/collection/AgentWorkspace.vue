@@ -137,7 +137,10 @@
                 />
 
                 <!-- Citations panel -->
-                <CitationPanel :citations="buildCitations(agentResult.citations)" />
+                <CitationPanel
+                    :citations="buildCitations(agentResult.citations)"
+                    @select="handleCitationSelect"
+                />
 
                 <!-- Meta bar with token usage -->
                 <div class="mt-3">
@@ -155,8 +158,9 @@
 </template>
 
 <script setup lang="ts">
-    import type { Citation } from '~/utils/citationTypes';
+    import { buildDocumentCitation, type Citation } from '~/utils/citationTypes';
     import type { RebuildStep } from '~/composables/useCollectionWorkspace';
+    import { BNY_DOCUMENTS } from '~/utils/collectionTypes';
 
     const {
         isReady,
@@ -167,6 +171,8 @@
         events,
         runAgentAction,
         selectEntity,
+        focusDocument,
+        setTab,
     } = useCollectionWorkspace();
 
     const { wrapKeywords, handleKeywordClick } = useEntityKeywords();
@@ -284,15 +290,44 @@
 
     function buildCitations(rawCitations: any[]): Citation[] {
         if (!rawCitations?.length) return [];
-        return rawCitations.map((c, i) => ({
-            ref: String(i + 1),
-            sourceName: c.label ?? c.name ?? `Source ${i + 1}`,
-            sourceType: c.type ?? 'other',
-            date: c.date,
-            excerpt: c.excerpt,
-            url: c.url,
-            neid: c.neid,
-        }));
+        return rawCitations.map((c, i) => {
+            if (c.type === 'document') {
+                const doc =
+                    (c.neid && BNY_DOCUMENTS.find((item) => item.neid === c.neid)) ||
+                    BNY_DOCUMENTS.find((item) => item.title === c.label);
+                return buildDocumentCitation(
+                    `BNY-${doc?.documentId ?? c.label}.pdf`,
+                    String(i + 1),
+                    'document',
+                    c.excerpt,
+                    c.date ?? doc?.date
+                );
+            }
+            return {
+                ref: String(i + 1),
+                sourceName: c.label ?? c.name ?? `Source ${i + 1}`,
+                sourceType: c.type ?? 'other',
+                date: c.date,
+                excerpt: c.excerpt,
+                url: c.url,
+                neid: c.neid,
+            };
+        });
+    }
+
+    function handleCitationSelect(citation: Citation) {
+        if (!citation.neid) return;
+        const doc = BNY_DOCUMENTS.find((item) => item.neid === citation.neid);
+        if (doc) {
+            focusDocument(doc.neid);
+            return;
+        }
+        const event = events.value.find((item) => item.neid === citation.neid);
+        if (event) {
+            setTab('events');
+            return;
+        }
+        selectEntity(citation.neid);
     }
 </script>
 

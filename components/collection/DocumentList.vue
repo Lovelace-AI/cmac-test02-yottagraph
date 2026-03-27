@@ -10,7 +10,8 @@
                     v-for="doc in documents"
                     :key="doc.neid"
                     class="px-0"
-                    @click="selectEntity(doc.neid)"
+                    :active="selectedDocumentNeid === doc.neid"
+                    @click="focusDocument(doc.neid)"
                 >
                     <template v-slot:prepend>
                         <v-icon size="small" color="info" class="mr-2"> mdi-file-pdf-box </v-icon>
@@ -30,5 +31,5 @@
 </template>
 
 <script setup lang="ts">
-    const { documents, selectEntity } = useCollectionWorkspace();
+    const { documents, selectedDocumentNeid, focusDocument } = useCollectionWorkspace();
 </script>

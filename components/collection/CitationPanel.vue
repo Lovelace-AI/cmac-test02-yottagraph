@@ -29,8 +29,8 @@
                                     </v-chip>
                                     <span
                                         class="text-caption font-weight-medium"
-                                        :class="{ 'text-primary cursor-pointer': c.url }"
-                                        @click="c.url ? openUrl(c.url) : undefined"
+                                        :class="{ 'text-primary cursor-pointer': c.url || c.neid }"
+                                        @click="handleCitationClick(c)"
                                     >
                                         {{ c.sourceName }}
                                     </span>
@@ -68,6 +68,10 @@
 <script setup lang="ts">
     import type { Citation } from '~/utils/citationTypes';
 
+    const emit = defineEmits<{
+        select: [citation: Citation];
+    }>();
+
     defineProps<{ citations: Citation[] }>();
 
     function typeColor(type: Citation['sourceType']): string {
@@ -83,6 +87,14 @@
 
     function openUrl(url: string) {
         window.open(url, '_blank');
+    }
+
+    function handleCitationClick(citation: Citation) {
+        if (citation.neid) {
+            emit('select', citation);
+            return;
+        }
+        if (citation.url) openUrl(citation.url);
     }
 </script>
 

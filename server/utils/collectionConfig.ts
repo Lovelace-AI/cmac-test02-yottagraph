@@ -65,8 +65,9 @@ function getGatewayConfig() {
 
 let mcpSessionId: string | null = null;
 let mcpInitialized = false;
+let mcpInitPromise: Promise<void> | null = null;
 
-async function mcpRpc(method: string, params?: any): Promise<any> {
+async function mcpRpc(method: string, params?: any, timeoutMs = 20_000): Promise<any> {
     const { gatewayUrl, orgId } = getGatewayConfig();
     const url = `${gatewayUrl}/api/mcp/${orgId}/${MCP_SERVER_NAME}/mcp`;
 
@@ -86,7 +87,7 @@ async function mcpRpc(method: string, params?: any): Promise<any> {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(timeoutMs),
     });
 
     const returnedSession = res.headers.get('mcp-session-id');
@@ -127,23 +128,42 @@ async function mcpRpc(method: string, params?: any): Promise<any> {
 
 async function ensureMcpSession(): Promise<void> {
     if (mcpInitialized) return;
-    await mcpRpc('initialize', {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: { name: 'collection-server', version: '1.0.0' },
-    });
-    await mcpRpc('notifications/initialized', {});
-    mcpInitialized = true;
+    if (mcpInitPromise) {
+        await mcpInitPromise;
+        return;
+    }
+    mcpInitPromise = (async () => {
+        await mcpRpc('initialize', {
+            protocolVersion: '2024-11-05',
+            capabilities: {},
+            clientInfo: { name: 'collection-server', version: '1.0.0' },
+        });
+        await mcpRpc('notifications/initialized', {});
+        mcpInitialized = true;
+    })();
+    try {
+        await mcpInitPromise;
+    } finally {
+        mcpInitPromise = null;
+    }
 }
 
-export async function mcpCallTool(toolName: string, args: Record<string, any>): Promise<any> {
+export async function mcpCallTool(
+    toolName: string,
+    args: Record<string, any>,
+    options?: { timeoutMs?: number }
+): Promise<any> {
     await ensureMcpSession();
     const startMs = Date.now();
     let result: unknown;
     let status: 'success' | 'error' = 'success';
 
     try {
-        const response = await mcpRpc('tools/call', { name: toolName, arguments: args });
+        const response = await mcpRpc(
+            'tools/call',
+            { name: toolName, arguments: args },
+            options?.timeoutMs ?? 20_000
+        );
         const content = response?.result?.content;
         if (Array.isArray(content) && content.length > 0) {
             const textItem = content.find((c: any) => c.type === 'text');
@@ -203,5 +223,6 @@ export async function rawQsProperties(eids: string[], pids?: number[]): Promise<
 export function resetMcpSession(): void {
     mcpSessionId = null;
     mcpInitialized = false;
+    mcpInitPromise = null;
     clearMcpLog();
 }

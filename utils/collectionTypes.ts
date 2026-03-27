@@ -23,6 +23,7 @@ export interface RelationshipRecord {
     type: string;
     recordedAt?: string;
     sourceDocumentNeid?: string;
+    citations?: string[];
     origin: DataOrigin;
 }
 
@@ -35,6 +36,7 @@ export interface EventRecord {
     likelihood?: string;
     participantNeids: string[];
     sourceDocuments: string[];
+    citations?: string[];
 }
 
 export interface PropertyPoint {
@@ -129,24 +131,30 @@ export const HOP1_FLAVORS = [
     'legal_agreement',
 ] as const;
 
-// Exact event hub NEIDs from BNY-README — the specific entities that emit events in this dataset.
+// Exact event hub NEIDs from BNY-README — normalized to no-leading-zero form.
 export const EVENT_HUB_NEIDS = [
     '8242646876499346416', // Bond hub: IRREVOCABLE LETTER OF CREDIT NO. 5094714
-    '06471256961308361850', // New Jersey Housing and Mortgage Finance Agency
-    '01470965072054453101', // BLX Group LLC
-    '09112734796193071548', // Reserve I Account
-    '02877916378535664072', // Reserve II Account
-    '07476737946181823597', // Liquidity I Account
-    '06638852300639391265', // Liquidity II Account
+    '6471256961308361850', // New Jersey Housing and Mortgage Finance Agency
+    '1470965072054453101', // BLX Group LLC
+    '9112734796193071548', // Reserve I Account
+    '2877916378535664072', // Reserve II Account
+    '7476737946181823597', // Liquidity I Account
+    '6638852300639391265', // Liquidity II Account
+    // One useful secondary audit hub from the README that helps close event coverage
+    // without pulling in broad non-document event histories.
+    '6967031221082229818', // UNITED JERSEY BANK/CENTRAL,
+    '5477621199116204617', // Orrick, Herrington & Sutcliffe
+    '4824620677155774613', // REPUBLIC NATIONAL BANK OF NEW YORK
+    '6157989400122873900', // HSBC Bank USA, Natl Assoc
 ] as const;
 
 // Property-bearing entities for historical time-series retrieval via elemental_get_entity history.
 export const PROPERTY_BEARING_NEIDS = [
-    '07476737946181823597', // Liquidity I Account
-    '06638852300639391265', // Liquidity II Account
-    '09112734796193071548', // Reserve I Account
-    '02877916378535664072', // Reserve II Account
-    '02277784462984661168', // Prior Rebate Liability
+    '7476737946181823597', // Liquidity I Account
+    '6638852300639391265', // Liquidity II Account
+    '9112734796193071548', // Reserve I Account
+    '2877916378535664072', // Reserve II Account
+    '2277784462984661168', // Prior Rebate Liability
     '8242646876499346416', // IRREVOCABLE LETTER OF CREDIT NO. 5094714
 ] as const;
 

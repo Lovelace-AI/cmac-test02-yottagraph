@@ -1,3 +1,5 @@
+import { BNY_DOCUMENTS, type DocumentRecord } from '~/utils/collectionTypes';
+
 export interface Citation {
     ref: string;
     sourceName: string;
@@ -6,6 +8,37 @@ export interface Citation {
     excerpt?: string;
     url?: string;
     neid?: string;
+}
+
+function findDocumentByCitationText(text: string): DocumentRecord | undefined {
+    const match = text.match(/(\d+)\.pdf/i);
+    if (match) {
+        return BNY_DOCUMENTS.find((doc) => doc.documentId === match[1]);
+    }
+    const normalized = text.trim().toLowerCase();
+    return BNY_DOCUMENTS.find(
+        (doc) =>
+            normalized.includes(doc.title.toLowerCase()) ||
+            normalized.includes(doc.documentId.toLowerCase())
+    );
+}
+
+export function buildDocumentCitation(
+    text: string,
+    ref: string,
+    sourceType: Citation['sourceType'],
+    excerpt?: string,
+    date?: string
+): Citation {
+    const doc = findDocumentByCitationText(text);
+    return {
+        ref,
+        sourceName: doc?.title ?? text,
+        sourceType,
+        excerpt,
+        date: date ?? doc?.date,
+        neid: doc?.neid,
+    };
 }
 
 /**
@@ -33,12 +66,14 @@ export function buildCitationsFromProperties(
     let refIdx = 1;
     for (const [propName, prop] of Object.entries(properties)) {
         if (prop.citation) {
-            citations.push({
-                ref: String(refIdx++),
-                sourceName: prop.citation,
-                sourceType: 'property',
-                excerpt: `${propName}: ${prop.value}`,
-            });
+            citations.push(
+                buildDocumentCitation(
+                    prop.citation,
+                    String(refIdx++),
+                    'property',
+                    `${propName}: ${prop.value}`
+                )
+            );
         }
     }
     return citations;
@@ -53,11 +88,13 @@ export function buildCitationsFromPoints(
 ): Citation[] {
     return points
         .filter((p) => p.citation)
-        .map((p, i) => ({
-            ref: String(i + 1),
-            sourceName: p.citation!,
-            sourceType: 'document' as const,
-            date: p.recordedAt.slice(0, 10),
-            excerpt: `${propertyName}: ${p.value}`,
-        }));
+        .map((p, i) =>
+            buildDocumentCitation(
+                p.citation!,
+                String(i + 1),
+                'document',
+                `${propertyName}: ${p.value}`,
+                p.recordedAt.slice(0, 10)
+            )
+        );
 }

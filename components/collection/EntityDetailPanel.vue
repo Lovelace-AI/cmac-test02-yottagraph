@@ -139,6 +139,11 @@
 
                 <v-divider class="my-3" />
 
+                <div class="text-subtitle-2 mb-2">Evidence</div>
+                <CitationPanel :citations="entityCitations" @select="handleCitationSelect" />
+
+                <v-divider class="my-3" />
+
                 <div class="d-flex ga-2">
                     <v-btn
                         size="small"
@@ -165,15 +170,114 @@
 </template>
 
 <script setup lang="ts">
+    import { computed } from 'vue';
+    import {
+        buildCitationsFromPoints,
+        buildCitationsFromProperties,
+        buildDocumentCitation,
+        type Citation,
+    } from '~/utils/citationTypes';
+    import { BNY_DOCUMENTS } from '~/utils/collectionTypes';
+
     const {
         selectedEntity,
         selectedEntityRelationships,
         selectedEntityEvents,
+        selectedEntityPropertySeries,
         selectEntity,
+        focusDocument,
         resolveEntityName,
         runAgentAction,
         enrich,
     } = useCollectionWorkspace();
+
+    const entityCitations = computed<Citation[]>(() => {
+        if (!selectedEntity.value) return [];
+
+        const citations: Citation[] = [];
+        let ref = 1;
+
+        for (const docNeid of selectedEntity.value.sourceDocuments) {
+            const doc = BNY_DOCUMENTS.find((item) => item.neid === docNeid);
+            if (!doc) continue;
+            citations.push(
+                buildDocumentCitation(
+                    `BNY-${doc.documentId}.pdf`,
+                    String(ref++),
+                    'document',
+                    `${selectedEntity.value.name} appears in ${doc.title}`,
+                    doc.date
+                )
+            );
+        }
+
+        if (selectedEntity.value.properties) {
+            for (const citation of buildCitationsFromProperties(
+                selectedEntity.value.properties as Record<
+                    string,
+                    { value: unknown; citation?: string }
+                >
+            )) {
+                citations.push({ ...citation, ref: String(ref++) });
+            }
+        }
+
+        for (const series of selectedEntityPropertySeries.value) {
+            for (const citation of buildCitationsFromPoints(series.propertyName, series.points)) {
+                citations.push({ ...citation, ref: String(ref++) });
+            }
+        }
+
+        for (const event of selectedEntityEvents.value) {
+            for (const docNeid of event.sourceDocuments) {
+                const doc = BNY_DOCUMENTS.find((item) => item.neid === docNeid);
+                if (!doc) continue;
+                citations.push(
+                    buildDocumentCitation(
+                        `BNY-${doc.documentId}.pdf`,
+                        String(ref++),
+                        'event',
+                        `${event.name}${event.date ? ` · ${event.date}` : ''}`,
+                        doc.date
+                    )
+                );
+            }
+        }
+
+        for (const relationship of selectedEntityRelationships.value) {
+            const citationTexts =
+                relationship.citations && relationship.citations.length
+                    ? relationship.citations
+                    : relationship.sourceDocumentNeid
+                      ? [
+                            `BNY-${
+                                BNY_DOCUMENTS.find(
+                                    (doc) => doc.neid === relationship.sourceDocumentNeid
+                                )?.documentId ?? ''
+                            }.pdf`,
+                        ]
+                      : [];
+            for (const citationText of citationTexts) {
+                citations.push(
+                    buildDocumentCitation(
+                        citationText,
+                        String(ref++),
+                        'relationship',
+                        `${relationship.type}: ${resolveEntityName(relationship.sourceNeid)} -> ${resolveEntityName(relationship.targetNeid)}`,
+                        relationship.recordedAt?.slice(0, 10)
+                    )
+                );
+            }
+        }
+
+        const seen = new Set<string>();
+        return citations.filter((citation) => {
+            const key = `${citation.sourceType}|${citation.sourceName}|${citation.excerpt ?? ''}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    });
 
     function originColor(origin: string): string {
         if (origin === 'document') return 'success';
@@ -188,5 +292,15 @@
             return v !== undefined ? String(v) : JSON.stringify(value);
         }
         return String(value);
+    }
+
+    function handleCitationSelect(citation: Citation) {
+        if (!citation.neid) return;
+        const doc = BNY_DOCUMENTS.find((item) => item.neid === citation.neid);
+        if (doc) {
+            focusDocument(doc.neid);
+            return;
+        }
+        selectEntity(citation.neid);
     }
 </script>

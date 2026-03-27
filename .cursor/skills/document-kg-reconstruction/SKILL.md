@@ -1,6 +1,6 @@
 ---
 name: document-kg-reconstruction
-description: Reconstruct document-derived knowledge graphs from ingested document NEIDs. Use when validating KG coverage, comparing against a ground-truth graph, tracing entities/relationships/events/properties from documents, or building an app that needs full historical property series from the Query Server.
+description: Reconstruct document-derived knowledge graphs from ingested document NEIDs. Use when validating KG coverage, comparing against a ground-truth graph, tracing entities/relationships/events/properties from documents, or building an app that needs full historical property series through MCP.
 ---
 
 # Document KG Reconstruction
@@ -12,21 +12,23 @@ Use this skill when the task involves:
 - a set of ingested documents with known document NEIDs
 - validating whether the KG contains all expected entities, events, relationships, and properties
 - building an app view over a document-derived graph
-- reconciling MCP-tool behavior with raw Query Server behavior
+- reconciling MCP-tool behavior with lower-level Query Server behavior when relationship provenance is ambiguous
 
 ## Core Rule
 
-Treat **MCP traversal** and **raw property history** as two layers:
+Treat **MCP traversal + MCP history** as the primary workflow, with raw Query
+Server access as an optional validation layer:
 
-1. Use MCP (`get_related`, `get_events`, `get_entity`) for discovery and graph traversal.
-2. Use raw Query Server `POST /elemental/entities/properties` for full temporal property history and final relationship-row validation.
+1. Use MCP (`get_related`, `get_events`, `get_entity`) for discovery, graph traversal, and full entity property history.
+2. Use raw Query Server only when you need final relationship-row validation or lower-level debugging.
 
-Do not assume MCP is the full source of truth for historical values.
+Do not assume every MCP surface exposes history the same way: use
+`elemental_get_entity(history: ...)` when temporal values matter.
 
 ## Required Inputs
 
 - Document NEIDs
-- Query Server access through either:
+- Optional Query Server access through either:
     - tenant gateway + QS API key, or
     - bearer-authenticated direct Query Server access
 
@@ -64,32 +66,30 @@ Use `get_events(entity_id: ...)` and `get_related(... related_flavor: "schema::f
 - After traversal begins, always reuse NEIDs from graph results
 - If counts differ from ground truth, check for merges before declaring anything missing
 
-### 4. Get historical properties from the raw endpoint
+### 4. Get historical properties through MCP
 
-Use:
+Use `elemental_get_entity` with:
 
-```text
-POST /elemental/entities/properties
-```
+- `entity_id`: exact NEID
+- optional `properties`: list to narrow returned fields
+- `history.after`
+- `history.before`
+- `history.limit`
 
-Pass:
+Interpret `historical_properties` as repeated values per property:
 
-- `eids` as a JSON-stringified array
-- omit `pids` to return all properties, or provide specific PIDs
-- `include_attributes=true` when you want extra metadata
-
-Interpret the result as repeated rows:
-
-- `eid`
-- `pid`
+- property name
 - `value`
 - `recorded_at`
+- optional `citation`
 
-Build time series by grouping rows on `(eid, pid)` and sorting by `recorded_at`.
+Build time series by grouping on `(entity_id, propertyName)` and sorting by
+`recorded_at`.
 
 ### 5. Interpret relationship rows carefully
 
-Some relationship types are exposed as `data_nindex` property rows in the same raw property-history endpoint.
+Some relationship types are exposed as `data_nindex` rows in the raw Query
+Server surface.
 
 Use that raw path to:
 
@@ -114,7 +114,7 @@ If names > NEIDs, that often indicates correct entity-resolution merges rather t
 - `get_entity` by name can resolve to the wrong entity
 - `get_relationships` may return empty for document-ingested data
 - generic raw link endpoints may not return document-ingested relationship provenance cleanly
-- MCP property access usually collapses to the latest value only
+- `get_related` property access usually collapses to the latest value only
 
 ## Output Shape For Apps
 
@@ -123,7 +123,7 @@ Prefer separating the data into:
 - `entities`: canonical node list keyed by NEID
 - `events`: event list keyed by event NEID
 - `relationships`: typed edges with source, target, type, timestamp
-- `propertySeries`: time-series rows keyed by `(eid, pid)`
+- `propertySeries`: time-series rows keyed by `(entity_id, propertyName)`
 - `documents`: source document metadata keyed by document NEID
 
 ## BNY Example
