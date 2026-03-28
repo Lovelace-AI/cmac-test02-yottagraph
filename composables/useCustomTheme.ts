@@ -7,10 +7,9 @@
  *
  * Do NOT add theme logic here -- update the branding source instead.
  */
-import { useNewsTheme, themeColors } from './useNewsTheme';
+import { useNewsTheme } from './useNewsTheme';
 import type { NewsTheme } from './useNewsTheme';
 
-export { themeColors };
 export type AppTheme = NewsTheme;
 
 export const useCustomTheme = () => {
