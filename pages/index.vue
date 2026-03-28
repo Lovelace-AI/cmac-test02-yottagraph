@@ -2,16 +2,24 @@
     <div class="d-flex flex-column fill-height">
         <!-- Header -->
         <div class="workspace-header flex-shrink-0 px-4 pt-3 pb-0">
-            <div class="d-flex align-center justify-space-between mb-3">
-                <div>
-                    <div class="text-h6 font-headline">Collection Intelligence</div>
-                    <div class="text-caption text-medium-emphasis">
-                        Understand what this collection means, what is missing, and what to do next.
-                    </div>
+            <div class="d-flex align-start justify-space-between flex-wrap ga-3 mb-3">
+                <div class="workspace-tabs-wrap flex-grow-1">
+                    <v-tabs
+                        v-model="currentTab"
+                        density="compact"
+                        color="primary"
+                        slider-color="primary"
+                        class="workspace-tabs"
+                    >
+                        <v-tab v-for="tab in tabs" :key="tab.value" :value="tab.value" size="small">
+                            <v-icon start size="small">{{ tab.icon }}</v-icon>
+                            {{ tab.label }}
+                        </v-tab>
+                    </v-tabs>
                 </div>
-                <div class="d-flex align-center ga-2">
+                <div class="d-flex align-center ga-2 flex-shrink-0">
                     <v-chip size="small" :color="isReady ? 'success' : 'default'" variant="tonal">
-                        {{ isReady ? 'Analysis Ready' : 'Analysis Not Ready' }}
+                        {{ isReady ? 'Analysis complete' : 'Analysis pending' }}
                     </v-chip>
                     <v-btn
                         size="small"
@@ -23,227 +31,237 @@
                     >
                         {{ isReady ? 'Re-run Extraction' : 'Run Initial Analysis' }}
                     </v-btn>
-                    <v-btn
-                        size="small"
-                        variant="text"
-                        icon="mdi-cog-outline"
-                        aria-label="Open workspace settings"
-                        @click="settingsOpen = true"
-                    />
                 </div>
             </div>
-
-            <v-tabs
-                v-model="currentTab"
-                density="compact"
-                color="primary"
-                slider-color="primary"
-                class="workspace-tabs"
-            >
-                <v-tab v-for="tab in tabs" :key="tab.value" :value="tab.value" size="small">
-                    <v-icon start size="small">{{ tab.icon }}</v-icon>
-                    {{ tab.label }}
-                </v-tab>
-            </v-tabs>
+            <div class="workspace-header-row d-flex align-center ga-3 mb-2 flex-wrap">
+                <v-select
+                    v-model="selectedDocumentModel"
+                    :items="documentSelectorItems"
+                    item-title="title"
+                    item-value="value"
+                    label="Document scope"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    clearable
+                    class="document-selector"
+                />
+                <v-chip v-if="selectedDocumentTitle" size="small" variant="tonal" color="info">
+                    Scoped: {{ selectedDocumentTitle }}
+                </v-chip>
+                <v-chip v-else size="small" variant="outlined">All documents</v-chip>
+            </div>
         </div>
 
         <!-- Rebuild pipeline progress panel -->
-        <v-expand-transition>
-            <div v-if="rebuilding" class="pipeline-panel flex-shrink-0 px-4 py-3">
-                <div
-                    class="text-caption text-medium-emphasis mb-2 font-weight-medium text-uppercase"
+        <div v-if="showPipelinePanel" class="pipeline-panel flex-shrink-0 px-4 py-2">
+            <div class="workspace-content-shell">
+                <button
+                    type="button"
+                    class="pipeline-toggle w-100 d-flex align-center justify-space-between py-1"
+                    @click="pipelineExpanded = !pipelineExpanded"
                 >
-                    Graph Reconstruction Pipeline
-                </div>
-                <SummaryAgentSteps :steps="rebuildSteps" />
+                    <div
+                        class="text-caption text-medium-emphasis font-weight-medium text-uppercase"
+                    >
+                        Graph Reconstruction Pipeline
+                        <span
+                            v-if="!rebuilding && pipelineTotalDurationMs > 0"
+                            class="ml-2 text-caption text-disabled"
+                        >
+                            ({{ formatDuration(pipelineTotalDurationMs) }} total)
+                        </span>
+                    </div>
+                    <v-icon size="18" color="medium-emphasis">
+                        {{ pipelineExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
+                    </v-icon>
+                </button>
+                <v-expand-transition>
+                    <div v-if="pipelineExpanded" class="pt-2">
+                        <SummaryAgentSteps :steps="rebuildSteps" />
+                    </div>
+                </v-expand-transition>
             </div>
-        </v-expand-transition>
+        </div>
 
         <!-- Post-rebuild meta bar -->
         <div
             v-if="isReady && !rebuilding && currentTab !== 'overview'"
             class="meta-bar flex-shrink-0 px-4 py-1"
         >
-            <SummaryMetaBar
-                :entity-count="meta.entityCount"
-                :event-count="meta.eventCount"
-                :relationship-count="meta.relationshipCount"
-                :property-series="propertySeries.length"
-            />
+            <div class="workspace-content-shell">
+                <SummaryMetaBar
+                    :entity-count="meta.entityCount"
+                    :event-count="meta.eventCount"
+                    :relationship-count="meta.relationshipCount"
+                    :property-count="extractedPropertyCount"
+                    :property-record-count="propertyBearingRecordCount"
+                    :property-series="propertySeries.length"
+                />
+            </div>
         </div>
 
         <div
             class="flex-grow-1 overflow-y-auto px-4"
             :class="currentTab === 'overview' ? 'py-2' : 'py-4'"
         >
-            <v-alert v-if="collection.error" type="error" variant="tonal" class="mb-4" closable>
-                {{ collection.error }}
-            </v-alert>
-            <v-alert
-                v-if="!isReady && !rebuilding && !collection.error && currentTab !== 'overview'"
-                type="info"
-                variant="tonal"
-                class="mb-4"
+            <div
+                :class="[
+                    'workspace-content-shell',
+                    { 'workspace-content-shell--overview': currentTab === 'overview' },
+                ]"
             >
-                Run initial analysis to extract entities, events, relationships, and evidence-linked
-                summaries from this document collection.
-            </v-alert>
+                <v-alert v-if="collection.error" type="error" variant="tonal" class="mb-4" closable>
+                    {{ collection.error }}
+                </v-alert>
+                <v-alert
+                    v-if="!isReady && !rebuilding && !collection.error && currentTab !== 'overview'"
+                    type="info"
+                    variant="tonal"
+                    class="mb-4"
+                >
+                    Run initial analysis to extract entities, events, relationships, and
+                    evidence-linked summaries from this document collection.
+                </v-alert>
 
-            <CollectionOverview v-if="currentTab === 'overview'" />
-            <GraphWorkspace v-else-if="currentTab === 'graph'" />
-            <EventsView v-else-if="currentTab === 'events'" />
-            <AgreementsView v-else-if="currentTab === 'agreements'" />
-            <ValidationView v-else-if="currentTab === 'validation'" />
-            <AgentWorkspace v-else-if="currentTab === 'agent'" />
-            <EnrichmentView v-else-if="currentTab === 'enrichment'" />
+                <TaskActionStrip
+                    v-if="tabQuickActions.length"
+                    :actions="tabQuickActions"
+                    class="mb-3"
+                    @run="runTabQuickAction"
+                />
+
+                <CollectionOverview v-if="currentTab === 'overview'" />
+                <GraphWorkspace v-else-if="currentTab === 'graph'" />
+                <EventsView v-else-if="currentTab === 'events'" />
+                <InsightsView
+                    v-else-if="currentTab === 'insights'"
+                    @open-chat="launchStarterQuestion"
+                />
+                <AgreementsView v-else-if="currentTab === 'agreements'" />
+                <TimelineComparisonView v-else-if="currentTab === 'timeline'" />
+                <ValidationView v-else-if="currentTab === 'validation'" />
+                <AgentWorkspace
+                    v-else-if="currentTab === 'agent'"
+                    @launch-question="launchStarterQuestion"
+                />
+                <EnrichmentView v-else-if="currentTab === 'enrichment'" />
+            </div>
         </div>
 
-        <!-- Settings Dialog -->
-        <v-dialog v-model="settingsOpen" max-width="860" scrollable>
-            <v-card>
+        <v-navigation-drawer
+            v-model="entityDrawerOpen"
+            location="right"
+            width="480"
+            temporary
+            class="pa-2 entity-drawer"
+        >
+            <EntityDetailPanel />
+        </v-navigation-drawer>
+
+        <v-navigation-drawer
+            v-model="chatDrawerOpen"
+            location="right"
+            width="430"
+            temporary
+            class="pa-2"
+        >
+            <v-card class="chat-drawer-card" elevation="0">
                 <v-card-item>
-                    <v-card-title>Settings & Diagnostics</v-card-title>
-                    <template v-slot:append>
-                        <v-btn
-                            icon="mdi-close"
-                            variant="text"
-                            aria-label="Close settings dialog"
-                            @click="settingsOpen = false"
-                        />
-                    </template>
+                    <v-card-title class="text-body-2 d-flex align-center ga-2">
+                        <v-icon size="16" color="warning">mdi-robot</v-icon>
+                        Ask Yotta
+                        <v-chip size="x-small" variant="tonal">{{ currentTabLabel }}</v-chip>
+                    </v-card-title>
+                    <v-card-subtitle
+                        >Evidence-backed chat scoped to this collection.</v-card-subtitle
+                    >
                 </v-card-item>
-
-                <v-tabs v-model="settingsTab" density="compact" color="primary">
-                    <v-tab value="mcp">
-                        <v-icon start size="small">mdi-api</v-icon>
-                        MCP Log
-                        <v-chip v-if="mcpLog.length" size="x-small" class="ml-2">{{
-                            mcpLog.length
-                        }}</v-chip>
-                    </v-tab>
-                    <v-tab value="gemini">
-                        <v-icon start size="small">mdi-robot</v-icon>
-                        Gemini Usage
-                        <v-chip v-if="geminiLog.length" size="x-small" class="ml-2">{{
-                            geminiLog.length
-                        }}</v-chip>
-                    </v-tab>
-                </v-tabs>
-
-                <v-divider />
-
-                <v-card-text class="pa-0" style="min-height: 400px">
-                    <!-- MCP Log Tab -->
-                    <div v-if="settingsTab === 'mcp'">
-                        <div
-                            v-if="mcpLog.length === 0"
-                            class="text-center text-medium-emphasis py-12"
-                        >
-                            <v-icon size="40" class="mb-2">mdi-api</v-icon>
-                            <div>
-                                No MCP calls recorded yet. Load the graph to populate this log.
-                            </div>
-                        </div>
-                        <v-data-table
-                            v-else
-                            :headers="mcpHeaders"
-                            :items="mcpLog"
-                            :items-per-page="25"
-                            density="compact"
-                            item-value="id"
-                            show-expand
-                        >
-                            <template v-slot:item.status="{ item }">
-                                <v-icon
-                                    size="14"
-                                    :color="item.status === 'success' ? 'success' : 'error'"
-                                >
-                                    {{
-                                        item.status === 'success'
-                                            ? 'mdi-check-circle'
-                                            : 'mdi-alert-circle'
-                                    }}
-                                </v-icon>
-                            </template>
-                            <template v-slot:item.durationMs="{ item }">
-                                <span class="text-caption">{{ item.durationMs }}ms</span>
-                            </template>
-                            <template v-slot:item.timestamp="{ item }">
-                                <span class="text-caption text-medium-emphasis">
-                                    {{ new Date(item.timestamp).toLocaleTimeString() }}
-                                </span>
-                            </template>
-                            <template v-slot:expanded-row="{ item }">
-                                <tr>
-                                    <td :colspan="mcpHeaders.length + 1" class="pa-3">
-                                        <div class="text-caption font-weight-medium mb-1">
-                                            Arguments
-                                        </div>
-                                        <pre class="mcp-payload">{{
-                                            JSON.stringify(item.args, null, 2)
-                                        }}</pre>
-                                        <div class="text-caption font-weight-medium mt-2 mb-1">
-                                            Response
-                                        </div>
-                                        <pre class="mcp-payload">{{
-                                            JSON.stringify(item.response, null, 2)
-                                        }}</pre>
-                                    </td>
-                                </tr>
-                            </template>
-                        </v-data-table>
+                <v-card-text class="pt-0">
+                    <div v-if="agentLoading" class="mb-2">
+                        <SummaryAgentSteps :steps="askYottaSteps" />
                     </div>
-
-                    <!-- Gemini Usage Tab -->
-                    <div v-if="settingsTab === 'gemini'">
-                        <div
-                            v-if="geminiLog.length === 0"
-                            class="text-center text-medium-emphasis py-12"
+                    <div class="text-caption text-medium-emphasis mb-2">Starter questions</div>
+                    <div class="d-flex flex-wrap ga-1 mb-2">
+                        <v-btn
+                            v-for="prompt in askYottaPrompts"
+                            :key="prompt"
+                            size="x-small"
+                            variant="outlined"
+                            :disabled="!isReady || agentLoading"
+                            @click="runAskYottaPrompt(prompt)"
                         >
-                            <v-icon size="40" class="mb-2">mdi-robot</v-icon>
-                            <div>
-                                No Gemini calls recorded yet. Use the Agent workspace to generate
-                                content.
-                            </div>
-                        </div>
-                        <template v-else>
-                            <div class="pa-4">
-                                <SummaryMetaBar
-                                    :entity-count="totalGeminiTokens"
-                                    entity-label="total tokens"
-                                    :model="geminiLog[geminiLog.length - 1]?.model"
-                                    :usage="geminiTotals"
-                                    :show-feedback="false"
-                                />
-                            </div>
-                            <v-data-table
-                                :headers="geminiHeaders"
-                                :items="geminiLog"
-                                :items-per-page="20"
-                                density="compact"
-                            >
-                                <template v-slot:item.durationMs="{ item }">
-                                    <span class="text-caption">{{ item.latencyMs }}ms</span>
-                                </template>
-                                <template v-slot:item.totalTokens="{ item }">
-                                    <span class="text-caption">{{
-                                        item.totalTokens.toLocaleString()
-                                    }}</span>
-                                </template>
-                                <template v-slot:item.costUsd="{ item }">
-                                    <span class="text-caption">${{ item.costUsd.toFixed(4) }}</span>
-                                </template>
-                                <template v-slot:item.timestamp="{ item }">
-                                    <span class="text-caption text-medium-emphasis">
-                                        {{ new Date(item.timestamp).toLocaleTimeString() }}
-                                    </span>
-                                </template>
-                            </v-data-table>
-                        </template>
+                            {{ prompt }}
+                        </v-btn>
+                    </div>
+                    <div class="d-flex ga-1">
+                        <v-text-field
+                            v-model="askYottaQuestion"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                            label="Ask grounded question"
+                            :disabled="!isReady || agentLoading"
+                            @keydown.enter="runAskYottaQuestion"
+                        />
+                        <v-btn
+                            size="small"
+                            color="primary"
+                            :loading="agentLoading"
+                            :disabled="!isReady || !askYottaQuestion"
+                            @click="runAskYottaQuestion"
+                        >
+                            Ask
+                        </v-btn>
+                    </div>
+                    <div
+                        v-if="agentResult?.generationSource || lastAskUsage"
+                        class="d-flex align-center ga-1 flex-wrap mt-2"
+                    >
+                        <v-chip size="x-small" variant="tonal" color="deep-purple">
+                            {{ lastAskUsage?.model || 'model unavailable' }}
+                        </v-chip>
+                        <v-chip
+                            v-if="lastAskUsage"
+                            size="x-small"
+                            variant="tonal"
+                            color="blue-grey"
+                        >
+                            {{ lastAskUsage.totalTokens.toLocaleString() }} tokens
+                        </v-chip>
+                        <v-chip
+                            v-if="agentResult?.generationSource === 'fallback'"
+                            size="x-small"
+                            variant="tonal"
+                            color="error"
+                        >
+                            Gemini fallback
+                        </v-chip>
+                    </div>
+                    <div
+                        v-if="
+                            agentResult?.generationSource === 'fallback' &&
+                            agentResult?.generationNote
+                        "
+                        class="text-caption text-error mt-1"
+                    >
+                        {{ agentResult.generationNote }}
+                    </div>
+                    <div v-if="agentResult?.output" class="ask-yotta-output mt-2 text-caption">
+                        {{ agentResult.output }}
                     </div>
                 </v-card-text>
             </v-card>
-        </v-dialog>
+        </v-navigation-drawer>
+
+        <v-btn
+            color="warning"
+            class="ask-yotta-btn"
+            prepend-icon="mdi-robot-outline"
+            @click="chatDrawerOpen = !chatDrawerOpen"
+        >
+            Ask Yotta
+        </v-btn>
     </div>
 </template>
 
@@ -253,71 +271,250 @@
     const {
         collection,
         isReady,
-        isLoading,
         rebuilding,
         rebuildSteps,
         rebuild,
         bootstrap,
+        activeTab,
         setTab,
         meta,
         propertySeries,
-        mcpLog,
+        extractedPropertyCount,
+        propertyBearingRecordCount,
         geminiLog,
+        recommendedActions,
+        runAgentAction,
+        agentLoading,
+        agentResult,
+        documents,
+        selectedDocumentNeid,
+        focusDocument,
+        selectedEntity,
+        selectEntity,
     } = useCollectionWorkspace();
 
-    const currentTab = ref<WorkspaceTab>('overview');
-    const settingsOpen = ref(false);
-    const settingsTab = ref<'mcp' | 'gemini'>('mcp');
+    const currentTab = computed<WorkspaceTab>({
+        get: () => activeTab.value,
+        set: (tab) => setTab(tab),
+    });
+    const pipelineExpanded = ref(true);
+    const chatDrawerOpen = ref(false);
+    const askYottaQuestion = ref('');
+    const askYottaSteps = ref<
+        Array<{
+            step: number;
+            status: 'pending' | 'working' | 'completed';
+            label: string;
+            detail?: string;
+            durationMs?: number;
+        }>
+    >([
+        {
+            step: 1,
+            status: 'pending',
+            label: 'Dialogue Agent',
+            detail: 'Interpreting your question...',
+        },
+        {
+            step: 2,
+            status: 'pending',
+            label: 'Context Assembly Agent',
+            detail: 'Collecting graph evidence...',
+        },
+        {
+            step: 3,
+            status: 'pending',
+            label: 'Composition Agent',
+            detail: 'Generating answer with Gemini...',
+        },
+    ]);
 
-    watch(currentTab, (tab) => setTab(tab));
+    watch(rebuilding, (isRunning) => {
+        if (isRunning) pipelineExpanded.value = true;
+    });
 
     const tabs: Array<{ value: WorkspaceTab; label: string; icon: string }> = [
         { value: 'overview', label: 'Overview', icon: 'mdi-view-dashboard-outline' },
         { value: 'graph', label: 'Graph & Entities', icon: 'mdi-graph-outline' },
-        { value: 'events', label: 'Timeline', icon: 'mdi-calendar-outline' },
-        { value: 'agreements', label: 'Agreements', icon: 'mdi-file-document-outline' },
+        { value: 'events', label: 'Events', icon: 'mdi-calendar-outline' },
+        { value: 'insights', label: 'Insights', icon: 'mdi-lightbulb-on-outline' },
+        { value: 'agreements', label: 'Legal Agreements', icon: 'mdi-file-document-outline' },
+        { value: 'timeline', label: 'Timeline', icon: 'mdi-chart-timeline-variant' },
         { value: 'validation', label: 'Trust & Coverage', icon: 'mdi-shield-check-outline' },
-        { value: 'agent', label: 'Ask Copilot', icon: 'mdi-robot-outline' },
-        { value: 'enrichment', label: 'Advanced Enrichment', icon: 'mdi-arrow-expand-all' },
+        { value: 'agent', label: 'Agents', icon: 'mdi-robot-outline' },
+        { value: 'enrichment', label: 'Enrichment', icon: 'mdi-arrow-expand-all' },
     ];
+    const tabLabelByValue = Object.fromEntries(tabs.map((tab) => [tab.value, tab.label])) as Record<
+        WorkspaceTab,
+        string
+    >;
+    const currentTabLabel = computed(() => tabLabelByValue[currentTab.value] ?? 'Overview');
+    const selectedDocumentModel = computed<string | null>({
+        get: () => selectedDocumentNeid.value,
+        set: (value) => focusDocument(value),
+    });
+    const documentSelectorItems = computed(() =>
+        documents.value.map((doc) => ({
+            title: doc.title,
+            value: doc.neid,
+        }))
+    );
+    const selectedDocumentTitle = computed(() => {
+        if (!selectedDocumentNeid.value) return '';
+        const doc = documents.value.find((item) => item.neid === selectedDocumentNeid.value);
+        return doc?.title ?? '';
+    });
+    const entityDrawerOpen = computed<boolean>({
+        get: () => Boolean(selectedEntity.value),
+        set: (isOpen) => {
+            if (!isOpen) selectEntity(null);
+        },
+    });
 
-    const mcpHeaders = [
-        { title: '', key: 'data-table-expand', width: 40 },
-        { title: 'OK', key: 'status', width: 40, sortable: false },
-        { title: 'Tool', key: 'tool', sortable: true },
-        { title: 'Query', key: 'argsSummary', sortable: false },
-        { title: 'Result', key: 'responseSummary', sortable: false },
-        { title: 'ms', key: 'durationMs', sortable: true },
-        { title: 'Time', key: 'timestamp', sortable: true },
-    ];
-
-    const geminiHeaders = [
-        { title: 'Action', key: 'label', sortable: true },
-        { title: 'Model', key: 'model', sortable: true },
-        { title: 'In', key: 'promptTokens', sortable: true },
-        { title: 'Out', key: 'completionTokens', sortable: true },
-        { title: 'Total', key: 'totalTokens', sortable: true },
-        { title: 'Cost', key: 'costUsd', sortable: true },
-        { title: 'Latency', key: 'durationMs', sortable: true },
-        { title: 'Time', key: 'timestamp', sortable: true },
-    ];
-
-    const totalGeminiTokens = computed(() =>
-        geminiLog.value.reduce((s, e) => s + e.totalTokens, 0)
+    const tabQuickActions = computed(() =>
+        recommendedActions.value.filter((action) => action.tab === currentTab.value)
     );
 
-    const geminiTotals = computed(() => {
-        const g = geminiLog.value;
-        if (!g.length) return undefined;
-        const promptTokens = g.reduce((s, e) => s + e.promptTokens, 0);
-        const completionTokens = g.reduce((s, e) => s + e.completionTokens, 0);
-        return {
-            prompt_tokens: promptTokens,
-            completion_tokens: completionTokens,
-            total_tokens: promptTokens + completionTokens,
-            cost_usd: g.reduce((s, e) => s + e.costUsd, 0),
-        };
+    const askYottaPromptMap: Record<WorkspaceTab, string[]> = {
+        overview: [
+            'Summarize this collection in plain English.',
+            'Which entities matter most and why?',
+        ],
+        graph: [
+            'Explain the most important relationship clusters.',
+            'Which links are source-backed vs inferred?',
+        ],
+        events: [
+            'Summarize the event timeline.',
+            'Which events have the strongest document evidence?',
+        ],
+        insights: [
+            'What are the top executive insights from this collection?',
+            'Which findings should be highlighted in the briefing?',
+        ],
+        agreements: [
+            'Which agreements are most central?',
+            'Which parties appear across multiple agreements?',
+        ],
+        timeline: [
+            'How did key entity facts change across documents?',
+            'Which properties show the largest deltas?',
+        ],
+        validation: ['Where are current evidence gaps?', 'What should we verify manually next?'],
+        agent: [
+            'Give me a grounded executive brief.',
+            'Recommend high-value anchors for enrichment.',
+        ],
+        enrichment: [
+            'What one-hop expansion should we run first?',
+            'Which anchors will add the most context?',
+        ],
+    };
+    const askYottaPrompts = computed(() => askYottaPromptMap[currentTab.value] ?? []);
+    const lastAskUsage = computed(() => {
+        const entries = geminiLog.value;
+        if (!entries.length) return null;
+        return entries[entries.length - 1];
     });
+
+    watch(agentLoading, (loading) => {
+        if (!loading) return;
+        askYottaSteps.value = [
+            {
+                step: 1,
+                status: 'working',
+                label: 'Dialogue Agent',
+                detail: 'Interpreting your question...',
+            },
+            {
+                step: 2,
+                status: 'pending',
+                label: 'Context Assembly Agent',
+                detail: 'Collecting graph evidence...',
+            },
+            {
+                step: 3,
+                status: 'pending',
+                label: 'Composition Agent',
+                detail: 'Generating answer with Gemini...',
+            },
+        ];
+
+        let idx = 0;
+        const timer = setInterval(() => {
+            if (!agentLoading.value || idx >= askYottaSteps.value.length - 1) {
+                clearInterval(timer);
+                if (!agentLoading.value) {
+                    askYottaSteps.value.forEach((step, stepIdx) => {
+                        step.status = 'completed';
+                        step.durationMs = 600 * (stepIdx + 1);
+                    });
+                }
+                return;
+            }
+            askYottaSteps.value[idx].status = 'completed';
+            askYottaSteps.value[idx].durationMs = 600 * (idx + 1);
+            idx += 1;
+            askYottaSteps.value[idx].status = 'working';
+        }, 600);
+    });
+
+    function resolveAskAction(prompt: string): 'summarize_collection' | 'answer_question' {
+        const lowered = prompt.toLowerCase();
+        if (lowered.includes('summarize this collection') || lowered.includes('executive brief')) {
+            return 'summarize_collection';
+        }
+        return 'answer_question';
+    }
+
+    async function runAskYottaPrompt(prompt: string) {
+        askYottaQuestion.value = prompt;
+        const action = resolveAskAction(prompt);
+        if (action === 'summarize_collection') {
+            await runAgentAction('summarize_collection');
+            return;
+        }
+        await runAgentAction('answer_question', { question: prompt });
+    }
+
+    async function runAskYottaQuestion() {
+        if (!askYottaQuestion.value) return;
+        const action = resolveAskAction(askYottaQuestion.value);
+        if (action === 'summarize_collection') {
+            await runAgentAction('summarize_collection');
+            return;
+        }
+        await runAgentAction('answer_question', { question: askYottaQuestion.value });
+    }
+
+    function runTabQuickAction(actionId: string) {
+        const action = recommendedActions.value.find((item) => item.id === actionId);
+        if (!action) return;
+        setTab(action.tab);
+        if (action.id === 'ask-grounded-question') {
+            if (!chatDrawerOpen.value) chatDrawerOpen.value = true;
+        }
+    }
+
+    function launchStarterQuestion(prompt: string) {
+        askYottaQuestion.value = prompt;
+        if (!chatDrawerOpen.value) chatDrawerOpen.value = true;
+    }
+
+    const showPipelinePanel = computed(
+        () => rebuilding.value || rebuildSteps.value.some((step) => step.status !== 'pending')
+    );
+    const pipelineTotalDurationMs = computed(() =>
+        rebuildSteps.value.reduce((sum, step) => sum + (step.durationMs ?? 0), 0)
+    );
+
+    function formatDuration(ms: number): string {
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+        const min = Math.floor(ms / 60_000);
+        const sec = Math.round((ms % 60_000) / 1000);
+        return `${min}m ${sec}s`;
+    }
 
     async function handleRebuild() {
         await rebuild();
@@ -331,6 +528,11 @@
 <style scoped>
     .workspace-header {
         border-bottom: 1px solid var(--app-divider);
+        background: linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--dynamic-surface) 92%, var(--dynamic-background) 8%),
+            color-mix(in srgb, var(--dynamic-background) 84%, var(--dynamic-surface) 16%)
+        );
     }
 
     .workspace-tabs :deep(.v-tab) {
@@ -341,14 +543,51 @@
         padding: 0 12px;
     }
 
+    .workspace-tabs-wrap {
+        min-width: 340px;
+    }
+
+    .workspace-header-row {
+        min-height: 40px;
+    }
+
+    .document-selector {
+        width: min(460px, 100%);
+    }
+
     .pipeline-panel {
-        background: var(--app-subtle-surface);
+        background: linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--dynamic-panel-background) 88%, var(--dynamic-background) 12%),
+            color-mix(in srgb, var(--dynamic-surface) 84%, var(--dynamic-background) 16%)
+        );
         border-bottom: 1px solid var(--app-divider);
+    }
+
+    .pipeline-toggle {
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
     }
 
     .meta-bar {
         border-bottom: 1px solid var(--app-divider);
-        background: var(--app-subtle-surface-2);
+        background: color-mix(
+            in srgb,
+            var(--dynamic-panel-background) 86%,
+            var(--dynamic-background) 14%
+        );
+    }
+
+    .workspace-content-shell {
+        width: 100%;
+        max-width: 1420px;
+        margin: 0 auto;
+    }
+
+    .workspace-content-shell--overview {
+        max-width: none;
     }
 
     .mcp-payload {
@@ -361,5 +600,42 @@
         overflow-y: auto;
         white-space: pre-wrap;
         word-break: break-all;
+    }
+
+    .chat-drawer-card {
+        height: 100%;
+        border: 1px solid var(--app-divider-strong);
+        background: linear-gradient(
+            165deg,
+            color-mix(in srgb, var(--dynamic-surface) 90%, var(--dynamic-background) 10%),
+            color-mix(in srgb, var(--dynamic-panel-background) 90%, var(--dynamic-background) 10%)
+        );
+    }
+
+    .ask-yotta-btn {
+        position: fixed;
+        right: 18px;
+        bottom: 58px;
+        z-index: 10010;
+        text-transform: none;
+        letter-spacing: 0;
+    }
+
+    .ask-yotta-output {
+        border: 1px solid var(--app-divider);
+        border-radius: 12px;
+        padding: 10px;
+        background: color-mix(
+            in srgb,
+            var(--dynamic-panel-background) 88%,
+            var(--dynamic-background) 12%
+        );
+        max-height: 300px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+    }
+
+    :deep(.entity-drawer.v-navigation-drawer) {
+        width: min(480px, 94vw) !important;
     }
 </style>

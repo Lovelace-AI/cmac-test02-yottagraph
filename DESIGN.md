@@ -1,4 +1,4 @@
-# cmac-test02 - Design Document
+# Document Collection Intelligence - Design Document
 
 ## Project Overview
 
@@ -11,8 +11,8 @@ documents.
 
 **Created:** 2026-03-25  
 **App ID:** cmac-test02  
-**Description:** Aether app: cmac-test02  
-**Last updated:** 2026-03-27 (UX refresh: analytical workflow and trust framing)
+**Description:** Document Collection Intelligence workspace  
+**Last updated:** 2026-03-28 (enrichment workspace: graph/setup subtabs, document-vs-expanded graph modes, and collapsed acquired-organization lineage)
 
 ## Vision
 
@@ -77,16 +77,21 @@ document-derived graph exploration, validation, agent actions, and enrichment.
 Implementation status: **v1 complete**  
 Details:
 
-- Single-page workspace with task-oriented tabs: overview, graph & entities, timeline, agreements, trust & coverage, ask copilot, advanced enrichment.
-- Overview is an executive summary with narrative context, top actions, ranked entities/events, trust summary, relationship highlights, and issue/gap notes.
+- Single-page workspace with task-oriented tabs: overview, graph & entities, events, insights, timeline, agreements, trust & coverage, ask yotta, enrichment.
+- Overview is an executive intelligence briefing with a collection header, synthesized deal summary, extraction stats, a narrative case-study card without cross-tab jumps, a streamlined source-documents table, and launch cards into deeper tabs.
+- Overview supports complete, pending, and partial extraction states with intentional product copy and guided placeholders instead of empty analytics panels.
 - Graph tab now supports analytical view modes, relationship filters, evidence-focused toggles, and shortest-path inspection between entities.
 - Timeline tab emphasizes significance and confidence, supports richer filtering (domain, confidence, participant, source document, date), and keeps table/episode/timeline views aligned.
 - Agreements tab reduces metadata clutter and uses expandable related-party summaries for easier scanning.
 - Trust & Coverage tab reframes validation into completeness, partial coverage, provenance, and next recommended checks.
-- Ask Copilot tab offers contextual prompts, confidence framing, and evidence-linked outputs grounded in entities/events/documents.
-- Advanced Enrichment clarifies why anchor selection matters and what expansion adds beyond source-derived content.
-- Entity detail panel (right drawer) shows entity name, flavor, origin, NEID, source documents, relationships, events, properties, and quick actions (explain, expand).
+- Ask Yotta tab offers contextual prompts, confidence framing, and evidence-linked outputs grounded in entities/events/documents.
+- Insights tab now provides a curated multi-category question deck, per-question execution, cache restoration, citation-first answer panels, entity pivots, and Markdown/HTML export with PDF graceful fallback.
+- Enrichment now includes Graph and Setup subtabs: Setup configures anchors and hop depth, while Graph toggles between document-only and expanded Yottagraph context.
+- Expanded graph mode traverses full organization lineage but collapses acquired-bank chains into surviving organizations by default, while preserving document vs enriched origin labeling.
+- Entity detail panel (right drawer) is a shared tabbed surface with fixed header/tab strip and a single scroll region; it now supports Properties, Relationships, Events (conditional), Sources, and Compare (conditional), plus in-place entity pivots from graph, events, insights, agreements, and enrichment.
 - App shell supports both dark mode and light mode, with a header toggle and settings control for switching.
-- Server routes under `/api/collection/` handle bootstrap, rebuild (MCP traversal + event discovery), entity detail, property history (raw QS), enrichment, and agent actions.
+- Dark mode polish pass introduced layered charcoal/slate surfaces, stronger card hierarchy, improved narrative readability, and consistent pill styling across overview and analysis surfaces.
+- Server routes under `/api/collection/` handle bootstrap, rebuild (MCP traversal + event discovery), entity detail, property history (raw QS), enrichment, agent actions, insight language summaries, and insight export assembly.
 - All data is normalized into stable models: documents, entities, relationships, events, and property series with explicit origin labels.
+- Property reporting distinguishes broad extracted/latest entity properties from narrower historical property-series coverage.
 - `composables/useCollectionWorkspace.ts` manages all client state.
