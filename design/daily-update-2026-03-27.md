@@ -24,7 +24,7 @@ When the app says "Phase X," this is what it means:
 
 2. **Phase 2 - Event Discovery**  
    Starting from known event hub entities, call MCP `elemental_get_events` to
-   find relevant events and participants.
+   find relevant events.
 
 3. **Phase 3 - Relationship Assembly**  
    Build typed edges between entities (for example `fund_of`, `issuer_of`,
@@ -228,12 +228,12 @@ directly, instead of discovering most facts by repeated adjacency traversal.
 
 Suggested capabilities:
 
-- `elemental_get_document_facts`
-    - input: `document_neids[]`
+- `elemental_get_source_facts`
+    - input: `source_neids[]`
     - output: normalized entities, relationships, events, and citations that are
-      directly supported by those documents
-- `elemental_get_document_relationships`
-    - input: `document_neids[]`, optional filters (`types`, `date range`)
+      directly supported by those sources
+- `elemental_get_source_relationships`
+    - input: `source_neids[]`, optional filters (`types`, `date range`)
     - output: relationship rows with source doc and timestamp metadata
 - `elemental_get_document_events`
     - input: `document_neids[]`

@@ -22,6 +22,7 @@
         ]
     },
     "dependencies": {
+        "@google/genai": "^1.46.0",
         "@hapi/iron": "^7.0.1",
         "@neondatabase/serverless": "^1.0.2",
         "@tanstack/vue-virtual": "^3.13.8",
@@ -40,6 +41,7 @@
         "jose": "^5.9.6",
         "localforage": "^1.10.0",
         "mitt": "^3.0.1",
+        "pdf-lib": "^1.17.1",
         "prettier": "^3.5.3",
         "sigma": "^3.0.2",
         "vuetify": "^3.8.5"

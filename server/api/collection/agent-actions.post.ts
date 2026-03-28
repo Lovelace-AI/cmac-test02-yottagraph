@@ -1,4 +1,5 @@
 import { getCachedCollection } from '~/server/api/collection/bootstrap.get';
+import { generateGeminiText } from '~/server/utils/gemini';
 import type { EntityRecord, EventRecord } from '~/utils/collectionTypes';
 
 interface AgentActionRequest {
@@ -20,6 +21,15 @@ interface AgentActionResponse {
         neid: string;
         label: string;
     }>;
+    usage?: {
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+        costUsd: number;
+    };
+    generationSource?: 'gemini' | 'fallback';
+    generationNote?: string;
 }
 
 export default defineEventHandler(async (event): Promise<AgentActionResponse> => {
@@ -38,28 +48,81 @@ export default defineEventHandler(async (event): Promise<AgentActionResponse> =>
 
     const { entities, events, relationships, documents, meta } = collection;
 
-    switch (body.action) {
-        case 'summarize_collection':
-            return summarizeCollection(entities, events, documents, meta);
-        case 'explain_entity':
-            return explainEntity(body.entityNeid, entities, relationships, events, documents);
-        case 'answer_question':
-            return answerQuestion(body.question, entities, events, meta, documents);
-        case 'compare_contexts':
-            return compareContexts(entities);
-        case 'recommend_anchors':
-            return recommendAnchors(entities, relationships);
-        default:
-            throw createError({ statusCode: 400, statusMessage: `Unknown action: ${body.action}` });
+    const buildUsage = (usage: {
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    }) => ({
+        ...usage,
+        costUsd: 0,
+    });
+
+    try {
+        switch (body.action) {
+            case 'summarize_collection': {
+                const generated = await summarizeCollection(entities, events, documents, meta);
+                return { ...generated, usage: buildUsage(generated.usage) };
+            }
+            case 'explain_entity': {
+                const generated = await explainEntity(
+                    body.entityNeid,
+                    entities,
+                    relationships,
+                    events,
+                    documents
+                );
+                return { ...generated, usage: buildUsage(generated.usage) };
+            }
+            case 'answer_question': {
+                const generated = await answerQuestion(
+                    body.question,
+                    entities,
+                    events,
+                    relationships,
+                    meta,
+                    documents
+                );
+                return { ...generated, usage: buildUsage(generated.usage) };
+            }
+            case 'compare_contexts': {
+                const generated = await compareContexts(entities);
+                return { ...generated, usage: buildUsage(generated.usage) };
+            }
+            case 'recommend_anchors': {
+                const generated = await recommendAnchors(entities, relationships);
+                return { ...generated, usage: buildUsage(generated.usage) };
+            }
+            default:
+                throw createError({
+                    statusCode: 400,
+                    statusMessage: `Unknown action: ${body.action}`,
+                });
+        }
+    } catch (error: any) {
+        throw createError({
+            statusCode: 500,
+            statusMessage: error?.message || 'Ask Yotta generation failed.',
+        });
     }
 });
 
-function summarizeCollection(
+async function summarizeCollection(
     entities: EntityRecord[],
     events: EventRecord[],
     documents: any[],
     meta: any
-): AgentActionResponse {
+): Promise<{
+    action: string;
+    output: string;
+    citations: AgentActionResponse['citations'];
+    usage: {
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    };
+}> {
     const flavorCounts = countBy(entities, (entity) => entity.flavor);
     const flavorSummary = Array.from(flavorCounts.entries())
         .sort((a, b) => b[1] - a[1])
@@ -97,27 +160,18 @@ function summarizeCollection(
             ? 'Confidence is medium-high because most links are source-backed.'
             : 'Confidence is moderate; inferred links outnumber source-backed links and should be verified.';
 
-    const output = [
+    const fallback = [
         `**Collection summary: ${meta.name}**`,
-        '',
         meta.description || 'No collection description provided.',
-        '',
         `This collection contains ${documents.length} source documents with ${entities.length} entities and ${events.length} events.`,
         `Primary entity mix: ${flavorSummary || 'not enough data yet'}.`,
-        '',
         events.length > 0
             ? `Most common event categories: ${eventSummary}.`
             : 'No events have been loaded yet.',
-        '',
         topEntityLine,
         timelineLine,
         confidenceLine,
-        '',
-        '**Recommended next checks**',
-        '- Review top entities and validate their linked documents.',
-        '- Inspect inferred links before presenting conclusions externally.',
-        '- Ask for an executive summary if this will be shared with non-technical stakeholders.',
-    ].join('\n');
+    ].join('\n\n');
 
     const citations = documents.map((d) => ({
         type: 'document' as const,
@@ -125,18 +179,71 @@ function summarizeCollection(
         label: d.title,
     }));
 
-    return { action: 'summarize_collection', output, citations };
+    const prompt = [
+        'Create a concise executive brief for a collection intelligence analyst.',
+        'Use short paragraphs and bullets, avoid hype, and ground conclusions in the supplied stats.',
+        'End with a 3-item "Recommended next checks" section.',
+        '',
+        `Collection: ${meta.name}`,
+        `Description: ${meta.description || 'N/A'}`,
+        `Documents: ${documents.length}, Entities: ${entities.length}, Events: ${events.length}`,
+        `Entity mix: ${flavorSummary || 'N/A'}`,
+        `Event categories: ${eventSummary || 'N/A'}`,
+        topEntityLine,
+        timelineLine,
+        confidenceLine,
+        `Evidence-backed links: ${evidenceBackedLinks}, Inferred links: ${inferredLinks}`,
+    ].join('\n');
+
+    try {
+        const generated = await generateGeminiText({
+            prompt,
+            label: 'summarize_collection',
+            systemInstruction:
+                'You are Ask Yotta, an analytical assistant. Provide precise, evidence-oriented language only.',
+            maxOutputTokens: 1800,
+            retries: 1,
+        });
+        return {
+            action: 'summarize_collection',
+            output: generated.text || fallback,
+            citations,
+            usage: generated.usage,
+        };
+    } catch {
+        return {
+            action: 'summarize_collection',
+            output: fallback,
+            citations,
+            usage: { model: 'fallback', promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
+    }
 }
 
-function explainEntity(
+async function explainEntity(
     entityNeid: string | undefined,
     entities: EntityRecord[],
     relationships: any[],
     events: EventRecord[],
     documents?: any[]
-): AgentActionResponse {
+): Promise<{
+    action: string;
+    output: string;
+    citations: AgentActionResponse['citations'];
+    usage: {
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    };
+}> {
     if (!entityNeid) {
-        return { action: 'explain_entity', output: 'No entity selected.', citations: [] };
+        return {
+            action: 'explain_entity',
+            output: 'No entity selected.',
+            citations: [],
+            usage: { model: 'fallback', promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
     }
 
     const entity = entities.find((e) => e.neid === entityNeid);
@@ -145,6 +252,7 @@ function explainEntity(
             action: 'explain_entity',
             output: `Entity ${entityNeid} not found in collection.`,
             citations: [],
+            usage: { model: 'fallback', promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         };
     }
 
@@ -156,7 +264,7 @@ function explainEntity(
         (rel) => Boolean(rel.sourceDocumentNeid) || (rel.citations?.length ?? 0) > 0
     ).length;
 
-    const output = [
+    const fallback = [
         `**Entity brief: ${entity.name}**`,
         '',
         `${entity.name} is a ${entity.flavor.replace(/_/g, ' ')} found in ${entity.sourceDocuments.length} source document(s).`,
@@ -183,18 +291,71 @@ function explainEntity(
         citations.push({ type: 'event', neid: e.neid, label: e.name });
     }
 
-    return { action: 'explain_entity', output, citations };
+    const prompt = [
+        `Explain the role of entity "${entity.name}" for an analyst.`,
+        'Keep output grounded, concise, and practical. Include why it matters, what evidence supports it, and what to verify next.',
+        '',
+        `Entity flavor: ${entity.flavor}`,
+        `Entity origin: ${entity.origin}`,
+        `Source documents linked: ${entity.sourceDocuments.length}`,
+        `Relationship count: ${rels.length}, source-backed relationships: ${evidenceBacked}`,
+        `Linked event count: ${relatedEvents.length}`,
+        `Top linked events: ${relatedEvents
+            .slice(0, 6)
+            .map((eventItem) => eventItem.name)
+            .join(', ')}`,
+    ].join('\n');
+
+    try {
+        const generated = await generateGeminiText({
+            prompt,
+            label: 'explain_entity',
+            systemInstruction:
+                'You are Ask Yotta. Explain entities with factual grounding and no speculation.',
+            maxOutputTokens: 1800,
+            retries: 1,
+        });
+        return {
+            action: 'explain_entity',
+            output: generated.text || fallback,
+            citations,
+            usage: generated.usage,
+        };
+    } catch {
+        return {
+            action: 'explain_entity',
+            output: fallback,
+            citations,
+            usage: { model: 'fallback', promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
+    }
 }
 
-function answerQuestion(
+async function answerQuestion(
     question: string | undefined,
     entities: EntityRecord[],
     events: EventRecord[],
+    relationships: any[],
     meta: any,
     documents?: any[]
-): AgentActionResponse {
+): Promise<{
+    action: string;
+    output: string;
+    citations: AgentActionResponse['citations'];
+    usage: {
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    };
+}> {
     if (!question) {
-        return { action: 'answer_question', output: 'No question provided.', citations: [] };
+        return {
+            action: 'answer_question',
+            output: 'No question provided.',
+            citations: [],
+            usage: { model: 'fallback', promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
     }
 
     const q = question.toLowerCase().trim();
@@ -210,6 +371,16 @@ function answerQuestion(
             (e.description?.toLowerCase().includes(q) ?? false) ||
             (e.category?.toLowerCase().includes(q) ?? false)
     );
+    const topRelTypes = countBy(relationships, (relationship) => relationship.type);
+    const relSummary = Array.from(topRelTypes.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([type, count]) => `${type}:${count}`)
+        .join(', ');
+    const docSummary = (documents ?? [])
+        .slice(0, 8)
+        .map((doc) => `${doc.title}${doc.date ? ` (${doc.date})` : ''}`)
+        .join('; ');
 
     const parts: string[] = [];
     if (q.includes('central entit') || q.includes('most central')) {
@@ -279,10 +450,68 @@ function answerQuestion(
         citations.push({ type: 'event', neid: e.neid, label: e.name });
     }
 
-    return { action: 'answer_question', output: parts.join('\n\n'), citations };
+    const fallback = parts.join('\n\n');
+    const prompt = [
+        'Answer the analyst question using only the provided collection context.',
+        'If evidence is thin, say so directly. Keep response concise and actionable.',
+        '',
+        `Question: ${question}`,
+        `Collection: ${meta.name}`,
+        `Entities: ${meta.entityCount}, Events: ${meta.eventCount}, Relationships: ${meta.relationshipCount}`,
+        `Documents in scope: ${documents?.length ?? 0}`,
+        `Document list: ${docSummary || 'N/A'}`,
+        `Top relationship types: ${relSummary || 'N/A'}`,
+        `Evidence-backed links: ${links.evidenceBackedRelationships}, inferred links: ${links.inferredRelationships}`,
+        `Likely related entities: ${matchingEntities
+            .slice(0, 8)
+            .map((entity) => entity.name)
+            .join(', ')}`,
+        `Likely related events: ${matchingEvents
+            .slice(0, 8)
+            .map((eventItem) => eventItem.name)
+            .join(', ')}`,
+        `Coverage notes: ${fallback}`,
+    ].join('\n');
+
+    try {
+        const generated = await generateGeminiText({
+            prompt,
+            label: 'answer_question',
+            systemInstruction:
+                'You are Ask Yotta, a grounded analytical assistant. Be clear, factual, and citation-aware.',
+            maxOutputTokens: 1800,
+            retries: 1,
+        });
+        return {
+            action: 'answer_question',
+            output: generated.text || fallback,
+            citations,
+            usage: generated.usage,
+            generationSource: 'gemini',
+        };
+    } catch (error: any) {
+        return {
+            action: 'answer_question',
+            output: fallback,
+            citations,
+            usage: { model: 'fallback', promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            generationSource: 'fallback',
+            generationNote: String(error?.message ?? 'Gemini generation failed').slice(0, 220),
+        };
+    }
 }
 
-function compareContexts(entities: EntityRecord[]): AgentActionResponse {
+async function compareContexts(entities: EntityRecord[]): Promise<{
+    action: string;
+    output: string;
+    citations: AgentActionResponse['citations'];
+    usage: {
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    };
+}> {
     const docEntities = entities.filter((e) => e.origin === 'document');
     const enrichedEntities = entities.filter((e) => e.origin === 'enriched');
 
@@ -293,7 +522,7 @@ function compareContexts(entities: EntityRecord[]): AgentActionResponse {
     for (const e of enrichedEntities)
         enrichFlavors.set(e.flavor, (enrichFlavors.get(e.flavor) || 0) + 1);
 
-    const output = [
+    const fallback = [
         `**Document-derived context:** ${docEntities.length} entities across ${docFlavors.size} types`,
         Array.from(docFlavors.entries())
             .map(([f, c]) => `  - ${f}: ${c}`)
@@ -309,10 +538,55 @@ function compareContexts(entities: EntityRecord[]): AgentActionResponse {
             : '**Enriched context:** No enrichment has been run yet. Select anchor entities and expand to see broader graph context.',
     ].join('\n');
 
-    return { action: 'compare_contexts', output, citations: [] };
+    try {
+        const generated = await generateGeminiText({
+            prompt: [
+                'Compare document-derived and enriched context for analysts.',
+                `Document-derived entities: ${docEntities.length}`,
+                `Document type distribution: ${Array.from(docFlavors.entries())
+                    .map(([flavor, count]) => `${flavor}:${count}`)
+                    .join(', ')}`,
+                `Enriched entities: ${enrichedEntities.length}`,
+                `Enriched type distribution: ${Array.from(enrichFlavors.entries())
+                    .map(([flavor, count]) => `${flavor}:${count}`)
+                    .join(', ')}`,
+            ].join('\n'),
+            label: 'compare_contexts',
+            systemInstruction:
+                'You are Ask Yotta. Explain context deltas and what they mean for analysis quality.',
+            maxOutputTokens: 520,
+            retries: 1,
+        });
+        return {
+            action: 'compare_contexts',
+            output: generated.text || fallback,
+            citations: [],
+            usage: generated.usage,
+        };
+    } catch {
+        return {
+            action: 'compare_contexts',
+            output: fallback,
+            citations: [],
+            usage: { model: 'fallback', promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
+    }
 }
 
-function recommendAnchors(entities: EntityRecord[], relationships: any[]): AgentActionResponse {
+async function recommendAnchors(
+    entities: EntityRecord[],
+    relationships: any[]
+): Promise<{
+    action: string;
+    output: string;
+    citations: AgentActionResponse['citations'];
+    usage: {
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    };
+}> {
     const connectionCount = new Map<string, number>();
     for (const r of relationships) {
         connectionCount.set(r.sourceNeid, (connectionCount.get(r.sourceNeid) || 0) + 1);
@@ -325,7 +599,7 @@ function recommendAnchors(entities: EntityRecord[], relationships: any[]): Agent
         .sort((a, b) => b.connections - a.connections)
         .slice(0, 5);
 
-    const output = [
+    const fallback = [
         '**Recommended Anchor Entities for Enrichment**',
         '',
         ...ranked.map(
@@ -349,7 +623,37 @@ function recommendAnchors(entities: EntityRecord[], relationships: any[]): Agent
         })),
     ]);
 
-    return { action: 'recommend_anchors', output, citations };
+    try {
+        const generated = await generateGeminiText({
+            prompt: [
+                'Recommend anchor entities for enrichment with ranking rationale.',
+                `Ranked document entities: ${ranked
+                    .map(
+                        (entry, idx) =>
+                            `${idx + 1}. ${entry.entity.name} (${entry.entity.flavor}) - ${entry.connections} connections`
+                    )
+                    .join('; ')}`,
+            ].join('\n'),
+            label: 'recommend_anchors',
+            systemInstruction:
+                'You are Ask Yotta. Provide concise anchor recommendations and practical rationale.',
+            maxOutputTokens: 520,
+            retries: 1,
+        });
+        return {
+            action: 'recommend_anchors',
+            output: generated.text || fallback,
+            citations,
+            usage: generated.usage,
+        };
+    } catch {
+        return {
+            action: 'recommend_anchors',
+            output: fallback,
+            citations,
+            usage: { model: 'fallback', promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
+    }
 }
 
 function countBy<T>(items: T[], keyFn: (item: T) => string): Map<string, number> {

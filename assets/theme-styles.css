@@ -29,9 +29,13 @@
    Card Header Gradient
    =================================== */
 .card-header-gradient {
-    background: linear-gradient(135deg, var(--lv-surface), var(--lv-surface-light)) !important;
-    border-bottom: 1px solid var(--lv-green-dim) !important;
-    color: var(--lv-white) !important;
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--theme-panel-background) 84%, var(--theme-surface) 16%),
+        color-mix(in srgb, var(--theme-card-background) 82%, var(--theme-primary) 18%)
+    ) !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--theme-border) 68%, var(--theme-primary) 32%) !important;
+    color: var(--theme-text) !important;
     padding: 12px 16px !important;
     position: relative;
     height: 56px !important;
@@ -63,16 +67,21 @@
 .card-header-gradient .v-btn,
 .card-header-gradient .v-icon,
 .card-header-gradient .v-chip {
-    color: var(--lv-white) !important;
+    color: var(--theme-text) !important;
 }
 
 /* ===================================
    Theme-Aware Card Styles
    =================================== */
 .theme-card {
-    background-color: var(--theme-surface) !important;
+    background: linear-gradient(
+        160deg,
+        color-mix(in srgb, var(--theme-card-background) 88%, var(--theme-surface) 12%),
+        color-mix(in srgb, var(--theme-surface) 92%, var(--theme-background) 8%)
+    ) !important;
     border: 1px solid var(--theme-border) !important;
     color: var(--theme-text) !important;
+    box-shadow: 0 10px 24px rgba(4, 8, 15, 0.28) !important;
 }
 
 .theme-card-title {
@@ -101,26 +110,26 @@
 /* Unselected buttons */
 .v-btn-toggle .v-btn:not(.v-btn--active),
 .v-btn-group .v-btn:not(.v-btn--active) {
-    color: rgba(255, 255, 255, 0.9) !important;
+    color: var(--theme-text-secondary) !important;
 }
 
 /* Selected buttons -- Cyber Green highlight */
 .v-btn-toggle .v-btn.v-btn--active,
 .v-btn-group .v-btn.v-btn--active {
-    background-color: var(--lv-green) !important;
-    color: var(--lv-black) !important;
-    border-color: var(--lv-green) !important;
+    background-color: var(--theme-primary) !important;
+    color: #08110b !important;
+    border-color: var(--theme-primary) !important;
     font-weight: 600 !important;
-    box-shadow: 0 0 12px rgba(63, 234, 0, 0.3) !important;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-primary) 60%, transparent) !important;
     opacity: 1 !important;
     transform: none !important;
 }
 
 /* Also target the variant-outlined specifically */
 .v-app .v-btn-toggle .v-btn--variant-outlined.v-btn--active {
-    background-color: var(--lv-green) !important;
-    color: var(--lv-black) !important;
-    border-color: var(--lv-green) !important;
+    background-color: var(--theme-primary) !important;
+    color: #08110b !important;
+    border-color: var(--theme-primary) !important;
 }
 
 /* Remove Vuetify's default overlay effects */
@@ -132,13 +141,13 @@
 /* Hover states for unselected buttons */
 .v-btn-toggle .v-btn:not(.v-btn--active):hover,
 .v-btn-group .v-btn:not(.v-btn--active):hover {
-    background-color: rgba(255, 255, 255, 0.1) !important;
+    background-color: var(--app-subtle-surface) !important;
 }
 
 /* Consistent transition and sizing */
 .v-app .v-btn-toggle .v-btn {
     transition: all 0.2s ease !important;
-    border-radius: 4px !important;
+    border-radius: 999px !important;
     padding: 0 16px !important;
     min-height: 36px !important;
     letter-spacing: normal !important;
@@ -269,9 +278,9 @@
 
 /* Dark input styling */
 .v-field--focused {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--app-subtle-surface-2);
 }
 
 .v-field__input {
-    color: white;
+    color: var(--dynamic-text-primary) !important;
 }

@@ -1,12 +1,11 @@
 import { mcpCallTool, resetMcpSession, getMcpLog } from '~/server/utils/collectionConfig';
-import { rawQsProperties } from '~/server/utils/collectionConfig';
 import { setCachedCollection } from '~/server/api/collection/bootstrap.get';
 import {
-    getGuideDocumentNameByNeid,
-    getGuideRelationshipOccurrencesByEndpoints,
-    isGuideEventName,
-    resolveCitationToDocumentNeid,
-} from '~/server/utils/bnyGuide';
+    loadExtractedSeedGraph,
+    seedIdForKey,
+    seedKeyFromNameAndFlavor,
+    citationToDocumentNeid,
+} from '~/server/utils/extractedSeedGraph';
 import {
     BNY_DOCUMENTS,
     BNY_DOCUMENT_NEIDS,
@@ -19,56 +18,6 @@ import {
     type PropertySeriesRecord,
     type CollectionState,
 } from '~/utils/collectionTypes';
-
-// Probes derived from the ground-truth graph (recordeval_graph_extracted.json).
-// Directions and source flavors match what the document-KG agent extracted.
-// Ground truth directions:
-//   fund_account   --fund_of-->             financial_instrument  (bond)
-//   financial_instrument --issuer_of-->     organization
-//   financial_instrument --trustee_of-->    organization
-//   financial_instrument --beneficiary_of-> organization
-//   financial_instrument --borrower_of-->   organization
-//   fund_account   --holds_investment-->    financial_instrument
-//   organization   --advisor_to-->          organization | legal_agreement
-//   organization   --located_at-->          location
-//   organization   --sponsor_of-->          organization
-//   organization   --predecessor_of-->      organization
-//   organization   --successor_to-->        organization
-//   organization   --party_to-->            legal_agreement
-//   person         --works_at-->            organization
-// direction:'both' lets MCP find edges regardless of which end we query from.
-const RELATIONSHIP_PROBE_GROUPS: Array<{
-    sourceFlav: string;
-    targetFlav: string;
-    relTypes: string[];
-}> = [
-    // GT: fund_account --fund_of/holds_investment--> financial_instrument
-    {
-        sourceFlav: 'fund_account',
-        targetFlav: 'financial_instrument',
-        relTypes: ['fund_of', 'holds_investment'],
-    },
-    // GT: financial_instrument --issuer/trustee/beneficiary/borrower_of--> organization
-    {
-        sourceFlav: 'financial_instrument',
-        targetFlav: 'organization',
-        relTypes: ['issuer_of', 'trustee_of', 'beneficiary_of', 'borrower_of'],
-    },
-    // GT: organization --advisor_to/sponsor_of/predecessor_of/successor_to--> organization
-    {
-        sourceFlav: 'organization',
-        targetFlav: 'organization',
-        relTypes: ['advisor_to', 'sponsor_of', 'predecessor_of', 'successor_to'],
-    },
-    // GT: organization --advisor_to/party_to--> legal_agreement
-    {
-        sourceFlav: 'organization',
-        targetFlav: 'legal_agreement',
-        relTypes: ['advisor_to', 'party_to'],
-    },
-    { sourceFlav: 'organization', targetFlav: 'location', relTypes: ['located_at'] },
-    { sourceFlav: 'person', targetFlav: 'organization', relTypes: ['works_at'] },
-];
 
 const FUND_ACCOUNT_HISTORY_PROPERTIES = [
     'current_fund_status',
@@ -125,36 +74,61 @@ const BOND_HISTORY_PROPERTIES = [
     'uses_of_funds_total_uses:_total',
 ] as const;
 
-/** Strip leading zeros from NEIDs for consistent comparison across API responses. */
+/**
+ * Canonical NEID format for app state: 20-digit, left-padded with zeros.
+ * This keeps stored IDs consistent with MCP outputs that are commonly padded.
+ */
 function normalizeNeid(neid: string): string {
     if (!neid) return neid;
-    return neid.replace(/^0+(?=\d)/, '') || '0';
+    const unpadded = neid.replace(/^0+(?=\d)/, '') || '0';
+    return unpadded.padStart(20, '0');
 }
 
-function addRelationship(
-    relationships: RelationshipRecord[],
-    seen: Set<string>,
+function relationshipKey(rel: RelationshipRecord): string {
+    return `${rel.sourceNeid}|${rel.targetNeid}|${rel.type}|${rel.sourceDocumentNeid ?? ''}|${rel.recordedAt ?? ''}`;
+}
+
+function upsertRelationship(
+    relationshipMap: Map<string, RelationshipRecord>,
     rel: RelationshipRecord
 ): void {
-    const key = `${rel.sourceNeid}|${rel.targetNeid}|${rel.type}|${rel.sourceDocumentNeid ?? ''}|${rel.recordedAt ?? ''}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    relationships.push(rel);
-}
-
-function normalizeName(name: string | undefined): string {
-    return (name ?? '')
-        .trim()
-        .toLowerCase()
-        .replace(/&/g, ' and ')
-        .replace(/[^a-z0-9]+/g, ' ')
-        .replace(/\b(the|inc|llc|ltd|corp|corporation|co|company|na|assoc|association)\b/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+    const key = relationshipKey(rel);
+    const existing = relationshipMap.get(key);
+    if (!existing) {
+        relationshipMap.set(key, {
+            ...rel,
+            citations: rel.citations ? [...new Set(rel.citations)] : undefined,
+            properties: rel.properties ? { ...rel.properties } : undefined,
+        });
+        return;
+    }
+    const citations = [
+        ...new Set([...(existing.citations ?? []), ...(rel.citations ?? [])].filter(Boolean)),
+    ];
+    existing.citations = citations.length ? citations : undefined;
+    existing.extractedSeed = Boolean(existing.extractedSeed || rel.extractedSeed);
+    existing.mcpConfirmed = Boolean(existing.mcpConfirmed || rel.mcpConfirmed);
+    existing.mcpOnly = Boolean(existing.mcpOnly || rel.mcpOnly);
+    if (!existing.sourceDocumentNeid && rel.sourceDocumentNeid) {
+        existing.sourceDocumentNeid = rel.sourceDocumentNeid;
+    }
+    if (!existing.recordedAt && rel.recordedAt) {
+        existing.recordedAt = rel.recordedAt;
+    }
+    if (rel.properties) {
+        existing.properties = {
+            ...(existing.properties ?? {}),
+            ...rel.properties,
+        };
+    }
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
     return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function countRecordProperties(record: { properties?: Record<string, unknown> }): number {
+    return Object.keys(record.properties ?? {}).length;
 }
 
 /**
@@ -195,6 +169,28 @@ async function callToolWithRetry<T>(
     throw lastError;
 }
 
+function bnyDocumentNeidFromDocumentName(name: string | undefined): string | undefined {
+    if (!name) return undefined;
+    const match = name.match(/^bny_document_id\|(\d+)$/i);
+    if (!match) return undefined;
+    const documentId = match[1];
+    return BNY_DOCUMENTS.find((doc) => doc.documentId === documentId)?.neid;
+}
+
+function formatMs(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+}
+
+const CANONICAL_ENTITY_NEID_OVERRIDES: Record<string, string> = {
+    // The extracted bond label resolves to the same canonical instrument hub NEID
+    // used elsewhere in the BNY collection workflow.
+    [seedKeyFromNameAndFlavor(
+        '$142,235,000 New Jersey Housing and Mortgage Finance Agency Multifamily Housing Revenue Refunding Bond',
+        'financial_instrument'
+    )]: '08242646876499346416',
+};
+
 export default defineEventHandler(async (event) => {
     setResponseHeaders(event, {
         'Content-Type': 'text/event-stream',
@@ -228,165 +224,182 @@ export default defineEventHandler(async (event) => {
 
     resetMcpSession();
 
-    const entityMap = new Map<string, EntityRecord>();
-    const relationships: RelationshipRecord[] = [];
-    const relSeen = new Set<string>();
-    const eventMap = new Map<string, EventRecord>();
+    const seed = loadExtractedSeedGraph();
+    const entityByKey = new Map<string, EntityRecord>();
+    const eventByKey = new Map<string, EventRecord>();
+    const seedEntityDocsByKey = new Map<string, Set<string>>();
+    const seedEventDocsByKey = new Map<string, Set<string>>();
+    const relationshipMap = new Map<string, RelationshipRecord>();
+    const baselineExtractedPropertyCount =
+        seed.entities.reduce((sum, entity) => sum + countRecordProperties(entity), 0) +
+        seed.events.reduce((sum, eventItem) => sum + countRecordProperties(eventItem), 0);
+    const baselineExtractedPropertyRecordCount =
+        seed.entities.filter((entity) => countRecordProperties(entity) > 0).length +
+        seed.events.filter((eventItem) => countRecordProperties(eventItem) > 0).length;
     let t0 = Date.now();
 
     try {
-        // ─── Phase 1: Entity Discovery (parallel) ─────────────────────
-        // 5 docs × 6 flavors = 30 independent MCP calls — fan out in parallel.
+        // ─── Phase 1: Load extracted JSON baseline ────────────────────
         t0 = Date.now();
         sendStep(
             1,
             'working',
-            'Entity Discovery',
-            'Scanning 5 BNY documents across 6 entity types (parallel)...'
+            'Baseline Load',
+            'Loading extracted entity/event baseline from JSON...'
         );
 
-        const phase1Tasks = BNY_DOCUMENT_NEIDS.flatMap((docNeid) =>
-            HOP1_FLAVORS.map((flavor) => ({ docNeid, flavor }))
-        );
-        const phase1Failures: Array<{ docNeid: string; flavor: string }> = [];
-        let phase1Completed = 0;
-
-        await pMap(
-            phase1Tasks,
-            async ({ docNeid, flavor }) => {
-                try {
-                    const result = await callToolWithRetry<any>(
-                        'elemental_get_related',
-                        {
-                            entity_id: { id_type: 'neid', id: docNeid },
-                            related_flavor: flavor,
-                            limit: 500,
-                            direction: 'both',
-                        },
-                        { timeoutMs: 45_000, attempts: 1 }
-                    );
-
-                    const related = result?.relationships ?? [];
-                    for (const rel of related) {
-                        const rawNeid = rel.neid as string;
-                        if (!rawNeid) continue;
-                        const neid = normalizeNeid(rawNeid);
-                        const existing = entityMap.get(neid);
-                        if (existing) {
-                            if (!existing.sourceDocuments.includes(docNeid)) {
-                                existing.sourceDocuments.push(docNeid);
-                            }
-                        } else {
-                            entityMap.set(neid, {
-                                neid,
-                                name: (rel.name as string) || neid,
-                                flavor: (rel.flavor as string) || flavor,
-                                sourceDocuments: [docNeid],
-                                origin: 'document',
-                                properties: rel.properties ?? undefined,
-                            });
-                        }
-                        addRelationship(relationships, relSeen, {
-                            sourceNeid: neid,
-                            targetNeid: docNeid,
-                            type: 'appears_in',
-                            sourceDocumentNeid: docNeid,
-                            origin: 'document',
-                        });
-                    }
-                } catch (e: any) {
-                    phase1Failures.push({ docNeid, flavor });
-                    console.error(
-                        `Phase 1: get_related failed doc=${docNeid} flavor=${flavor}:`,
-                        e.message
-                    );
-                } finally {
-                    phase1Completed += 1;
-                    if (phase1Completed % 5 === 0 || phase1Completed === phase1Tasks.length) {
-                        sendStep(
-                            1,
-                            'working',
-                            'Entity Discovery',
-                            `Completed ${phase1Completed}/${phase1Tasks.length} entity probes...`
-                        );
-                        sendMcpLogSnapshot();
-                    }
-                }
-            },
-            8
-        );
-
-        for (const { docNeid, flavor } of phase1Failures) {
-            try {
-                const result = await callToolWithRetry<any>(
-                    'elemental_get_related',
-                    {
-                        entity_id: { id_type: 'neid', id: docNeid },
-                        related_flavor: flavor,
-                        limit: 500,
-                        direction: 'both',
-                    },
-                    { timeoutMs: 45_000, attempts: 1 }
-                );
-                for (const rel of result?.relationships ?? []) {
-                    const rawNeid = rel.neid as string;
-                    if (!rawNeid) continue;
-                    const neid = normalizeNeid(rawNeid);
-                    const existing = entityMap.get(neid);
-                    if (existing) {
-                        if (!existing.sourceDocuments.includes(docNeid))
-                            existing.sourceDocuments.push(docNeid);
-                    } else {
-                        entityMap.set(neid, {
-                            neid,
-                            name: (rel.name as string) || neid,
-                            flavor: (rel.flavor as string) || flavor,
-                            sourceDocuments: [docNeid],
-                            origin: 'document',
-                            properties: rel.properties ?? undefined,
-                        });
-                    }
-                    addRelationship(relationships, relSeen, {
-                        sourceNeid: neid,
-                        targetNeid: docNeid,
-                        type: 'appears_in',
-                        sourceDocumentNeid: docNeid,
-                        origin: 'document',
-                    });
-                }
-            } catch (e: any) {
-                console.error(`Phase 1 retry failed doc=${docNeid} flavor=${flavor}:`, e.message);
-            }
+        for (const seedEntity of seed.entities) {
+            const seededDocs = [
+                ...new Set(seedEntity.sourceDocumentNeids.map((d) => normalizeNeid(d))),
+            ];
+            seedEntityDocsByKey.set(seedEntity.key, new Set(seededDocs));
+            const canonicalNeid =
+                CANONICAL_ENTITY_NEID_OVERRIDES[seedEntity.key] ??
+                seedEntity.canonicalNeid ??
+                seedIdForKey('entity', seedEntity.key);
+            entityByKey.set(seedEntity.key, {
+                neid: canonicalNeid,
+                name: seedEntity.name,
+                flavor: seedEntity.flavor,
+                sourceDocuments: seededDocs,
+                extraSourceDocuments: [],
+                origin: 'document',
+                extractedSeed: true,
+                mcpConfirmed: canonicalNeid !== seedIdForKey('entity', seedEntity.key),
+                properties: seedEntity.properties,
+            });
+        }
+        for (const seedEvent of seed.events) {
+            const seededDocs = [
+                ...new Set(seedEvent.sourceDocumentNeids.map((d) => normalizeNeid(d))),
+            ];
+            seedEventDocsByKey.set(seedEvent.key, new Set(seededDocs));
+            eventByKey.set(seedEvent.key, {
+                neid: seedIdForKey('event', seedEvent.key),
+                name: seedEvent.name,
+                participantNeids: [],
+                sourceDocuments: seededDocs,
+                extraSourceDocuments: [],
+                extractedSeed: true,
+                mcpConfirmed: false,
+                properties: seedEvent.properties,
+            });
         }
 
         sendStep(
             1,
             'completed',
-            'Entity Discovery',
-            `Found ${entityMap.size} entities across ${HOP1_FLAVORS.length} types`,
+            'Baseline Load',
+            `Loaded ${entityByKey.size} entities and ${eventByKey.size} events extractions from documents`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
-        const entityNameToNeid = new Map<string, string>();
-        for (const entity of entityMap.values()) {
-            entityNameToNeid.set(normalizeName(entity.name), entity.neid);
-        }
-
-        // ─── Phase 2: Event Discovery (parallel) ──────────────────────
-        // 7 hub NEIDs — all independent, fan out in parallel.
+        // ─── Phase 2: Resolve seeded entities to NEIDs via docs ───────
         t0 = Date.now();
-        sendStep(
-            2,
-            'working',
-            'Event Discovery',
-            `Traversing ${EVENT_HUB_NEIDS.length} hub entities for events...`
+        sendStep(2, 'working', 'Loading Entities', 'Loading entities from source documents...');
+
+        const unresolvedFlavors = HOP1_FLAVORS.filter((flavor) =>
+            Array.from(entityByKey.values()).some(
+                (entity) => entity.flavor === flavor && !entity.mcpConfirmed
+            )
+        );
+        const phase1Tasks = BNY_DOCUMENT_NEIDS.flatMap((docNeid) =>
+            unresolvedFlavors.map((flavor) => ({ docNeid, flavor }))
+        );
+        let phase2Resolved = 0;
+        let phase2Rows = 0;
+        if (phase1Tasks.length > 0) {
+            await pMap(
+                phase1Tasks,
+                async ({ docNeid, flavor }) => {
+                    try {
+                        const result = await callToolWithRetry<any>(
+                            'elemental_get_related',
+                            {
+                                entity_id: { id_type: 'neid', id: docNeid },
+                                related_flavor: flavor,
+                                limit: 500,
+                                direction: 'both',
+                            },
+                            { timeoutMs: 45_000, attempts: 2 }
+                        );
+                        const related = result?.relationships ?? [];
+                        phase2Rows += related.length;
+                        for (const rel of related) {
+                            const key = seedKeyFromNameAndFlavor(
+                                (rel.name as string) || '',
+                                (rel.flavor as string) || flavor
+                            );
+                            const seeded = entityByKey.get(key);
+                            if (!seeded || !rel.neid) continue;
+                            const canonicalNeid = normalizeNeid(rel.neid as string);
+                            if (seeded.neid !== canonicalNeid) seeded.neid = canonicalNeid;
+                            seeded.name = (rel.name as string) || seeded.name;
+                            seeded.mcpConfirmed = true;
+                            seeded.properties = rel.properties ?? seeded.properties;
+                            const seedDocSet = seedEntityDocsByKey.get(key) ?? new Set<string>();
+                            if (!seeded.sourceDocuments.includes(docNeid)) {
+                                seeded.sourceDocuments.push(docNeid);
+                                if (!seedDocSet.has(docNeid)) {
+                                    seeded.extraSourceDocuments = [
+                                        ...new Set([
+                                            ...(seeded.extraSourceDocuments ?? []),
+                                            docNeid,
+                                        ]),
+                                    ];
+                                }
+                            }
+                            upsertRelationship(relationshipMap, {
+                                sourceNeid: seeded.neid,
+                                targetNeid: docNeid,
+                                type: 'appears_in',
+                                sourceDocumentNeid: docNeid,
+                                origin: 'document',
+                                extractedSeed: seedDocSet.has(docNeid),
+                                mcpConfirmed: true,
+                                mcpOnly: !seedDocSet.has(docNeid),
+                            });
+                            phase2Resolved += 1;
+                        }
+                    } catch (error: any) {
+                        console.error(
+                            `Phase 2 resolve failed doc=${docNeid} flavor=${flavor}:`,
+                            error?.message
+                        );
+                    }
+                },
+                8
+            );
+        }
+        console.log(
+            `[Phase2] entity resolution stats: calls=${phase1Tasks.length}, rows=${phase2Rows}, matchedRows=${phase2Resolved}`
         );
 
-        let phase2Completed = 0;
-        const eventResults = await pMap(
+        sendStep(
+            2,
+            'completed',
+            'Loading Entities',
+            phase1Tasks.length > 0
+                ? 'Entities loaded and validated.'
+                : 'Entities loaded from seeded canonical NEIDs.',
+            Date.now() - t0
+        );
+        sendMcpLogSnapshot();
+
+        // ─── Phase 3: Seeded event enrichment ──────────────────────────
+        t0 = Date.now();
+        sendStep(3, 'working', 'Loading Events', 'Loading events and participant links...');
+
+        const getEntityByNeid = (neid: string) =>
+            Array.from(entityByKey.values()).find((entity) => entity.neid === neid);
+        let phase3MatchedEvents = 0;
+        let phase3ReturnedEvents = 0;
+
+        await pMap(
             EVENT_HUB_NEIDS,
-            async (hubNeid) => {
+            async (hubNeidRaw) => {
+                const hubNeid = normalizeNeid(hubNeidRaw);
                 try {
                     const result = await callToolWithRetry<any>(
                         'elemental_get_events',
@@ -397,336 +410,313 @@ export default defineEventHandler(async (event) => {
                         },
                         { timeoutMs: 60_000, attempts: 2 }
                     );
-                    return { hubNeid, events: result?.events ?? [] };
-                } catch (e: any) {
-                    console.error(`Phase 2: get_events failed hub=${hubNeid}:`, e.message);
-                    return { hubNeid, events: [] };
-                } finally {
-                    phase2Completed += 1;
-                    sendStep(
-                        2,
-                        'working',
-                        'Event Discovery',
-                        `Processed ${phase2Completed}/${EVENT_HUB_NEIDS.length} event hubs...`
-                    );
-                    if (phase2Completed % 2 === 0 || phase2Completed === EVENT_HUB_NEIDS.length) {
-                        sendMcpLogSnapshot();
+                    const events = result?.events ?? [];
+                    phase3ReturnedEvents += events.length;
+                    for (const evt of events) {
+                        const eventKey = seedKeyFromNameAndFlavor(
+                            (evt.name as string) || '',
+                            'event'
+                        );
+                        const seededEvent = eventByKey.get(eventKey);
+                        if (!seededEvent || !evt.neid) continue;
+
+                        const eventNeid = normalizeNeid(evt.neid as string);
+                        seededEvent.neid = eventNeid;
+                        seededEvent.name = (evt.name as string) || seededEvent.name;
+                        seededEvent.mcpConfirmed = true;
+                        phase3MatchedEvents += 1;
+
+                        const props = evt.properties ?? {};
+                        seededEvent.category = (props.category?.value ??
+                            props.event_category?.value) as string | undefined;
+                        seededEvent.date = (props.date?.value ?? props.event_date?.value) as
+                            | string
+                            | undefined;
+                        seededEvent.description = (props.description?.value ??
+                            props.event_description?.value) as string | undefined;
+                        seededEvent.likelihood = (props.likelihood?.value ??
+                            props.event_likelihood?.value) as string | undefined;
+                        seededEvent.properties = {
+                            ...(seededEvent.properties ?? {}),
+                            ...(props as Record<string, unknown>),
+                        };
+
+                        const citations = [
+                            ...new Set(
+                                Object.values(props as Record<string, { citation?: string }>)
+                                    .map((item) => item?.citation)
+                                    .filter((citation): citation is string => Boolean(citation))
+                            ),
+                        ];
+                        const citedDocNeids = [
+                            ...new Set(
+                                citations
+                                    .map((citation) => citationToDocumentNeid(citation))
+                                    .filter((neid): neid is string => Boolean(neid))
+                            ),
+                        ];
+                        let appearsInDocNeids: string[] = [];
+                        try {
+                            const eventDocResult = await callToolWithRetry<any>(
+                                'elemental_get_related',
+                                {
+                                    entity_id: { id_type: 'neid', id: eventNeid },
+                                    related_flavor: 'document',
+                                    direction: 'both',
+                                    limit: 100,
+                                },
+                                { timeoutMs: 30_000, attempts: 1 }
+                            );
+                            const rows = eventDocResult?.relationships ?? [];
+                            appearsInDocNeids = [
+                                ...new Set(
+                                    rows
+                                        .map((row: any) => {
+                                            if (row?.neid) return normalizeNeid(String(row.neid));
+                                            return bnyDocumentNeidFromDocumentName(row?.name);
+                                        })
+                                        .filter((neid: string | undefined): neid is string =>
+                                            Boolean(neid)
+                                        )
+                                ),
+                            ];
+                        } catch {
+                            appearsInDocNeids = [];
+                        }
+                        const docNeids = [
+                            ...new Set(
+                                [...citedDocNeids, ...appearsInDocNeids].map((neid) =>
+                                    normalizeNeid(neid)
+                                )
+                            ),
+                        ];
+                        const baselineDocSet =
+                            seedEventDocsByKey.get(eventKey) ?? new Set<string>();
+                        for (const docNeid of docNeids) {
+                            if (!seededEvent.sourceDocuments.includes(docNeid)) {
+                                seededEvent.sourceDocuments.push(docNeid);
+                            }
+                            if (!baselineDocSet.has(docNeid)) {
+                                seededEvent.extraSourceDocuments = [
+                                    ...new Set([
+                                        ...(seededEvent.extraSourceDocuments ?? []),
+                                        docNeid,
+                                    ]),
+                                ];
+                            }
+                        }
+                        seededEvent.citations = [
+                            ...new Set([...(seededEvent.citations ?? []), ...citations]),
+                        ];
+
+                        for (const participant of evt.participants ?? []) {
+                            if (!participant.neid) continue;
+                            const participantNeid = normalizeNeid(participant.neid as string);
+                            const participantEntity = getEntityByNeid(participantNeid);
+                            if (!participantEntity) continue;
+                            if (!seededEvent.participantNeids.includes(participantEntity.neid)) {
+                                seededEvent.participantNeids.push(participantEntity.neid);
+                            }
+                            upsertRelationship(relationshipMap, {
+                                sourceNeid: participantEntity.neid,
+                                targetNeid: seededEvent.neid,
+                                type: 'schema::relationship::participant',
+                                sourceDocumentNeid:
+                                    docNeids[0] ?? participantEntity.sourceDocuments[0],
+                                citations,
+                                properties: {
+                                    participantProperties: participant.properties ?? {},
+                                    participantRelationshipTypes:
+                                        participant.relationship_types ?? [],
+                                },
+                                origin: 'document',
+                                mcpConfirmed: true,
+                                extractedSeed: false,
+                                mcpOnly: true,
+                            });
+                        }
+                        for (const docNeid of docNeids) {
+                            upsertRelationship(relationshipMap, {
+                                sourceNeid: seededEvent.neid,
+                                targetNeid: docNeid,
+                                type: 'appears_in',
+                                sourceDocumentNeid: docNeid,
+                                citations,
+                                origin: 'document',
+                                mcpConfirmed: true,
+                                extractedSeed: false,
+                                mcpOnly: true,
+                            });
+                        }
                     }
+                } catch (error: any) {
+                    console.error(
+                        `Phase 3 event enrichment failed hub=${hubNeid}:`,
+                        error?.message
+                    );
                 }
             },
             4
         );
+        console.log(
+            `[Phase3] event resolution stats: hubs=${EVENT_HUB_NEIDS.length}, returned=${phase3ReturnedEvents}, matchedRows=${phase3MatchedEvents}`
+        );
 
-        for (const { hubNeid, events } of eventResults) {
-            const normalHubNeid = normalizeNeid(hubNeid);
-            const hub = entityMap.get(normalHubNeid);
+        sendStep(
+            3,
+            'completed',
+            'Loading Events',
+            'Events loaded and linked to participants/documents.',
+            Date.now() - t0
+        );
+        sendMcpLogSnapshot();
 
-            for (const evt of events) {
-                const evtNeid = normalizeNeid(evt.neid as string);
-                if (!evtNeid || eventMap.has(evtNeid)) continue;
-                if (!isGuideEventName((evt.name as string) || evtNeid)) continue;
+        // ─── Phase 4: Relationship assembly ────────────────────────────
+        t0 = Date.now();
+        sendStep(
+            4,
+            'working',
+            'Loading Relationships',
+            'Building document links, participant links, and extracted baseline edges...'
+        );
 
-                const props = evt.properties ?? {};
-                const participantNeids: string[] = [];
-                let hasDocumentParticipant = false;
-                const eventCitations = uniqueStrings(
-                    Object.values(props as Record<string, { citation?: string }>).map(
-                        (value) => value?.citation
-                    )
-                );
-                const eventSourceDocuments = uniqueStrings([
-                    ...eventCitations.map((citation) => resolveCitationToDocumentNeid(citation)),
-                    ...(hub ? hub.sourceDocuments : []),
-                ]);
+        // Add extracted baseline appears_in edges for entities/events.
+        for (const [key, entity] of entityByKey.entries()) {
+            const docs = seedEntityDocsByKey.get(key) ?? new Set<string>();
+            for (const docNeid of docs) {
+                upsertRelationship(relationshipMap, {
+                    sourceNeid: entity.neid,
+                    targetNeid: docNeid,
+                    type: 'appears_in',
+                    sourceDocumentNeid: docNeid,
+                    origin: 'document',
+                    extractedSeed: true,
+                });
+            }
+        }
+        for (const [key, eventItem] of eventByKey.entries()) {
+            const docs = seedEventDocsByKey.get(key) ?? new Set<string>();
+            for (const docNeid of docs) {
+                upsertRelationship(relationshipMap, {
+                    sourceNeid: eventItem.neid,
+                    targetNeid: docNeid,
+                    type: 'appears_in',
+                    sourceDocumentNeid: docNeid,
+                    origin: 'document',
+                    extractedSeed: true,
+                });
+            }
+        }
 
-                if (Array.isArray(evt.participants)) {
-                    for (const p of evt.participants) {
-                        const matchedNeid =
-                            (p.neid && entityMap.has(normalizeNeid(p.neid))
-                                ? normalizeNeid(p.neid)
-                                : entityNameToNeid.get(normalizeName(p.name as string))) ?? null;
-                        if (!matchedNeid) continue;
-                        participantNeids.push(matchedNeid);
-                        hasDocumentParticipant = true;
-                    }
-                }
-                if (!hasDocumentParticipant) continue;
-
-                // Add participant edges for all known entities
-                for (const p of evt.participants ?? []) {
-                    const matchedNeid =
-                        (p.neid && entityMap.has(normalizeNeid(p.neid))
-                            ? normalizeNeid(p.neid)
-                            : entityNameToNeid.get(normalizeName(p.name as string))) ?? null;
-                    if (!matchedNeid) continue;
-                    addRelationship(relationships, relSeen, {
-                        sourceNeid: matchedNeid,
-                        targetNeid: evtNeid,
-                        type: 'schema::relationship::participant',
-                        sourceDocumentNeid: eventSourceDocuments[0],
-                        citations: eventCitations,
-                        origin: 'document',
-                    });
-                }
-
-                eventMap.set(evtNeid, {
-                    neid: evtNeid,
-                    name: (evt.name as string) || evtNeid,
-                    category: (props.category?.value ?? props.event_category?.value) as
-                        | string
-                        | undefined,
-                    date: (props.date?.value ?? props.event_date?.value) as string | undefined,
-                    description: (props.description?.value ?? props.event_description?.value) as
-                        | string
-                        | undefined,
-                    likelihood: (props.likelihood?.value ?? props.event_likelihood?.value) as
-                        | string
-                        | undefined,
-                    participantNeids,
-                    sourceDocuments: eventSourceDocuments,
-                    citations: eventCitations,
+        // Add extracted baseline non-document relationships.
+        for (const edge of seed.relationships) {
+            const sourceEntity = entityByKey.get(edge.sourceKey);
+            const sourceEvent = eventByKey.get(edge.sourceKey);
+            const targetEntity = entityByKey.get(edge.targetKey);
+            const targetEvent = eventByKey.get(edge.targetKey);
+            const sourceNeid = sourceEntity?.neid ?? sourceEvent?.neid;
+            const targetNeid = targetEntity?.neid ?? targetEvent?.neid;
+            if (!sourceNeid || !targetNeid) continue;
+            const sourceDocNeids = edge.sourceDocumentNeids.map((d) => normalizeNeid(d));
+            if (sourceDocNeids.length === 0) {
+                upsertRelationship(relationshipMap, {
+                    sourceNeid,
+                    targetNeid,
+                    type: edge.type,
+                    citations: edge.citations,
+                    recordedAt: edge.recordedAt,
+                    properties: {
+                        extractedTimestamp: edge.recordedAt,
+                        citationCount: edge.citations.length,
+                    },
+                    origin: 'document',
+                    extractedSeed: true,
+                });
+                continue;
+            }
+            for (const sourceDocumentNeid of sourceDocNeids) {
+                upsertRelationship(relationshipMap, {
+                    sourceNeid,
+                    targetNeid,
+                    type: edge.type,
+                    citations: edge.citations,
+                    recordedAt: edge.recordedAt,
+                    sourceDocumentNeid,
+                    properties: {
+                        extractedTimestamp: edge.recordedAt,
+                        citationCount: edge.citations.length,
+                    },
+                    origin: 'document',
+                    extractedSeed: true,
                 });
             }
         }
 
         sendStep(
-            2,
+            4,
             'completed',
-            'Event Discovery',
-            `Found ${eventMap.size} events from ${EVENT_HUB_NEIDS.length} hubs`,
+            'Loading Relationships',
+            'Relationships loaded from extracted and confirmed graph data.',
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
-        // ─── Phase 3: Typed Relationship Assembly (parallel) ──────────
-        // Primary source of typed edges: MCP get_related with grouped relationship_types.
-        // Secondary source: raw QS rows to add repeated document-scoped occurrences.
+        // ─── Phase 5: Property coverage ───────────────────────────────
         t0 = Date.now();
-
-        const probeTasks = RELATIONSHIP_PROBE_GROUPS.flatMap((group) =>
-            Array.from(entityMap.values())
-                .filter((entity) => entity.flavor === group.sourceFlav)
-                .map((source) => ({ group, source }))
-        );
-
         sendStep(
-            3,
+            5,
             'working',
-            'Relationship Assembly',
-            `Probing ${RELATIONSHIP_PROBE_GROUPS.length} grouped relationship sets (${probeTasks.length} calls)...`
+            'Loading Properties',
+            `Loading extracted properties and historical series...`
         );
 
-        let phase3Completed = 0;
-        const phase3Results = await pMap(
-            probeTasks,
-            async ({ group, source }) => {
+        // First, get latest properties for all resolved entity NEIDs so
+        // the extracted entity set has broad property coverage.
+        const resolvedEntityNeids = [
+            ...new Set(
+                Array.from(entityByKey.values())
+                    .map((entity) => normalizeNeid(entity.neid))
+                    .filter((neid) => !neid.startsWith('seed:'))
+            ),
+        ];
+        let phase4EntitySuccess = 0;
+        await pMap(
+            resolvedEntityNeids,
+            async (neid) => {
                 try {
                     const result = await callToolWithRetry<any>(
-                        'elemental_get_related',
+                        'elemental_get_entity',
                         {
-                            entity_id: { id_type: 'neid', id: source.neid },
-                            related_flavor: group.targetFlav,
-                            relationship_types: group.relTypes,
-                            limit: 100,
-                            direction: 'both',
+                            entity_id: { id_type: 'neid', id: neid },
                         },
                         { timeoutMs: 45_000, attempts: 2 }
                     );
-                    return { group, source, relationships: result?.relationships ?? [] };
-                } catch (e: any) {
-                    console.error(
-                        `[Phase3] ${group.relTypes.join(',')} from ${source.neid} FAILED:`,
-                        e?.message ?? String(e)
+                    const entity = result?.entity ?? result;
+                    const target = Array.from(entityByKey.values()).find(
+                        (item) => normalizeNeid(item.neid) === neid
                     );
-                    return { group, source, relationships: [] };
-                } finally {
-                    phase3Completed += 1;
-                    if (phase3Completed % 15 === 0 || phase3Completed === probeTasks.length) {
-                        sendStep(
-                            3,
-                            'working',
-                            'Relationship Assembly',
-                            `Processed ${phase3Completed}/${probeTasks.length} relationship probes...`
-                        );
-                        sendMcpLogSnapshot();
-                    }
-                }
-            },
-            6
-        );
-
-        for (const { group, source, relationships: related } of phase3Results) {
-            for (const rel of related) {
-                if (!rel.neid) continue;
-                const targetNeid = normalizeNeid(rel.neid as string);
-                if (!entityMap.has(targetNeid)) continue;
-                if (targetNeid === source.neid) continue;
-
-                const responseTypes = Array.isArray(rel.relationship_types)
-                    ? (rel.relationship_types as string[])
-                    : [];
-                const typedMatches = responseTypes.filter((type) => group.relTypes.includes(type));
-                const typesToAdd =
-                    typedMatches.length > 0
-                        ? typedMatches
-                        : group.relTypes.length === 1
-                          ? [group.relTypes[0]]
-                          : [];
-
-                for (const relType of typesToAdd) {
-                    addRelationship(relationships, relSeen, {
-                        sourceNeid: source.neid,
-                        targetNeid,
-                        type: relType,
-                        origin: 'document',
-                    });
-                }
-            }
-        }
-
-        // Scope filter: allow edges where endpoints are documents, entities, or events
-        const docNeidSet = new Set(BNY_DOCUMENT_NEIDS);
-        const filteredRelationships = relationships.filter(
-            (r) =>
-                docNeidSet.has(r.sourceNeid) ||
-                docNeidSet.has(r.targetNeid) ||
-                (entityMap.has(r.sourceNeid) && entityMap.has(r.targetNeid)) ||
-                // Allow participant edges: entity → event (event NEIDs are in eventMap, not entityMap)
-                (r.type === 'schema::relationship::participant' &&
-                    entityMap.has(r.sourceNeid) &&
-                    eventMap.has(r.targetNeid))
-        );
-
-        function resolveNodeName(neid: string): string {
-            return (
-                entityMap.get(neid)?.name ??
-                eventMap.get(neid)?.name ??
-                getGuideDocumentNameByNeid(neid) ??
-                neid
-            );
-        }
-
-        function getGuideMatchesEitherDirection(
-            sourceNeid: string,
-            targetNeid: string,
-            recordedAt?: string
-        ) {
-            const direct = getGuideRelationshipOccurrencesByEndpoints(
-                resolveNodeName(sourceNeid),
-                resolveNodeName(targetNeid),
-                recordedAt
-            );
-            const reverse = getGuideRelationshipOccurrencesByEndpoints(
-                resolveNodeName(targetNeid),
-                resolveNodeName(sourceNeid),
-                recordedAt
-            );
-            return { direct, reverse };
-        }
-
-        const finalRelationships: RelationshipRecord[] = [];
-        const finalSeen = new Set<string>();
-        for (const rel of filteredRelationships) {
-            addRelationship(finalRelationships, finalSeen, rel);
-        }
-
-        // Recover repeated document-scoped relationship occurrences from raw property rows.
-        // These rows carry recorded_at timestamps and let us distinguish multiple
-        // occurrences of the same semantic relationship across the 5 BNY documents.
-        const rawEntityIds = Array.from(entityMap.keys());
-        const rawChunks: string[][] = [];
-        for (let i = 0; i < rawEntityIds.length; i += 25)
-            rawChunks.push(rawEntityIds.slice(i, i + 25));
-
-        const rawResults = await pMap(
-            rawChunks,
-            async (chunk) => {
-                try {
-                    return await rawQsProperties(chunk);
-                } catch (e: any) {
-                    console.error(`[Phase3 raw] chunk failed:`, e.message);
-                    return { values: [] };
+                    if (!target) return;
+                    target.mcpConfirmed = true;
+                    target.name = (entity?.name as string | undefined) ?? target.name;
+                    target.properties = {
+                        ...(target.properties ?? {}),
+                        ...((entity?.properties as Record<string, unknown> | undefined) ?? {}),
+                    };
+                    phase4EntitySuccess += 1;
+                } catch (error: any) {
+                    console.error(`Phase 5: get_entity failed neid=${neid}:`, error?.message);
                 }
             },
             4
         );
 
-        const rawRows = rawResults.flatMap((result) => result?.values ?? []);
-        for (const row of rawRows) {
-            const sourceNeid = normalizeNeid(String(row.eid ?? ''));
-            const targetRaw = String(row.value ?? '');
-            if (!sourceNeid || !/^\d+$/.test(targetRaw)) continue;
-            const targetNeid = normalizeNeid(targetRaw);
-
-            const targetExists =
-                entityMap.has(targetNeid) || eventMap.has(targetNeid) || docNeidSet.has(targetNeid);
-            if (!targetExists) continue;
-
-            const sourceName = resolveNodeName(sourceNeid);
-            const targetName = resolveNodeName(targetNeid);
-            const { direct: matches, reverse: reverseMatches } = getGuideMatchesEitherDirection(
-                sourceNeid,
-                targetNeid,
-                row.recorded_at as string | undefined
-            );
-            const effectiveMatches = matches.length ? matches : reverseMatches;
-            if (!effectiveMatches.length) continue;
-
-            for (const match of effectiveMatches) {
-                if (match.type === 'schema::relationship::participant') continue;
-                const docNeids = uniqueStrings(
-                    match.citations.map((citation) => resolveCitationToDocumentNeid(citation))
-                );
-                for (const docNeid of docNeids.length ? docNeids : [undefined]) {
-                    addRelationship(finalRelationships, finalSeen, {
-                        sourceNeid:
-                            normalizeName(match.sourceName) === normalizeName(sourceName)
-                                ? sourceNeid
-                                : targetNeid,
-                        targetNeid:
-                            normalizeName(match.targetName) === normalizeName(targetName)
-                                ? targetNeid
-                                : sourceNeid,
-                        type: match.type,
-                        recordedAt: (row.recorded_at as string | undefined) ?? match.timestamp,
-                        sourceDocumentNeid: docNeid,
-                        citations: match.citations,
-                        origin: 'document',
-                    });
-                }
-            }
-        }
-
-        sendStep(
-            3,
-            'completed',
-            'Relationship Assembly',
-            `Assembled ${finalRelationships.length} typed edges`,
-            Date.now() - t0
-        );
-        sendMcpLogSnapshot();
-
-        // ─── Phase 4: Property History ────────────────────────────────
-        // For each entity discovered in Phase 1 that is known to carry financial
-        // properties (fund accounts, the bond), ask the live graph for its full
-        // temporal property history via elemental_get_entity(history: ...).
-        // We return whatever the graph has — no pre-loading or guessing from the
-        // ground truth. The Validation tab compares what we get against the ground truth.
-        t0 = Date.now();
-        sendStep(
-            4,
-            'working',
-            'Property History',
-            `Loading historical properties for ${PROPERTY_BEARING_NEIDS.length} key entities...`
-        );
-
-        // Phase 4 — all 6 property-bearing entities are independent, fan out in parallel.
+        const bondNeid = normalizeNeid('08242646876499346416');
         const propResults = await pMap(
             PROPERTY_BEARING_NEIDS,
             async (rawNeid) => {
                 const neid = normalizeNeid(rawNeid);
                 const properties =
-                    neid === '8242646876499346416'
+                    neid === bondNeid
                         ? [...BOND_HISTORY_PROPERTIES]
                         : [...FUND_ACCOUNT_HISTORY_PROPERTIES];
                 try {
@@ -740,13 +730,21 @@ export default defineEventHandler(async (event) => {
                         { timeoutMs: 60_000, attempts: 2 }
                     );
                     const entity = result?.entity ?? result;
+                    const resolvedName = (entity?.name as string | undefined) ?? neid;
+                    const targetEntity = Array.from(entityByKey.values()).find(
+                        (item) => item.neid === neid
+                    );
+                    if (targetEntity) {
+                        targetEntity.name = resolvedName;
+                        targetEntity.mcpConfirmed = true;
+                    }
                     return {
                         neid,
-                        name: entity?.name ?? neid,
+                        name: resolvedName,
                         historicalProps: entity?.historical_properties ?? {},
                     };
                 } catch (e: any) {
-                    console.error(`Phase 4: get_entity history failed neid=${neid}:`, e.message);
+                    console.error(`Phase 5: get_entity history failed neid=${neid}:`, e.message);
                     return { neid, name: neid, historicalProps: {} };
                 }
             },
@@ -784,21 +782,22 @@ export default defineEventHandler(async (event) => {
         );
 
         sendStep(
-            4,
+            5,
             'completed',
-            'Property History',
-            `Loaded ${propertySeries.length} property series across ${new Set(propertySeries.map((s) => s.neid)).size} entities`,
+            'Loading Properties',
+            'Properties and history loaded.',
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
-        // ─── Finalize ────────────────────────────────────────────────
+        // ─── Phase 6: Finalize ───────────────────────────────────────
         t0 = Date.now();
-        sendStep(5, 'working', 'Finalizing', 'Building final collection state...');
+        sendStep(6, 'working', 'Finalizing', 'Building collection state...');
 
-        const entities = Array.from(entityMap.values());
-        const events = Array.from(eventMap.values());
+        const entities = Array.from(entityByKey.values());
+        const events = Array.from(eventByKey.values());
         const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
+        const relationships = Array.from(relationshipMap.values());
 
         const state: CollectionState = {
             meta: {
@@ -808,13 +807,15 @@ export default defineEventHandler(async (event) => {
                 documentCount: BNY_DOCUMENTS.length,
                 entityCount: entities.length,
                 eventCount: events.length,
-                relationshipCount: finalRelationships.length,
+                relationshipCount: relationships.length,
                 agreementCount: agreements.length,
+                extractedPropertyCount: baselineExtractedPropertyCount,
+                extractedPropertyRecordCount: baselineExtractedPropertyRecordCount,
                 lastRebuilt: new Date().toISOString(),
             },
             documents: [...BNY_DOCUMENTS],
             entities,
-            relationships: finalRelationships,
+            relationships,
             events,
             propertySeries,
             status: 'ready',
@@ -823,10 +824,10 @@ export default defineEventHandler(async (event) => {
         setCachedCollection(state);
 
         sendStep(
-            5,
+            6,
             'completed',
             'Finalizing',
-            `Graph complete: ${entities.length} entities, ${events.length} events, ${finalRelationships.length} edges, ${propertySeries.length} property series`,
+            `Graph complete: ${entities.length} entities, ${events.length} events, ${relationships.length} edges, ${baselineExtractedPropertyCount} extracted baseline properties across ${baselineExtractedPropertyRecordCount} records, ${propertySeries.length} property series`,
             Date.now() - t0
         );
 

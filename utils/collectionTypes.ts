@@ -1,4 +1,5 @@
 export type DataOrigin = 'document' | 'enriched' | 'agent';
+export type EnrichmentGraphMode = 'document' | 'expanded';
 
 export interface DocumentRecord {
     neid: string;
@@ -13,7 +14,10 @@ export interface EntityRecord {
     name: string;
     flavor: string;
     sourceDocuments: string[];
+    extraSourceDocuments?: string[];
     origin: DataOrigin;
+    extractedSeed?: boolean;
+    mcpConfirmed?: boolean;
     properties?: Record<string, unknown>;
 }
 
@@ -24,7 +28,11 @@ export interface RelationshipRecord {
     recordedAt?: string;
     sourceDocumentNeid?: string;
     citations?: string[];
+    properties?: Record<string, unknown>;
     origin: DataOrigin;
+    extractedSeed?: boolean;
+    mcpConfirmed?: boolean;
+    mcpOnly?: boolean;
 }
 
 export interface EventRecord {
@@ -36,7 +44,11 @@ export interface EventRecord {
     likelihood?: string;
     participantNeids: string[];
     sourceDocuments: string[];
+    extraSourceDocuments?: string[];
     citations?: string[];
+    properties?: Record<string, unknown>;
+    extractedSeed?: boolean;
+    mcpConfirmed?: boolean;
 }
 
 export interface PropertyPoint {
@@ -60,6 +72,8 @@ export interface CollectionMeta {
     eventCount: number;
     relationshipCount: number;
     agreementCount: number;
+    extractedPropertyCount?: number;
+    extractedPropertyRecordCount?: number;
     lastRebuilt?: string;
 }
 
@@ -78,41 +92,43 @@ export type WorkspaceTab =
     | 'overview'
     | 'graph'
     | 'events'
+    | 'insights'
     | 'agreements'
+    | 'timeline'
     | 'validation'
     | 'agent'
     | 'enrichment';
 
 export const BNY_DOCUMENTS: DocumentRecord[] = [
     {
-        neid: '2051052947608524725',
+        neid: '02051052947608524725',
         documentId: '7438596',
         title: 'Interim Rebate Analysis (2015)',
         kind: 'Rebate Analysis',
         date: '2015-10-16',
     },
     {
-        neid: '7447437794117404020',
+        neid: '07447437794117404020',
         documentId: '26889358',
         title: 'Interim Rebate Analysis (2024)',
         kind: 'Rebate Analysis',
         date: '2024-10-16',
     },
     {
-        neid: '7526709763959495568',
+        neid: '07526709763959495568',
         documentId: '4124255',
         title: 'Irrevocable Letter of Credit',
         kind: 'Letter of Credit',
     },
     {
-        neid: '7780293260382878366',
+        neid: '07780293260382878366',
         documentId: '5816087',
         title: 'Interim Rebate Analysis (2012)',
         kind: 'Rebate Analysis',
         date: '2012-10-16',
     },
     {
-        neid: '8759058315171884540',
+        neid: '08759058315171884540',
         documentId: '9587055',
         title: 'Interim Rebate Analysis (2021)',
         kind: 'Rebate Analysis',
@@ -131,31 +147,31 @@ export const HOP1_FLAVORS = [
     'legal_agreement',
 ] as const;
 
-// Exact event hub NEIDs from BNY-README — normalized to no-leading-zero form.
+// Exact event hub NEIDs from BNY-README, stored in canonical padded form.
 export const EVENT_HUB_NEIDS = [
-    '8242646876499346416', // Bond hub: IRREVOCABLE LETTER OF CREDIT NO. 5094714
-    '6471256961308361850', // New Jersey Housing and Mortgage Finance Agency
-    '1470965072054453101', // BLX Group LLC
-    '9112734796193071548', // Reserve I Account
-    '2877916378535664072', // Reserve II Account
-    '7476737946181823597', // Liquidity I Account
-    '6638852300639391265', // Liquidity II Account
+    '08242646876499346416', // Bond hub: IRREVOCABLE LETTER OF CREDIT NO. 5094714
+    '06471256961308361850', // New Jersey Housing and Mortgage Finance Agency
+    '01470965072054453101', // BLX Group LLC
+    '09112734796193071548', // Reserve I Account
+    '02877916378535664072', // Reserve II Account
+    '07476737946181823597', // Liquidity I Account
+    '06638852300639391265', // Liquidity II Account
     // One useful secondary audit hub from the README that helps close event coverage
     // without pulling in broad non-document event histories.
-    '6967031221082229818', // UNITED JERSEY BANK/CENTRAL,
-    '5477621199116204617', // Orrick, Herrington & Sutcliffe
-    '4824620677155774613', // REPUBLIC NATIONAL BANK OF NEW YORK
-    '6157989400122873900', // HSBC Bank USA, Natl Assoc
+    '06967031221082229818', // UNITED JERSEY BANK/CENTRAL,
+    '05477621199116204617', // Orrick, Herrington & Sutcliffe
+    '04824620677155774613', // REPUBLIC NATIONAL BANK OF NEW YORK
+    '06157989400122873900', // HSBC Bank USA, Natl Assoc
 ] as const;
 
 // Property-bearing entities for historical time-series retrieval via elemental_get_entity history.
 export const PROPERTY_BEARING_NEIDS = [
-    '7476737946181823597', // Liquidity I Account
-    '6638852300639391265', // Liquidity II Account
-    '9112734796193071548', // Reserve I Account
-    '2877916378535664072', // Reserve II Account
-    '2277784462984661168', // Prior Rebate Liability
-    '8242646876499346416', // IRREVOCABLE LETTER OF CREDIT NO. 5094714
+    '07476737946181823597', // Liquidity I Account
+    '06638852300639391265', // Liquidity II Account
+    '09112734796193071548', // Reserve I Account
+    '02877916378535664072', // Reserve II Account
+    '02277784462984661168', // Prior Rebate Liability
+    '08242646876499346416', // IRREVOCABLE LETTER OF CREDIT NO. 5094714
 ] as const;
 
 export function emptyCollectionState(): CollectionState {
@@ -169,6 +185,8 @@ export function emptyCollectionState(): CollectionState {
             eventCount: 0,
             relationshipCount: 0,
             agreementCount: 0,
+            extractedPropertyCount: 0,
+            extractedPropertyRecordCount: 0,
         },
         documents: [...BNY_DOCUMENTS],
         entities: [],

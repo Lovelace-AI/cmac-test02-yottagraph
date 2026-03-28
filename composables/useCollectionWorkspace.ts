@@ -1,12 +1,15 @@
 import { ref, computed } from 'vue';
 import type {
     CollectionState,
+    EnrichmentGraphMode,
     EntityRecord,
     RelationshipRecord,
     PropertySeriesRecord,
     WorkspaceTab,
 } from '~/utils/collectionTypes';
 import { emptyCollectionState } from '~/utils/collectionTypes';
+import { mapCollectionToOverviewViewModel } from '~/utils/overviewBriefing';
+import { projectCollapsedOrganizationLineage } from '~/utils/enrichmentLineage';
 
 export interface RebuildStep {
     step: number;
@@ -14,6 +17,7 @@ export interface RebuildStep {
     label: string;
     detail?: string;
     durationMs?: number;
+    startedAtMs?: number;
 }
 
 export interface McpLogEntry {
@@ -83,23 +87,34 @@ const INITIAL_STEPS: RebuildStep[] = [
     {
         step: 1,
         status: 'pending',
-        label: 'Entity Discovery',
-        detail: 'Scanning 5 BNY documents...',
+        label: 'Baseline Load',
+        detail: 'Loading extracted JSON baseline...',
     },
-    { step: 2, status: 'pending', label: 'Event Discovery', detail: 'Traversing hub entities...' },
+    {
+        step: 2,
+        status: 'pending',
+        label: 'Loading Entities',
+        detail: 'Resolving extracted entities through MCP traversal...',
+    },
     {
         step: 3,
         status: 'pending',
-        label: 'Relationship Assembly',
-        detail: 'Probing relationship types...',
+        label: 'Loading Events',
+        detail: 'Resolving extracted events from hub entities...',
     },
     {
         step: 4,
         status: 'pending',
-        label: 'Property History',
-        detail: 'Loading historical properties...',
+        label: 'Loading Relationships',
+        detail: 'Building document and participant links...',
     },
-    { step: 5, status: 'pending', label: 'Finalizing', detail: 'Building collection state...' },
+    {
+        step: 5,
+        status: 'pending',
+        label: 'Loading Properties',
+        detail: 'Loading extracted properties and historical series...',
+    },
+    { step: 6, status: 'pending', label: 'Finalizing', detail: 'Building collection state...' },
 ];
 
 const collection = ref<CollectionState>(emptyCollectionState());
@@ -109,8 +124,17 @@ const selectedDocumentNeid = ref<string | null>(null);
 const rebuilding = ref(false);
 const rebuildSteps = ref<RebuildStep[]>(INITIAL_STEPS.map((s) => ({ ...s })));
 const enriching = ref(false);
+const enrichmentAnchorNeids = ref<string[]>([]);
+const enrichmentHops = ref<1 | 2>(1);
+const enrichmentGraphMode = ref<EnrichmentGraphMode>('document');
+const enrichmentLastRun = ref<{ anchorNeids: string[]; hops: 1 | 2; ranAt: string } | null>(null);
 const agentLoading = ref(false);
-const agentResult = ref<{ output: string; citations: any[] } | null>(null);
+const agentResult = ref<{
+    output: string;
+    citations: any[];
+    generationSource?: 'gemini' | 'fallback';
+    generationNote?: string;
+} | null>(null);
 const mcpLog = ref<McpLogEntry[]>([]);
 const geminiLog = ref<GeminiUsageEntry[]>([]);
 let _geminiIdCounter = 0;
@@ -125,6 +149,26 @@ export function useCollectionWorkspace() {
     const relationships = computed(() => collection.value.relationships);
     const propertySeries = computed(() => collection.value.propertySeries);
     const meta = computed(() => collection.value.meta);
+    const extractedPropertyCount = computed(
+        () => collection.value.meta.extractedPropertyCount ?? 0
+    );
+    const propertyBearingRecordCount = computed(
+        () => collection.value.meta.extractedPropertyRecordCount ?? 0
+    );
+    const entityPropertyCount = computed(() =>
+        collection.value.entities.reduce(
+            (sum, entity) => sum + Object.keys(entity.properties ?? {}).length,
+            0
+        )
+    );
+    const propertyBearingEntityCount = computed(
+        () =>
+            new Set(
+                collection.value.entities
+                    .filter((entity) => Object.keys(entity.properties ?? {}).length > 0)
+                    .map((entity) => entity.neid)
+            ).size
+    );
 
     const documentEntities = computed(() =>
         collection.value.entities.filter((e) => e.origin === 'document')
@@ -132,8 +176,59 @@ export function useCollectionWorkspace() {
     const enrichedEntities = computed(() =>
         collection.value.entities.filter((e) => e.origin === 'enriched')
     );
+    const documentRelationships = computed(() =>
+        collection.value.relationships.filter((relationship) => relationship.origin === 'document')
+    );
+    const enrichedRelationships = computed(() =>
+        collection.value.relationships.filter((relationship) => relationship.origin === 'enriched')
+    );
+    const entityNeidSet = computed(
+        () => new Set(collection.value.entities.map((entity) => entity.neid))
+    );
+    const enrichmentDocumentGraphRelationships = computed(() =>
+        documentRelationships.value.filter(
+            (relationship) =>
+                entityNeidSet.value.has(relationship.sourceNeid) &&
+                entityNeidSet.value.has(relationship.targetNeid)
+        )
+    );
+    const enrichmentExpandedGraphRelationships = computed(() =>
+        collection.value.relationships.filter(
+            (relationship) =>
+                entityNeidSet.value.has(relationship.sourceNeid) &&
+                entityNeidSet.value.has(relationship.targetNeid)
+        )
+    );
+    const collapsedExpandedProjection = computed(() =>
+        projectCollapsedOrganizationLineage(
+            collection.value.entities,
+            enrichmentExpandedGraphRelationships.value
+        )
+    );
+    const enrichmentDocumentGraphEntities = computed(() => documentEntities.value);
+    const enrichmentExpandedGraphEntities = computed(
+        () => collapsedExpandedProjection.value.entities
+    );
+    const enrichmentCollapsedOrganizationCount = computed(
+        () => collapsedExpandedProjection.value.collapsedOrganizationCount
+    );
+    const enrichmentCollapsedRepresentativeByNeid = computed(() =>
+        Object.fromEntries(collapsedExpandedProjection.value.representativeByNeid.entries())
+    );
+    const enrichmentExpandedGraphRelationshipsCollapsed = computed(
+        () => collapsedExpandedProjection.value.relationships
+    );
     const agreements = computed(() =>
         collection.value.entities.filter((e) => e.flavor === 'legal_agreement')
+    );
+    const extractedSeedEntities = computed(() =>
+        collection.value.entities.filter((e) => e.extractedSeed)
+    );
+    const mcpConfirmedEntities = computed(() =>
+        collection.value.entities.filter((e) => e.mcpConfirmed)
+    );
+    const mcpOnlyRelationships = computed(() =>
+        collection.value.relationships.filter((rel) => rel.mcpOnly)
     );
 
     const selectedEntity = computed(() => {
@@ -340,12 +435,6 @@ export function useCollectionWorkspace() {
 
     const recommendedActions = computed<CollectionAction[]>(() => [
         {
-            id: 'understand-collection',
-            label: 'Understand This Collection',
-            description: 'Read an executive summary and key trust notes.',
-            tab: 'overview',
-        },
-        {
             id: 'review-key-parties',
             label: 'Review Key Parties',
             description: 'Inspect the highest-impact entities and their relationships.',
@@ -359,9 +448,27 @@ export function useCollectionWorkspace() {
         },
         {
             id: 'inspect-timeline',
-            label: 'Inspect Event Timeline',
+            label: 'Inspect Material Events',
             description: 'Review event progression and major episodes over time.',
             tab: 'events',
+        },
+        {
+            id: 'run-insights-deck',
+            label: 'Run Insights Deck',
+            description: 'Generate curated answers for executive and evidence questions.',
+            tab: 'insights',
+        },
+        {
+            id: 'export-insights-brief',
+            label: 'Export Insights Brief',
+            description: 'Assemble current answered questions into a report artifact.',
+            tab: 'insights',
+        },
+        {
+            id: 'compare-fact-evolution',
+            label: 'Compare Fact Evolution',
+            description: 'Track how entity facts change across source documents.',
+            tab: 'timeline',
         },
         {
             id: 'check-trust',
@@ -372,7 +479,7 @@ export function useCollectionWorkspace() {
         {
             id: 'ask-grounded-question',
             label: 'Ask A Grounded Question',
-            description: 'Use the copilot with source-linked evidence.',
+            description: 'Use Ask Yotta with source-linked evidence.',
             tab: 'agent',
         },
     ]);
@@ -390,6 +497,14 @@ export function useCollectionWorkspace() {
         }
         return prompts;
     });
+
+    const overviewViewModel = computed(() =>
+        mapCollectionToOverviewViewModel({
+            state: collection.value,
+            rebuilding: rebuilding.value,
+            trustCoverageSummary: trustCoverageSummary.value,
+        })
+    );
 
     async function bootstrap(): Promise<void> {
         try {
@@ -447,12 +562,26 @@ export function useCollectionWorkspace() {
             case 'step': {
                 const idx = rebuildSteps.value.findIndex((s) => s.step === (msg.step as number));
                 if (idx >= 0) {
+                    const existing = rebuildSteps.value[idx];
+                    const nextStatus = msg.status as 'working' | 'completed';
+                    const existingStart = existing.startedAtMs;
+                    const startedAtMs =
+                        nextStatus === 'working'
+                            ? existing.status === 'working' && existingStart
+                                ? existingStart
+                                : Date.now()
+                            : existingStart;
                     rebuildSteps.value[idx] = {
                         step: msg.step as number,
-                        status: msg.status as 'working' | 'completed',
+                        status: nextStatus,
                         label: msg.label as string,
                         detail: msg.detail as string | undefined,
-                        durationMs: msg.durationMs as number | undefined,
+                        durationMs:
+                            (msg.durationMs as number | undefined) ??
+                            (nextStatus === 'completed' && startedAtMs
+                                ? Date.now() - startedAtMs
+                                : undefined),
+                        startedAtMs,
                     };
                 }
                 break;
@@ -486,21 +615,40 @@ export function useCollectionWorkspace() {
     async function enrich(anchorNeids: string[], hops = 1): Promise<void> {
         enriching.value = true;
         try {
+            const boundedHops: 1 | 2 = hops >= 2 ? 2 : 1;
+            enrichmentAnchorNeids.value = [...anchorNeids];
+            enrichmentHops.value = boundedHops;
             const result = await $fetch<{
                 entities: EntityRecord[];
                 relationships: RelationshipRecord[];
             }>('/api/collection/enrich', {
                 method: 'POST',
-                body: { anchorNeids, hops },
+                body: { anchorNeids, hops: boundedHops },
             });
 
             const existingNeids = new Set(collection.value.entities.map((e) => e.neid));
             const newEntities = result.entities.filter((e) => !existingNeids.has(e.neid));
             collection.value.entities.push(...newEntities);
-            collection.value.relationships.push(...result.relationships);
+            const relationshipKey = (relationship: RelationshipRecord) =>
+                `${relationship.sourceNeid}|${relationship.targetNeid}|${relationship.type}|${relationship.origin}`;
+            const existingRelationshipKeys = new Set(
+                collection.value.relationships.map((relationship) => relationshipKey(relationship))
+            );
+            for (const relationship of result.relationships) {
+                const key = relationshipKey(relationship);
+                if (existingRelationshipKeys.has(key)) continue;
+                existingRelationshipKeys.add(key);
+                collection.value.relationships.push(relationship);
+            }
 
             collection.value.meta.entityCount = collection.value.entities.length;
             collection.value.meta.relationshipCount = collection.value.relationships.length;
+            enrichmentLastRun.value = {
+                anchorNeids: [...anchorNeids],
+                hops: boundedHops,
+                ranAt: new Date().toISOString(),
+            };
+            enrichmentGraphMode.value = 'expanded';
         } catch (e: any) {
             console.error('Enrichment failed:', e.message);
         } finally {
@@ -538,6 +686,8 @@ export function useCollectionWorkspace() {
             const result = await $fetch<{
                 output: string;
                 citations: any[];
+                generationSource?: 'gemini' | 'fallback';
+                generationNote?: string;
                 usage?: {
                     model: string;
                     promptTokens: number;
@@ -546,7 +696,12 @@ export function useCollectionWorkspace() {
                     costUsd: number;
                 };
             }>('/api/collection/agent-actions', { method: 'POST', body: { action, ...params } });
-            agentResult.value = { output: result.output, citations: result.citations };
+            agentResult.value = {
+                output: result.output,
+                citations: result.citations,
+                generationSource: result.generationSource,
+                generationNote: result.generationNote,
+            };
             if (result.usage) {
                 addGeminiUsage({
                     model: result.usage.model,
@@ -560,6 +715,9 @@ export function useCollectionWorkspace() {
                 });
             }
         } catch (e: any) {
+            if (e?.statusCode === 409) {
+                await bootstrap();
+            }
             agentResult.value = {
                 output: e.data?.statusMessage || e.message || 'Agent action failed',
                 citations: [],
@@ -575,11 +733,22 @@ export function useCollectionWorkspace() {
 
     function focusDocument(neid: string | null): void {
         selectedDocumentNeid.value = neid;
-        if (neid) activeTab.value = 'overview';
     }
 
     function setTab(tab: WorkspaceTab): void {
         activeTab.value = tab;
+    }
+
+    function setEnrichmentAnchors(anchorNeids: string[]): void {
+        enrichmentAnchorNeids.value = [...new Set(anchorNeids)];
+    }
+
+    function setEnrichmentHops(hops: 1 | 2): void {
+        enrichmentHops.value = hops;
+    }
+
+    function setEnrichmentGraphMode(mode: EnrichmentGraphMode): void {
+        enrichmentGraphMode.value = mode;
     }
 
     function resolveEntityName(neid: string): string {
@@ -613,10 +782,29 @@ export function useCollectionWorkspace() {
         events,
         relationships,
         propertySeries,
+        extractedPropertyCount,
+        propertyBearingRecordCount,
+        entityPropertyCount,
+        propertyBearingEntityCount,
         meta,
         documentEntities,
         enrichedEntities,
+        documentRelationships,
+        enrichedRelationships,
+        enrichmentAnchorNeids: computed(() => enrichmentAnchorNeids.value),
+        enrichmentHops: computed(() => enrichmentHops.value),
+        enrichmentGraphMode: computed(() => enrichmentGraphMode.value),
+        enrichmentLastRun: computed(() => enrichmentLastRun.value),
+        enrichmentDocumentGraphEntities,
+        enrichmentDocumentGraphRelationships,
+        enrichmentExpandedGraphEntities,
+        enrichmentExpandedGraphRelationships: enrichmentExpandedGraphRelationshipsCollapsed,
+        enrichmentCollapsedOrganizationCount,
+        enrichmentCollapsedRepresentativeByNeid,
         agreements,
+        extractedSeedEntities,
+        mcpConfirmedEntities,
+        mcpOnlyRelationships,
         flavorCounts,
         relationshipTypeCounts,
         topEntities,
@@ -627,6 +815,7 @@ export function useCollectionWorkspace() {
         collectionSummary,
         recommendedActions,
         contextualAgentPrompts,
+        overviewViewModel,
         bootstrap,
         rebuild,
         enrich,
@@ -636,6 +825,9 @@ export function useCollectionWorkspace() {
         selectEntity,
         focusDocument,
         setTab,
+        setEnrichmentAnchors,
+        setEnrichmentHops,
+        setEnrichmentGraphMode,
         resolveEntityName,
     };
 }

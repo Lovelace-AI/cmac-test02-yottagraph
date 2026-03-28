@@ -12,23 +12,23 @@
                 <v-row>
                     <v-col cols="12" md="4">
                         <InsightMetricCard
-                            label="Coverage score"
-                            :value="`${trustCoverageSummary.coverageScore}%`"
-                            description="Blend of source-backed entities and relationships."
+                            label="Extracted baseline entities"
+                            :value="extractedEntityCount"
+                            description="Entities extracted directly from the source JSON graph."
                         />
                     </v-col>
                     <v-col cols="12" md="4">
                         <InsightMetricCard
-                            label="Evidence-backed links"
-                            :value="trustCoverageSummary.evidenceBackedRelationships"
-                            description="Relationships with source document evidence."
+                            label="MCP-confirmed entities"
+                            :value="mcpConfirmedEntityCount"
+                            description="Extracted entities confirmed through live MCP NEID calls."
                         />
                     </v-col>
                     <v-col cols="12" md="4">
                         <InsightMetricCard
-                            label="Inferred links"
-                            :value="trustCoverageSummary.inferredRelationships"
-                            description="Review these links before relying on them for decisions."
+                            label="MCP-only extra doc links"
+                            :value="mcpOnlyExtraRelationshipCount"
+                            description="Additional document mentions returned by MCP beyond extracted baseline."
                         />
                     </v-col>
                 </v-row>
@@ -185,6 +185,16 @@
         topEvents,
     } = useCollectionWorkspace();
 
+    const extractedEntityCount = computed(
+        () => entities.value.filter((entity) => entity.extractedSeed).length
+    );
+    const mcpConfirmedEntityCount = computed(
+        () => entities.value.filter((entity) => entity.mcpConfirmed).length
+    );
+    const mcpOnlyExtraRelationshipCount = computed(
+        () => relationships.value.filter((rel) => rel.mcpOnly).length
+    );
+
     const relationshipEvidenceShare = computed(() => {
         const total = Math.max(relationships.value.length, 1);
         return Math.round((trustCoverageSummary.value.evidenceBackedRelationships / total) * 100);
@@ -206,7 +216,8 @@
 
     const completeItems = computed(() => {
         const items = [
-            `${entities.value.length} entities are loaded with normalized IDs.`,
+            `${extractedEntityCount.value} extracted baseline entities are loaded with stable IDs.`,
+            `${mcpConfirmedEntityCount.value} extracted entities have live MCP confirmation.`,
             `${relationships.value.length} relationships are available for cross-entity analysis.`,
             `${topEvents.value.length} high-signal events are ranked for timeline review.`,
         ];
@@ -218,6 +229,11 @@
 
     const partialItems = computed(() => {
         const items = [...keyCoverageNotes.value];
+        if (mcpOnlyExtraRelationshipCount.value > 0) {
+            items.push(
+                `${mcpOnlyExtraRelationshipCount.value} MCP-only document links are additive evidence beyond the extracted baseline.`
+            );
+        }
         if (trustCoverageSummary.value.inferredRelationships > 0) {
             items.push(
                 `${trustCoverageSummary.value.inferredRelationships} relationships are inferred and should be checked before external reporting.`
@@ -231,7 +247,7 @@
             'Validate top entities against the source document list and citations.',
             'Review inferred links with no direct source evidence.',
             'Cross-check high-impact events against agreement or filing evidence.',
-            'Use Ask Copilot for targeted questions, then inspect linked citations.',
+            'Use Ask Yotta for targeted questions, then inspect linked citations.',
         ];
         if (topEntities.value[0]) {
             checks.unshift(`Start with ${topEntities.value[0].name}, the most connected entity.`);

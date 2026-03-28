@@ -1,0 +1,752 @@
+Yes. Here is the technical implementation spec you should give Cursor alongside the design brief and prompt.
+
+This is the part that translates the UI intent into components, props, layout rules, states, and data handling so Cursor does not make up its own architecture.
+
+Technical UI Implementation Spec for Cursor
+
+Elemental Document Collection Overview Page
+
+Objective
+
+Refactor the Overview tab into a structured executive briefing page for a document collection in Elemental.
+
+This page must support a live demo where the presenter explains that Elemental:
+	•	ingested 5 uploaded PDFs
+	•	automatically classified the documents
+	•	synthesized the deal structure
+	•	extracted entities, relationships, agreements, and events
+	•	generated a coherent AI narrative
+	•	created a launch point into Graph, Timeline, Agreements, Insights, Validation, and Enrichment
+
+The page should no longer feel like a sparse admin dashboard with empty cards.
+
+⸻
+
+1. Implementation goals
+
+Primary goals
+	•	Replace weak empty-state blocks with structured summary components
+	•	Improve information hierarchy and visual density
+	•	Make the Overview page useful in both demo mode and real product use
+	•	Support three states cleanly:
+	•	ingested but not analyzed
+	•	analysis complete
+	•	partial extraction
+
+Non-goals
+	•	Do not redesign the global top navigation
+	•	Do not invent entirely new backend APIs unless necessary
+	•	Do not introduce a new design language that clashes with the current Lovelace product styling
+
+⸻
+
+2. Suggested component architecture
+
+Refactor the Overview page into the following component tree:
+
+<DocumentCollectionOverviewPage>
+  <OverviewContainer>
+    <CollectionHeaderCard />
+    <OverviewTopRow>
+      <DealSummaryCard />
+      <CollectionHealthCard />
+    </OverviewTopRow>
+    <OverviewMiddleRow>
+      <AICaseStudyNarrativeCard />
+      <ExtractionStatsCard />
+    </OverviewMiddleRow>
+    <SourceDocumentsTable />
+    <ExploreNextGrid />
+  </OverviewContainer>
+</DocumentCollectionOverviewPage>
+
+If analysis is not complete, render the same layout skeleton but swap populated cards for intentional placeholders rather than showing large empty analytics boxes.
+
+⸻
+
+3. Component specs
+
+3.1 DocumentCollectionOverviewPage
+
+Responsibility
+
+Top-level page container for the Overview tab.
+
+Requirements
+	•	Fetch or receive collection-level data
+	•	Derive display-friendly summary fields
+	•	Determine which UI state to render
+	•	Pass normalized props into child cards
+
+Props
+
+type DocumentCollectionOverviewPageProps = {
+  collection: CollectionOverviewData;
+};
+
+
+⸻
+
+3.2 OverviewContainer
+
+Responsibility
+
+Centered page-width content wrapper
+
+Layout rules
+	•	max-w-[1440px]
+	•	mx-auto
+	•	px-6 lg:px-8
+	•	py-6
+	•	space-y-6
+
+Do not stretch content edge-to-edge. The current page feels loose and underdesigned because everything floats in too much empty space.
+
+⸻
+
+3.3 CollectionHeaderCard
+
+Responsibility
+
+Show collection identity, analysis status, high-level classification, and primary action.
+
+Props
+
+type CollectionHeaderCardProps = {
+  collectionName: string;
+  subtitle?: string;
+  detectedDealType?: string;
+  status: "not_started" | "processing" | "complete" | "partial" | "error";
+  documentCount: number;
+  lastUpdated?: string;
+  primaryActionLabel: string;
+  onPrimaryAction?: () => void;
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
+  badges?: Array<{
+    label: string;
+    tone?: "neutral" | "success" | "warning";
+  }>;
+};
+
+Visual structure
+	•	top row: title + status badge + actions
+	•	second row: subtitle / detected type
+	•	metadata strip: document count, last updated, collection classification
+	•	optional badges row
+
+Styling guidance
+	•	strong headline treatment
+	•	status badge must be visually clear
+	•	primary CTA must be prominent and top-right aligned
+	•	avoid multiple warning banners outside this card if possible
+
+Example Tailwind approach
+
+<div className="rounded-2xl border bg-white p-6 shadow-sm">
+
+
+⸻
+
+3.4 DealSummaryCard
+
+Responsibility
+
+Present synthesized key facts about the deal in a polished structured layout.
+
+Props
+
+type DealSummaryField = {
+  label: string;
+  value: string | number | null;
+  sourceRefs?: Array<{ docId: string; page?: number }>;
+};
+
+type DealSummaryCardProps = {
+  title?: string;
+  fields: DealSummaryField[];
+  isLoading?: boolean;
+  emptyMessage?: string;
+};
+
+Rendering rules
+	•	show 2-column key-value grid on desktop
+	•	1-column stack on small screens
+	•	suppress null/empty fields unless too few remain
+	•	if fewer than 3 good fields exist, render a guided placeholder
+
+Good candidate fields
+	•	deal type
+	•	issuer
+	•	par amount
+	•	closing date
+	•	project
+	•	location
+	•	trustee
+	•	obligor
+	•	maturity
+
+Tailwind layout
+
+<div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+
+
+⸻
+
+3.5 CollectionHealthCard
+
+Responsibility
+
+Summarize ingestion and extraction health in product language.
+
+Props
+
+type HealthItem = {
+  label: string;
+  value: string;
+  tone?: "success" | "warning" | "neutral" | "error";
+};
+
+type CollectionHealthCardProps = {
+  items: HealthItem[];
+};
+
+Example items
+	•	Documents parsed: 5 of 5
+	•	Classification: Complete
+	•	Deal structure: Identified
+	•	Entity extraction: Complete
+	•	Agreement extraction: Complete
+	•	Event extraction: Partial
+	•	Coverage: High confidence
+
+Rendering rules
+	•	vertical list with labels and right-aligned values
+	•	use subtle color coding, not loud badges everywhere
+	•	this should feel trustworthy and concise
+
+⸻
+
+3.6 AICaseStudyNarrativeCard
+
+Responsibility
+
+Display the AI-generated narrative summary. This is one of the main demo “wow” moments.
+
+Props
+
+type NarrativeCitation = {
+  label: string;
+  docId: string;
+  page?: number;
+};
+
+type AICaseStudyNarrativeCardProps = {
+  narrative?: string;
+  citations?: NarrativeCitation[];
+  isLoading?: boolean;
+  onExpand?: () => void;
+  onShowSources?: () => void;
+  onRegenerate?: () => void;
+};
+
+Rendering rules
+	•	render 2–4 readable paragraphs
+	•	preserve line breaks if narrative is already formatted
+	•	clamp to 5–6 lines only if there is an Expand interaction
+	•	if no narrative is available, show a pre-analysis placeholder that explains what will appear here after analysis
+	•	include small action row:
+	•	Expand
+	•	Show sources
+	•	Regenerate summary
+
+Layout
+
+This should occupy the larger share of the middle row, ideally 2/3 width.
+
+Tailwind suggestion
+
+<div className="col-span-1 lg:col-span-2 rounded-2xl border bg-white p-6 shadow-sm">
+
+
+⸻
+
+3.7 ExtractionStatsCard
+
+Responsibility
+
+Display extraction scale in compact metric form.
+
+Props
+
+type StatItem = {
+  label: string;
+  value: string | number;
+  helperText?: string;
+};
+
+type ExtractionStatsCardProps = {
+  stats: StatItem[];
+};
+
+Expected stats
+	•	documents
+	•	entities
+	•	relationships
+	•	events
+	•	agreements
+	•	dates
+	•	locations
+	•	enriched matches
+
+Rendering rules
+	•	show as stacked or grid metric tiles
+	•	large numerals
+	•	short labels
+	•	avoid paragraph explanations
+	•	if stats are unavailable, show placeholder copy with one CTA
+
+Recommended layout
+
+<div className="grid grid-cols-2 gap-3">
+
+Each stat tile:
+
+<div className="rounded-xl border bg-slate-50 p-4">
+
+
+⸻
+
+3.8 SourceDocumentsTable
+
+Responsibility
+
+Display uploaded files as classified, understood documents rather than a raw file list.
+
+Props
+
+type SourceDocumentRow = {
+  id: string;
+  filename: string;
+  detectedType?: string;
+  date?: string;
+  subject?: string;
+  pageCount?: number;
+  extractionStatus?: "complete" | "partial" | "pending" | "failed";
+  confidence?: "high" | "medium" | "low";
+  previewUrl?: string;
+};
+
+type SourceDocumentsTableProps = {
+  documents: SourceDocumentRow[];
+  onPreview?: (docId: string) => void;
+  onViewEntities?: (docId: string) => void;
+  onViewCitations?: (docId: string) => void;
+};
+
+Columns
+	•	file name
+	•	detected type
+	•	date
+	•	subject
+	•	pages
+	•	extraction status
+	•	confidence
+	•	actions
+
+Rendering rules
+	•	use a real table on desktop
+	•	use stacked cards only on small screens
+	•	detected type should render as a pill
+	•	extraction status should render as a semantic badge
+	•	actions should be concise: Preview, Entities, Citations
+
+Important
+
+This table must visually communicate that classification happened automatically.
+
+⸻
+
+3.9 ExploreNextGrid
+
+Responsibility
+
+Serve as a launchpad to deeper pages in the demo.
+
+Props
+
+type ExploreCardItem = {
+  key: string;
+  title: string;
+  description: string;
+  metric?: string;
+  ctaLabel: string;
+  onClick?: () => void;
+  icon?: React.ReactNode;
+};
+
+type ExploreNextGridProps = {
+  items: ExploreCardItem[];
+};
+
+Required cards
+	•	Graph & Entities
+	•	Timeline / Events
+	•	Agreements
+	•	Insights
+	•	Validation
+	•	Enrichment
+
+Rendering rules
+	•	3 columns on large screens
+	•	2 on medium
+	•	1 on small
+	•	each card should feel clickable and useful, not decorative
+
+Tailwind suggestion
+
+<div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+
+
+⸻
+
+4. Data model normalization
+
+Cursor should create a view-model layer so the page is not tightly coupled to raw backend response shape.
+
+Recommended normalized type
+
+type CollectionOverviewData = {
+  collectionId: string;
+  collectionName: string;
+  subtitle?: string;
+  detectedDealType?: string;
+  status: "not_started" | "processing" | "complete" | "partial" | "error";
+  lastUpdated?: string;
+
+  documentCount: number;
+  parsedDocumentCount?: number;
+  classifiedDocumentCount?: number;
+
+  dealSummary?: {
+    dealName?: string;
+    dealType?: string;
+    issuer?: string;
+    parAmount?: string;
+    closingDate?: string;
+    projectName?: string;
+    location?: string;
+    primaryParties?: string;
+    maturityRange?: string;
+  };
+
+  health?: {
+    parsingStatus?: string;
+    classificationStatus?: string;
+    dealStructureStatus?: string;
+    entityExtractionStatus?: string;
+    agreementExtractionStatus?: string;
+    eventExtractionStatus?: string;
+    coverageStatus?: string;
+  };
+
+  aiNarrative?: string;
+
+  extractionStats?: {
+    entityCount?: number;
+    relationshipCount?: number;
+    eventCount?: number;
+    agreementCount?: number;
+    dateCount?: number;
+    locationCount?: number;
+    enrichmentMatchCount?: number;
+  };
+
+  documents: SourceDocumentRow[];
+};
+
+If backend fields do not already exist in this shape, derive them in a mapper function.
+
+⸻
+
+5. Derived state logic
+
+Create helper functions for state, not inline conditionals everywhere.
+
+Example helpers
+
+const isAnalysisComplete = collection.status === "complete";
+const isAnalysisPending = collection.status === "not_started" || collection.status === "processing";
+const isPartial = collection.status === "partial";
+
+Add helpers for CTA labels
+
+function getPrimaryActionLabel(status: CollectionOverviewData["status"]) {
+  if (status === "not_started") return "Run Initial Analysis";
+  if (status === "processing") return "Analysis Running";
+  return "View Graph";
+}
+
+
+⸻
+
+6. Empty and partial states
+
+Do not render giant empty analytics panels
+
+Instead:
+
+If analysis is pending
+	•	show header
+	•	show source docs
+	•	show collection health
+	•	show placeholders for deal summary, narrative, stats
+
+Placeholder pattern
+
+Use a proper placeholder card:
+	•	title stays visible
+	•	body explains what the module will show
+	•	primary CTA appears if relevant
+
+Example placeholder copy
+
+“Run initial analysis to generate a synthesized deal summary, identify entities and agreements, and create a cited graph from this document collection.”
+
+If extraction is partial
+
+Render available data and label incomplete modules as:
+	•	Partial
+	•	Needs review
+	•	Still processing
+
+Do not show “0 entities” if the system simply has not finished.
+
+⸻
+
+7. Content rules for UI copy
+
+Cursor should replace backend-log phrasing with product phrasing.
+
+Replace these patterns
+	•	“Analysis Not Ready” → “Analysis Pending”
+	•	“0 extracted” → hide or rewrite as meaningful stat label
+	•	“No entities identified yet” → “Entity extraction will appear here after analysis runs”
+
+Tone rules
+	•	concise
+	•	high-signal
+	•	enterprise
+	•	user-facing, not internal-tool jargon
+
+⸻
+
+8. Recommended layout implementation
+
+Page layout
+
+<div className="mx-auto max-w-[1440px] space-y-6 px-6 py-6 lg:px-8">
+
+Top row
+
+<div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div className="xl:col-span-2">
+    <DealSummaryCard ... />
+  </div>
+  <div className="xl:col-span-1">
+    <CollectionHealthCard ... />
+  </div>
+</div>
+
+Middle row
+
+<div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div className="xl:col-span-2">
+    <AICaseStudyNarrativeCard ... />
+  </div>
+  <div className="xl:col-span-1">
+    <ExtractionStatsCard ... />
+  </div>
+</div>
+
+Bottom section
+	•	full-width documents table
+	•	full-width explore grid
+
+⸻
+
+9. Styling rules
+
+Global rules
+	•	use rounded cards: rounded-2xl
+	•	use subtle borders: border border-slate-200
+	•	use white card surfaces against a light neutral page background
+	•	use shadow-sm only, not heavy shadows
+	•	keep spacing tight and purposeful
+
+Typography
+	•	page title: text-2xl font-semibold
+	•	card title: text-base font-semibold
+	•	metadata labels: text-xs font-medium uppercase tracking-wide
+	•	body: text-sm text-slate-700
+
+Status styling
+
+Use clear semantic treatments:
+	•	success: green tint
+	•	warning/partial: amber tint
+	•	pending: slate or blue-gray
+	•	error: red tint
+
+Avoid multiple bright banners.
+
+⸻
+
+10. Accessibility and usability
+
+Cursor should ensure:
+	•	buttons and pills have sufficient contrast
+	•	table row actions are keyboard accessible
+	•	icons are not the only conveyers of meaning
+	•	important metadata is text visible, not tooltip-only
+	•	the page still works when narrative text is long
+
+⸻
+
+11. File and code organization guidance
+
+Ask Cursor to:
+	•	inspect the current Overview page file
+	•	identify existing components that can be reused
+	•	create new components only where needed
+	•	keep display mappers separate from rendering
+
+Suggested structure
+
+/components/document-collection/overview/
+  CollectionHeaderCard.tsx
+  DealSummaryCard.tsx
+  CollectionHealthCard.tsx
+  AICaseStudyNarrativeCard.tsx
+  ExtractionStatsCard.tsx
+  SourceDocumentsTable.tsx
+  ExploreNextGrid.tsx
+/lib/documentCollectionOverview/
+  mapCollectionToOverviewViewModel.ts
+  overviewHelpers.ts
+
+Implementation note: BNY retrieval reference
+
+Use `import/BNY-README.md` as a reconstruction and retrieval reference, not as a canonical full entity directory.
+
+What it does provide
+	•	An MCP-based recipe for loading the BNY graph from the 5 document seeds
+	•	The core traversal pattern for building an entity table keyed by NEID
+	•	Specific named examples with NEIDs, including document seeds, event hubs, and key property-bearing entities
+
+What it does not provide
+	•	A complete final list of every entity name and its NEID
+
+Implementation consequence
+	•	If the UI needs a full entity directory, derive it from MCP traversal results or from a generated `entities.json` artifact
+	•	Do not hardcode the full BNY entity list from the README because that list is not fully enumerated there
+
+
+⸻
+
+12. Suggested implementation sequence for Cursor
+
+Tell Cursor to do this in order:
+	1.	Inspect the current Overview page and identify all components involved
+	2.	Audit what data is already available to the page
+	3.	Create a normalized overview view-model mapper
+	4.	Replace the top summary area with CollectionHeaderCard
+	5.	Implement DealSummaryCard and CollectionHealthCard
+	6.	Implement AICaseStudyNarrativeCard and ExtractionStatsCard
+	7.	Refactor the source documents section into a proper table
+	8.	Add ExploreNextGrid
+	9.	Remove or replace the oversized empty entity/event panels
+	10.	Test all three page states: pending, complete, partial
+
+⸻
+
+13. Acceptance criteria for the implementation
+
+The implementation is done when:
+	•	the page reads as an executive briefing
+	•	the first screen clearly explains what collection this is
+	•	the page visibly supports the spoken demo narrative
+	•	the AI narrative is prominent
+	•	the source documents look classified and understood
+	•	extraction metrics are scannable
+	•	there are no large dead empty panels
+	•	internal jargon is removed from overview-level UI
+	•	there are obvious routes into Graph, Timeline, Agreements, Insights, Validation, and Enrichment
+
+⸻
+
+14. Cursor-ready technical prompt
+
+Paste this after the design brief.
+
+:::writing{variant=“standard” id=“57314”}
+Implement the Overview tab redesign using a component-based structure and a normalized view-model layer.
+
+Technical requirements:
+	1.	Create or refactor the page into these components:
+
+	•	CollectionHeaderCard
+	•	DealSummaryCard
+	•	CollectionHealthCard
+	•	AICaseStudyNarrativeCard
+	•	ExtractionStatsCard
+	•	SourceDocumentsTable
+	•	ExploreNextGrid
+
+	2.	Build a normalized overview mapper so the UI consumes a clean CollectionOverviewData object instead of raw backend response shape.
+	3.	Use a centered content container around max-w-[1440px] with structured vertical spacing and a stronger information hierarchy.
+	4.	Layout:
+
+	•	header card full width
+	•	deal summary + collection health in a 2/1 row
+	•	AI narrative + extraction stats in a 2/1 row
+	•	source documents table full width
+	•	explore next grid full width
+
+	5.	Replace oversized empty-state cards for entities/events with intentional placeholders or remove them from the Overview page entirely.
+	6.	Rewrite overview-level copy into product language. Do not surface internal jargon like MCP on this page unless behind advanced detail or tooltip.
+	7.	Support three rendering states:
+
+	•	analysis pending
+	•	analysis complete
+	•	partial extraction
+
+	8.	Use enterprise styling consistent with Lovelace:
+
+	•	rounded-2xl cards
+	•	subtle borders
+	•	clean white surfaces
+	•	restrained accent usage
+	•	strong typography hierarchy
+	•	no washed-out empty boxes
+
+	9.	Before implementing, inspect the current Overview page code and summarize:
+
+	•	which components currently render the page
+	•	which fields are already available
+	•	which fields need to be derived
+	•	which existing modules should be removed or replaced
+
+Then implement the redesign.
+:::
+
+Blunt advice
+
+Do not just hand Cursor the technical prompt by itself either.
+Give it:
+	1.	your short framing note
+	2.	the design spec
+	3.	this technical implementation spec
+	4.	the technical prompt
+
+That is enough constraint to make it useful instead of improvisational.

@@ -9,7 +9,7 @@
             </v-main>
 
             <!-- Global Dialogs -->
-            <v-dialog v-model="state.showSettingsDialog" max-width="600">
+            <v-dialog v-model="state.showSettingsDialog" max-width="860" scrollable>
                 <SettingsDialog />
             </v-dialog>
 

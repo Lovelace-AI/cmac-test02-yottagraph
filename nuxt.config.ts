@@ -100,17 +100,17 @@ export default defineNuxtConfig({
                     lovelaceDark: {
                         dark: true,
                         colors: {
-                            background: '#0a0a0a',
-                            surface: '#141414',
-                            'surface-variant': '#1c1c1c',
+                            background: '#090D14',
+                            surface: '#141B28',
+                            'surface-variant': '#1C2534',
                             primary: '#3fea00',
                             secondary: '#003bff',
                             warning: '#ff5c00',
                             error: '#ef4444',
                             info: '#003bff',
                             success: '#3fea00',
-                            'on-background': '#e5e5e5',
-                            'on-surface': '#e5e5e5',
+                            'on-background': '#f3f6fc',
+                            'on-surface': '#f3f6fc',
                         },
                     },
                     lovelaceLight: {
@@ -133,7 +133,7 @@ export default defineNuxtConfig({
             },
             defaults: {
                 VBtn: { variant: 'flat', rounded: 'lg' },
-                VCard: { rounded: 'lg', variant: 'outlined' },
+                VCard: { rounded: 'xl', variant: 'outlined' },
                 VTextField: { variant: 'outlined', density: 'comfortable', color: 'primary' },
                 VSelect: { variant: 'outlined', density: 'comfortable', color: 'primary' },
                 VChip: { size: 'small', variant: 'tonal' },
@@ -165,11 +165,15 @@ export default defineNuxtConfig({
     // See: https://nuxt.com/docs/guide/going-further/runtime-config
     runtimeConfig: {
         qsApiKey: bcYaml.qsApiKey || '',
+        geminiApiKey: process.env.GEMINI_API_KEY || '',
+        geminiModel: 'gemini-2.5-flash',
+        geminiTemperature: 3,
+        geminiTimeoutMs: 25000,
         public: {
             qsApiKey: '',
             // App Identity — broadchurch.yaml provides defaults for provisioned projects
             appId: bcYaml.appId,
-            appName: bcYaml.appName,
+            appName: bcYaml.appName || 'Document Collection Intelligence',
             appShortName: 'Elemental',
 
             // Auth0 Configuration

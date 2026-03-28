@@ -36,7 +36,7 @@
                     :y1="axisY"
                     :x2="svgWidth - marginRight"
                     :y2="axisY"
-                    stroke="rgba(255,255,255,0.15)"
+                    :stroke="axisLineColor"
                     stroke-width="1"
                 />
 
@@ -47,14 +47,14 @@
                         :y1="axisY - 4"
                         :x2="tick.x"
                         :y2="axisY + 4"
-                        stroke="rgba(255,255,255,0.3)"
+                        :stroke="tickLineColor"
                         stroke-width="1"
                     />
                     <text
                         :x="tick.x"
                         :y="axisY + 18"
                         text-anchor="middle"
-                        fill="rgba(255,255,255,0.5)"
+                        :fill="tickLabelColor"
                         font-size="10"
                     >
                         {{ tick.label }}
@@ -67,7 +67,7 @@
                         :x="marginLeft - 6"
                         :y="laneY(laneIdx) + laneHeight / 2 + 4"
                         text-anchor="end"
-                        fill="rgba(255,255,255,0.5)"
+                        :fill="laneLabelColor"
                         font-size="9"
                     >
                         {{ lane.category.slice(0, 14) }}
@@ -77,7 +77,7 @@
                         :y1="laneY(laneIdx)"
                         :x2="svgWidth - marginRight"
                         :y2="laneY(laneIdx)"
-                        stroke="rgba(255,255,255,0.04)"
+                        :stroke="laneLineColor"
                         stroke-width="1"
                     />
                     <!-- Events in this lane -->
@@ -87,7 +87,7 @@
                             :cy="laneY(laneIdx) + laneHeight / 2"
                             :r="hoveredNeid === evt.neid ? 7 : 5"
                             :fill="categoryColor(lane.category)"
-                            :opacity="hoveredNeid === evt.neid ? 1 : 0.75"
+                            :opacity="hoveredNeid === evt.neid ? 1 : eventPointOpacity"
                             style="cursor: pointer; transition: r 0.1s"
                             @mouseenter="onEnter(evt, $event)"
                             @mouseleave="onLeave"
@@ -127,6 +127,7 @@
     const hoverEvt = ref<EventRecord | null>(null);
     const tooltipX = ref(0);
     const tooltipY = ref(0);
+    const { colorMode } = useAppColorMode();
 
     const marginLeft = 100;
     const marginRight = 20;
@@ -183,6 +184,23 @@
         });
     });
 
+    const axisLineColor = computed(() =>
+        colorMode.value === 'light' ? 'rgba(16,24,40,0.24)' : 'rgba(255,255,255,0.22)'
+    );
+    const tickLineColor = computed(() =>
+        colorMode.value === 'light' ? 'rgba(16,24,40,0.35)' : 'rgba(255,255,255,0.38)'
+    );
+    const tickLabelColor = computed(() =>
+        colorMode.value === 'light' ? 'rgba(16,24,40,0.78)' : 'rgba(255,255,255,0.68)'
+    );
+    const laneLabelColor = computed(() =>
+        colorMode.value === 'light' ? 'rgba(16,24,40,0.76)' : 'rgba(255,255,255,0.60)'
+    );
+    const laneLineColor = computed(() =>
+        colorMode.value === 'light' ? 'rgba(16,24,40,0.10)' : 'rgba(255,255,255,0.08)'
+    );
+    const eventPointOpacity = computed(() => (colorMode.value === 'light' ? 0.92 : 0.75));
+
     function dateToX(dateStr?: string): number {
         if (!dateStr) return marginLeft;
         const t = new Date(dateStr).getTime();
@@ -225,7 +243,8 @@
     .timeline-scroll-wrapper {
         overflow-x: auto;
         overflow-y: hidden;
-        background: var(--app-subtle-surface);
+        background: color-mix(in srgb, var(--dynamic-surface) 92%, var(--dynamic-background) 8%);
+        border: 1px solid var(--app-divider);
         border-radius: 6px;
         position: relative;
     }
@@ -236,12 +255,14 @@
 
     .dense-tooltip {
         position: absolute;
-        background: var(--dynamic-surface);
+        background: color-mix(in srgb, var(--dynamic-surface) 95%, var(--dynamic-background) 5%);
         border: 1px solid var(--app-divider-strong);
         border-radius: 6px;
         padding: 6px 8px;
         pointer-events: none;
         z-index: 20;
         backdrop-filter: blur(6px);
+        color: var(--dynamic-text-primary);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
     }
 </style>

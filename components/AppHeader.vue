@@ -16,7 +16,7 @@
         <!-- Spacer to center the title -->
         <v-spacer></v-spacer>
 
-        <v-tooltip :text="themeToggleLabel">
+        <v-tooltip :text="themeToggleLabel" content-class="app-header-tooltip">
             <template v-slot:activator="{ props: tooltipProps }">
                 <v-btn
                     icon
@@ -32,7 +32,7 @@
         </v-tooltip>
 
         <!-- Settings Gear -->
-        <v-tooltip :text="`Settings (${modKey}G)`">
+        <v-tooltip :text="`Settings (${modKey}G)`" content-class="app-header-tooltip">
             <template v-slot:activator="{ props: tooltipProps }">
                 <v-btn
                     icon
@@ -51,7 +51,7 @@
         <!-- User Avatar Menu -->
         <v-menu>
             <template v-slot:activator="{ props: menu }">
-                <v-tooltip :text="userName">
+                <v-tooltip :text="userName" content-class="app-header-tooltip">
                     <template v-slot:activator="{ props: tooltip }">
                         <v-btn
                             icon
@@ -161,6 +161,17 @@
 </script>
 
 <style scoped>
+    :deep(.app-header-tooltip) {
+        background: color-mix(in srgb, var(--dynamic-surface) 96%, #000 4%) !important;
+        color: var(--dynamic-text-primary) !important;
+        border: 1px solid var(--app-divider-strong);
+        border-radius: 8px;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+        font-size: 0.75rem;
+        line-height: 1.35;
+        padding: 8px 10px;
+    }
+
     :deep(.v-toolbar__content) {
         min-height: 64px !important;
         height: auto !important;

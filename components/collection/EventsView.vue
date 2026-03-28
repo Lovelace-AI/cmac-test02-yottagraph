@@ -1,66 +1,61 @@
 <template>
-    <div>
-        <div class="d-flex align-center justify-space-between mb-3 flex-wrap ga-2">
-            <div class="d-flex align-center ga-2">
-                <span class="text-body-2 text-medium-emphasis">
-                    {{ filteredEvents.length }} of {{ events.length }} events
-                </span>
-                <v-chip size="x-small" variant="outlined">Derived from linked entities</v-chip>
+    <div class="events-view">
+        <div class="d-flex align-center justify-space-between mb-2 flex-wrap ga-2">
+            <div class="d-flex align-center ga-1 flex-wrap">
+                <v-chip size="small" variant="tonal" color="primary">
+                    {{ filteredEvents.length }} events
+                </v-chip>
+                <v-chip size="small" variant="outlined">{{ events.length }} total</v-chip>
+                <v-chip size="small" variant="outlined">Evidence-linked</v-chip>
             </div>
-            <div class="d-flex align-center ga-2 flex-wrap justify-end">
-                <v-btn-toggle v-model="viewMode" density="compact" variant="outlined" divided>
-                    <v-btn value="table" size="small" prepend-icon="mdi-table">Table</v-btn>
-                    <v-btn value="narrative" size="small" prepend-icon="mdi-timeline"
-                        >Episodes</v-btn
-                    >
-                    <v-btn value="dense" size="small" prepend-icon="mdi-chart-timeline"
-                        >Timeline</v-btn
-                    >
-                </v-btn-toggle>
-                <v-select
-                    v-model="filterCategory"
-                    :items="categoryOptions"
-                    label="Event type"
-                    density="compact"
-                    variant="outlined"
-                    clearable
-                    hide-details
-                    style="max-width: 180px"
-                />
-                <v-select
-                    v-model="filterDomain"
-                    :items="domainOptions"
-                    label="Domain"
-                    density="compact"
-                    variant="outlined"
-                    clearable
-                    hide-details
-                    style="max-width: 170px"
-                />
-                <v-select
-                    v-model="filterConfidence"
-                    :items="confidenceOptions"
-                    label="Confidence"
-                    density="compact"
-                    variant="outlined"
-                    clearable
-                    hide-details
-                    style="max-width: 170px"
-                />
-                <v-text-field
-                    v-model="searchQuery"
-                    label="Search events"
-                    density="compact"
-                    variant="outlined"
-                    prepend-inner-icon="mdi-magnify"
-                    clearable
-                    hide-details
-                    style="max-width: 200px"
-                />
-            </div>
+            <v-btn-toggle v-model="viewMode" density="compact" variant="outlined" divided>
+                <v-btn value="timeline" size="small" prepend-icon="mdi-chart-timeline"
+                    >Timeline</v-btn
+                >
+                <v-btn value="table" size="small" prepend-icon="mdi-table">Table</v-btn>
+                <v-btn value="simulation" size="small" prepend-icon="mdi-chart-scatter-plot"
+                    >Simulation</v-btn
+                >
+            </v-btn-toggle>
         </div>
 
-        <div class="d-flex align-center ga-2 flex-wrap mb-3">
+        <div class="d-flex align-center ga-2 flex-wrap mb-2">
+            <v-chip-group v-model="selectedCategories" multiple density="compact">
+                <v-chip
+                    v-for="category in categoryOptions"
+                    :key="category"
+                    :value="category"
+                    size="small"
+                    filter
+                    variant="outlined"
+                >
+                    {{ category }}
+                </v-chip>
+            </v-chip-group>
+        </div>
+
+        <div class="d-flex align-center ga-2 flex-wrap mb-3 filter-bar">
+            <v-select
+                v-model="severityFilters"
+                :items="severityOptions"
+                label="Severity"
+                density="compact"
+                variant="outlined"
+                hide-details
+                chips
+                closable-chips
+                clearable
+                multiple
+                style="max-width: 230px"
+            />
+            <v-switch
+                v-model="speculativeOnly"
+                hide-details
+                inset
+                density="compact"
+                color="warning"
+                label="Speculative only"
+            />
             <v-text-field
                 v-model="participantQuery"
                 label="Participant"
@@ -68,7 +63,7 @@
                 variant="outlined"
                 hide-details
                 clearable
-                style="max-width: 180px"
+                style="max-width: 170px"
             />
             <v-select
                 v-model="sourceDocumentFilter"
@@ -78,32 +73,63 @@
                 variant="outlined"
                 hide-details
                 clearable
-                style="max-width: 250px"
+                style="max-width: 240px"
+            />
+            <v-text-field
+                v-model="searchQuery"
+                label="Search events"
+                density="compact"
+                variant="outlined"
+                prepend-inner-icon="mdi-magnify"
+                clearable
+                hide-details
+                style="max-width: 200px"
             />
             <v-text-field
                 v-model="fromDate"
-                label="From date"
+                label="From"
                 type="date"
                 density="compact"
                 variant="outlined"
                 hide-details
-                style="max-width: 180px"
+                style="max-width: 160px"
             />
             <v-text-field
                 v-model="toDate"
-                label="To date"
+                label="To"
                 type="date"
                 density="compact"
                 variant="outlined"
                 hide-details
-                style="max-width: 180px"
+                style="max-width: 160px"
             />
+            <v-btn
+                size="small"
+                variant="text"
+                prepend-icon="mdi-filter-remove-outline"
+                @click="resetFilters"
+            >
+                Reset
+            </v-btn>
+            <v-chip v-if="viewMode === 'timeline'" size="x-small" variant="tonal" color="info">
+                Use wheel to zoom and drag to pan
+            </v-chip>
         </div>
 
         <v-card v-if="events.length === 0">
             <v-card-text class="text-center text-medium-emphasis py-8">
                 <v-icon size="48" class="mb-2">mdi-calendar-blank</v-icon>
-                <div>No events are available yet. Run extraction to generate a timeline.</div>
+                <div>No extracted events found for this collection yet.</div>
+            </v-card-text>
+        </v-card>
+
+        <v-card v-else-if="filteredEvents.length === 0">
+            <v-card-text class="text-center text-medium-emphasis py-8">
+                <v-icon size="42" class="mb-2">mdi-filter-off-outline</v-icon>
+                <div>No events match your current filters.</div>
+                <v-btn class="mt-2" size="small" variant="tonal" @click="resetFilters"
+                    >Reset filters</v-btn
+                >
             </v-card-text>
         </v-card>
 
@@ -125,8 +151,14 @@
                     <template v-slot:item.category="{ item }">
                         <span class="text-body-2">{{ item.category || 'Uncategorized' }}</span>
                     </template>
-                    <template v-slot:item.significance="{ item }">
-                        <span class="text-body-2 font-weight-medium">{{ item.significance }}</span>
+                    <template v-slot:item.severity="{ item }">
+                        <v-chip
+                            size="x-small"
+                            variant="tonal"
+                            :color="severityColor(item.severity)"
+                        >
+                            {{ item.severity }}
+                        </v-chip>
                     </template>
                     <template v-slot:item.likelihood="{ item }">
                         <span class="text-body-2">{{ item.likelihood || 'unknown' }}</span>
@@ -167,37 +199,39 @@
             </v-card-text>
         </v-card>
 
-        <NarrativeTimeline v-else-if="viewMode === 'narrative'" :events="filteredEventsSorted" />
-
-        <div v-else-if="viewMode === 'dense'" style="position: relative">
+        <div v-else-if="viewMode === 'timeline'" style="position: relative">
             <DenseTimeline
                 :events="filteredEventsSorted"
                 @select="(eventItem) => selectEntity(eventItem.participantNeids[0] ?? null)"
             />
         </div>
+
+        <NarrativeTimeline v-else :events="filteredEventsSorted" />
     </div>
 </template>
 
 <script setup lang="ts">
     const { events, selectEntity, resolveEntityName } = useCollectionWorkspace();
 
-    const filterCategory = ref<string | null>(null);
-    const filterDomain = ref<string | null>(null);
-    const filterConfidence = ref<string | null>(null);
+    type EventViewMode = 'timeline' | 'table' | 'simulation';
+    type EventSeverity = 'high' | 'medium' | 'low';
+
+    const selectedCategories = ref<string[]>([]);
+    const severityFilters = ref<EventSeverity[]>([]);
+    const speculativeOnly = ref(false);
     const sourceDocumentFilter = ref<string | null>(null);
     const participantQuery = ref('');
     const fromDate = ref('');
     const toDate = ref('');
     const searchQuery = ref('');
-    const viewMode = ref<'table' | 'narrative' | 'dense'>('table');
+    const viewMode = ref<EventViewMode>('timeline');
 
     const categoryOptions = computed(() => {
         const cats = new Set(events.value.map((eventItem) => eventItem.category).filter(Boolean));
         return Array.from(cats).sort() as string[];
     });
 
-    const confidenceOptions = ['confirmed', 'likely', 'possible'];
-    const domainOptions = ['legal', 'financial', 'operational'];
+    const severityOptions: EventSeverity[] = ['high', 'medium', 'low'];
 
     const sourceDocumentOptions = computed(() =>
         Array.from(
@@ -210,16 +244,26 @@
     );
 
     const filteredEvents = computed(() => {
-        let list = events.value;
-        if (filterCategory.value)
-            list = list.filter((eventItem) => eventItem.category === filterCategory.value);
-        if (filterConfidence.value) {
-            list = list.filter(
-                (eventItem) => (eventItem.likelihood || 'possible') === filterConfidence.value
+        let list = events.value.map((eventItem) => {
+            const significance = computeSignificance(eventItem);
+            return {
+                ...eventItem,
+                significance,
+                severity: severityForSignificance(significance),
+            };
+        });
+        if (selectedCategories.value.length) {
+            list = list.filter((eventItem) =>
+                selectedCategories.value.includes(eventItem.category ?? 'Uncategorized')
             );
         }
-        if (filterDomain.value) {
-            list = list.filter((eventItem) => inferDomain(eventItem) === filterDomain.value);
+        if (severityFilters.value.length) {
+            list = list.filter((eventItem) => severityFilters.value.includes(eventItem.severity));
+        }
+        if (speculativeOnly.value) {
+            list = list.filter(
+                (eventItem) => (eventItem.likelihood ?? '').toLowerCase() === 'possible'
+            );
         }
         if (sourceDocumentFilter.value) {
             list = list.filter((eventItem) =>
@@ -252,18 +296,13 @@
                     (eventItem.description?.toLowerCase().includes(query) ?? false)
             );
         }
-        return list
-            .map((eventItem) => ({
-                ...eventItem,
-                significance: computeSignificance(eventItem),
-            }))
-            .sort((a, b) => {
-                if (b.significance !== a.significance) return b.significance - a.significance;
-                if (!a.date && !b.date) return 0;
-                if (!a.date) return 1;
-                if (!b.date) return -1;
-                return a.date.localeCompare(b.date);
-            });
+        return list.sort((a, b) => {
+            if (b.significance !== a.significance) return b.significance - a.significance;
+            if (!a.date && !b.date) return 0;
+            if (!a.date) return 1;
+            if (!b.date) return -1;
+            return a.date.localeCompare(b.date);
+        });
     });
 
     const filteredEventsSorted = computed(() => filteredEvents.value);
@@ -272,12 +311,24 @@
         { title: 'Event', key: 'name', sortable: true },
         { title: 'Type', key: 'category', sortable: true },
         { title: 'Date', key: 'date', sortable: true },
-        { title: 'Importance', key: 'significance', sortable: true },
+        { title: 'Severity', key: 'severity', sortable: true },
         { title: 'Confidence', key: 'likelihood', sortable: true },
         { title: 'Key participants', key: 'participantNeids', sortable: false },
         { title: 'Sources', key: 'sourceDocuments', sortable: false },
         { title: 'Summary', key: 'description', sortable: false },
     ];
+
+    function severityForSignificance(significance: number): EventSeverity {
+        if (significance >= 10) return 'high';
+        if (significance >= 6) return 'medium';
+        return 'low';
+    }
+
+    function severityColor(severity: EventSeverity): string {
+        if (severity === 'high') return 'error';
+        if (severity === 'medium') return 'warning';
+        return 'success';
+    }
 
     function computeSignificance(eventItem: (typeof events.value)[number]): number {
         const participantWeight = eventItem.participantNeids.length * 2;
@@ -293,25 +344,19 @@
         return participantWeight + sourceWeight + confidenceWeight;
     }
 
-    function inferDomain(eventItem: (typeof events.value)[number]): string {
-        const category = (eventItem.category || '').toLowerCase();
-        if (
-            category.includes('agreement') ||
-            category.includes('contract') ||
-            category.includes('legal')
-        )
-            return 'legal';
-        if (
-            category.includes('fund') ||
-            category.includes('rebate') ||
-            category.includes('finance')
-        )
-            return 'financial';
-        return 'operational';
-    }
-
     function truncate(text: string, max: number): string {
         return text.length > max ? text.slice(0, max) + '…' : text;
+    }
+
+    function resetFilters() {
+        selectedCategories.value = [];
+        severityFilters.value = [];
+        speculativeOnly.value = false;
+        sourceDocumentFilter.value = null;
+        participantQuery.value = '';
+        fromDate.value = '';
+        toDate.value = '';
+        searchQuery.value = '';
     }
 </script>
 
@@ -327,5 +372,12 @@
         outline: 2px solid var(--app-focus-ring);
         outline-offset: 2px;
         border-radius: 3px;
+    }
+
+    .filter-bar {
+        border: 1px solid var(--app-divider);
+        border-radius: 10px;
+        padding: 10px;
+        background: var(--app-subtle-surface);
     }
 </style>

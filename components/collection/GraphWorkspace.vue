@@ -1,17 +1,25 @@
 <template>
     <div class="graph-workspace">
         <!-- Toolbar -->
-        <div class="d-flex align-center justify-space-between mb-2 flex-wrap ga-2">
-            <div class="d-flex align-center ga-2">
+        <div class="d-flex align-center justify-space-between mb-2 flex-wrap ga-2 graph-toolbar">
+            <div class="d-flex align-center ga-2 flex-wrap">
                 <v-chip size="small" variant="tonal" color="success">
-                    {{ documentEntities.length }} document-derived
+                    {{ displayedDocumentEntityCount }} document-derived
                 </v-chip>
-                <v-chip v-if="enrichedEntities.length" size="small" variant="tonal" color="info">
-                    {{ enrichedEntities.length }} enriched
+                <v-chip
+                    v-if="displayedEnrichedEntityCount"
+                    size="small"
+                    variant="tonal"
+                    color="info"
+                >
+                    {{ displayedEnrichedEntityCount }} enriched
                 </v-chip>
                 <v-chip size="small" variant="outlined">
-                    {{ visibleRelationships.length }} visible links
+                    {{ visibleRelationships.length }} links shown
                 </v-chip>
+                <span class="text-caption text-medium-emphasis">
+                    {{ relationships.length }} total links
+                </span>
             </div>
             <div class="d-flex align-center ga-2 flex-wrap justify-end">
                 <v-select
@@ -19,48 +27,87 @@
                     :items="analysisModes"
                     item-title="label"
                     item-value="value"
-                    label="View mode"
+                    label="View"
                     density="compact"
                     variant="outlined"
                     hide-details
-                    style="max-width: 220px"
+                    style="max-width: 170px"
                 />
-                <v-select
-                    v-model="relationshipTypeFilter"
-                    :items="relationshipTypeOptions"
-                    label="Relationship type"
-                    density="compact"
-                    variant="outlined"
-                    clearable
-                    hide-details
-                    style="max-width: 240px"
-                />
-                <v-checkbox
-                    v-model="sourceBackedOnly"
-                    hide-details
-                    density="compact"
-                    color="primary"
-                    label="Source-backed only"
-                    class="mr-1"
-                />
-                <v-checkbox
-                    v-model="highConfidenceOnly"
-                    hide-details
-                    density="compact"
-                    color="primary"
-                    label="High-confidence only"
-                    class="mr-1"
-                />
-                <v-text-field
-                    v-model="searchQuery"
-                    label="Find entity"
-                    density="compact"
-                    variant="outlined"
-                    prepend-inner-icon="mdi-magnify"
-                    clearable
-                    hide-details
-                    style="max-width: 200px"
-                />
+                <v-menu location="bottom end" :close-on-content-click="false">
+                    <template #activator="{ props: menuProps }">
+                        <v-btn
+                            v-bind="menuProps"
+                            size="small"
+                            variant="outlined"
+                            prepend-icon="mdi-tune-variant"
+                        >
+                            Filters
+                            <v-chip
+                                v-if="activeFilterCount > 0"
+                                size="x-small"
+                                class="ml-2"
+                                color="primary"
+                                variant="tonal"
+                            >
+                                {{ activeFilterCount }}
+                            </v-chip>
+                        </v-btn>
+                    </template>
+                    <v-card class="pa-3" min-width="330">
+                        <div class="text-caption text-medium-emphasis mb-2">Graph filters</div>
+                        <v-select
+                            v-model="relationshipTypeFilter"
+                            :items="relationshipTypeOptions"
+                            label="Relationship type"
+                            density="compact"
+                            variant="outlined"
+                            clearable
+                            hide-details
+                            class="mb-2"
+                        />
+                        <v-text-field
+                            v-model="searchQuery"
+                            label="Find entity"
+                            density="compact"
+                            variant="outlined"
+                            prepend-inner-icon="mdi-magnify"
+                            clearable
+                            hide-details
+                            class="mb-2"
+                        />
+                        <v-checkbox
+                            v-model="sourceBackedOnly"
+                            hide-details
+                            density="compact"
+                            color="primary"
+                            label="Source-backed only"
+                            class="mb-1"
+                        />
+                        <v-checkbox
+                            v-model="highConfidenceOnly"
+                            hide-details
+                            density="compact"
+                            color="primary"
+                            label="High-confidence only"
+                            class="mb-1"
+                        />
+                        <v-checkbox
+                            v-model="includeContextEndpoints"
+                            hide-details
+                            density="compact"
+                            color="primary"
+                            label="Include event/document endpoints"
+                        />
+                    </v-card>
+                </v-menu>
+                <v-btn
+                    size="small"
+                    variant="text"
+                    prepend-icon="mdi-source-branch"
+                    @click="showPathTools = !showPathTools"
+                >
+                    {{ showPathTools ? 'Hide path tools' : 'Path tools' }}
+                </v-btn>
                 <v-btn
                     size="small"
                     variant="outlined"
@@ -72,7 +119,7 @@
             </div>
         </div>
 
-        <div class="d-flex align-center ga-2 flex-wrap mb-3">
+        <div v-if="showPathTools" class="d-flex align-center ga-2 flex-wrap mb-3">
             <v-select
                 v-model="pathStart"
                 :items="entityPathOptions"
@@ -136,7 +183,18 @@
                 />
 
                 <!-- Legend overlay -->
+                <div class="legend-toggle" :style="{ background: currentThemeColors.graphOverlay }">
+                    <v-btn
+                        size="x-small"
+                        variant="text"
+                        prepend-icon="mdi-format-list-bulleted-square"
+                        @click="showLegend = !showLegend"
+                    >
+                        {{ showLegend ? 'Hide legend' : 'Show legend' }}
+                    </v-btn>
+                </div>
                 <div
+                    v-if="showLegend"
                     class="graph-overlay pa-2"
                     :style="{
                         background: currentThemeColors.graphOverlay,
@@ -195,6 +253,7 @@
                         top: tooltip.y + 'px',
                         background: currentThemeColors.tooltipBackground,
                         borderColor: currentThemeColors.tooltipBorder,
+                        color: currentThemeColors.textPrimary,
                     }"
                 >
                     <div class="d-flex align-center ga-1 mb-1">
@@ -203,16 +262,29 @@
                         }}</v-icon>
                         <span class="text-caption font-weight-bold">{{ tooltip.name }}</span>
                     </div>
-                    <div class="text-caption text-medium-emphasis">
+                    <div
+                        class="text-caption"
+                        :style="{ color: currentThemeColors.textSecondary, opacity: 0.95 }"
+                    >
                         {{ tooltip.flavor.replace(/_/g, ' ') }}
                     </div>
-                    <div class="text-caption text-medium-emphasis">
+                    <div
+                        class="text-caption"
+                        :style="{ color: currentThemeColors.textSecondary, opacity: 0.95 }"
+                    >
                         {{ tooltip.degree }} connections
                     </div>
                     <div v-if="tooltip.events > 0" class="text-caption" style="color: #ffa726">
                         {{ tooltip.events }} events
                     </div>
-                    <div class="text-caption text-medium-emphasis" style="font-style: italic">
+                    <div
+                        class="text-caption"
+                        :style="{
+                            color: currentThemeColors.textSecondary,
+                            opacity: 0.9,
+                            fontStyle: 'italic',
+                        }"
+                    >
                         Click for details
                     </div>
                 </div>
@@ -223,9 +295,14 @@
                         Load the graph to explore entities and relationships.
                     </div>
                 </div>
-
-                <div v-if="selectedEntityNeid" class="entity-overlay">
-                    <EntityDetailPanel />
+                <div v-else-if="visibleGraphEntityCount === 0" class="graph-empty">
+                    <v-icon size="44" class="mb-3 text-medium-emphasis"
+                        >mdi-filter-remove-outline</v-icon
+                    >
+                    <div class="text-body-2 text-medium-emphasis text-center px-6">
+                        No graph nodes match the current filters. Clear search or relax filters to
+                        bring the graph back.
+                    </div>
                 </div>
             </div>
         </v-card>
@@ -238,6 +315,12 @@
     import { Sigma } from 'sigma';
     import forceAtlas2 from 'graphology-layout-forceatlas2';
     import louvain from 'graphology-communities-louvain';
+    import type { EntityRecord, RelationshipRecord } from '~/utils/collectionTypes';
+
+    const props = defineProps<{
+        entitiesOverride?: EntityRecord[];
+        relationshipsOverride?: RelationshipRecord[];
+    }>();
 
     const ENTITY_COLORS: Record<string, string> = {
         organization: '#42A5F5',
@@ -266,17 +349,28 @@
         participant: '#AB47BC',
         'schema::relationship::participant': '#AB47BC',
     };
+    const BOND_CENTER_NEID = '08242646876499346416';
 
     const {
-        entities,
-        relationships,
-        documentEntities,
-        enrichedEntities,
+        entities: workspaceEntities,
+        documents,
+        relationships: workspaceRelationships,
         events,
         selectedEntityNeid,
         selectEntity,
         flavorCounts,
     } = useCollectionWorkspace();
+    const entities = computed(() => props.entitiesOverride ?? workspaceEntities.value);
+    const relationships = computed(
+        () => props.relationshipsOverride ?? workspaceRelationships.value
+    );
+    const displayedDocumentEntityCount = computed(
+        () => entities.value.filter((entity) => entity.origin === 'document').length
+    );
+    const displayedEnrichedEntityCount = computed(
+        () => entities.value.filter((entity) => entity.origin === 'enriched').length
+    );
+
     const { colorMode, currentThemeColors } = useAppColorMode();
 
     const graphContainer = ref<HTMLElement | null>(null);
@@ -290,9 +384,12 @@
     const relationshipTypeFilter = ref<string | null>(null);
     const sourceBackedOnly = ref(false);
     const highConfidenceOnly = ref(false);
+    const includeContextEndpoints = ref(true);
     const pathStart = ref<string | null>(null);
     const pathEnd = ref<string | null>(null);
     const shortestPathText = ref('');
+    const showPathTools = ref(false);
+    const showLegend = ref(true);
     const isFullscreen = ref(false);
     const graphHeight = computed(() => (isFullscreen.value ? viewportHeight.value - 84 : 640));
 
@@ -334,9 +431,7 @@
     );
 
     const visibleRelationships = computed(() => {
-        const nodeSet = new Set(visibleEntities.value.map((e) => e.neid));
         return relationships.value.filter((rel) => {
-            if (!nodeSet.has(rel.sourceNeid) || !nodeSet.has(rel.targetNeid)) return false;
             if (relationshipTypeFilter.value && rel.type !== relationshipTypeFilter.value)
                 return false;
             const hasEvidence =
@@ -346,6 +441,35 @@
             if (highConfidenceOnly.value && !hasEvidence) return false;
             return true;
         });
+    });
+    const entityNeidSet = computed(() => new Set(entities.value.map((entity) => entity.neid)));
+    const eventNeidSet = computed(() => new Set(events.value.map((eventItem) => eventItem.neid)));
+    const documentNeidSet = computed(() => new Set(documents.value.map((doc) => doc.neid)));
+
+    const relationshipBreakdown = computed(() => {
+        let entityEntity = 0;
+        let entityEvent = 0;
+        let entityDocument = 0;
+        for (const rel of visibleRelationships.value) {
+            const sourceIsEntity = entityNeidSet.value.has(rel.sourceNeid);
+            const targetIsEntity = entityNeidSet.value.has(rel.targetNeid);
+            const sourceIsEvent = eventNeidSet.value.has(rel.sourceNeid);
+            const targetIsEvent = eventNeidSet.value.has(rel.targetNeid);
+            const sourceIsDocument = documentNeidSet.value.has(rel.sourceNeid);
+            const targetIsDocument = documentNeidSet.value.has(rel.targetNeid);
+
+            if (sourceIsEntity && targetIsEntity) {
+                entityEntity += 1;
+            } else if ((sourceIsEntity && targetIsEvent) || (targetIsEntity && sourceIsEvent)) {
+                entityEvent += 1;
+            } else if (
+                (sourceIsEntity && targetIsDocument) ||
+                (targetIsEntity && sourceIsDocument)
+            ) {
+                entityDocument += 1;
+            }
+        }
+        return { entityEntity, entityEvent, entityDocument };
     });
 
     const eventCountByNeid = computed(() => {
@@ -393,6 +517,28 @@
             }))
             .sort((a, b) => a.title.localeCompare(b.title))
     );
+    const hasBondCenterEntity = computed(() =>
+        entities.value.some((entity) => entity.neid === BOND_CENTER_NEID)
+    );
+    const activeFilterCount = computed(() => {
+        let count = 0;
+        if (relationshipTypeFilter.value) count += 1;
+        if (sourceBackedOnly.value) count += 1;
+        if (highConfidenceOnly.value) count += 1;
+        if (!includeContextEndpoints.value) count += 1;
+        if (searchQuery.value.trim()) count += 1;
+        return count;
+    });
+    const visibleGraphEntityCount = computed(() => {
+        let ents = visibleEntities.value;
+        if (analysisMode.value === 'timeline') {
+            ents = ents.filter((entity) => timelineLinkedNeids.value.has(entity.neid));
+        }
+        if (analysisMode.value === 'simplified') {
+            ents = ents.filter((entity) => (degreeByNeid.value.get(entity.neid) ?? 0) >= 2);
+        }
+        return ents.length;
+    });
 
     function flavorIcon(flavor: string): string {
         const icons: Record<string, string> = {
@@ -402,6 +548,8 @@
             location: 'mdi-map-marker',
             fund_account: 'mdi-wallet',
             legal_agreement: 'mdi-file-document-outline',
+            event: 'mdi-calendar-star',
+            document: 'mdi-file-document',
         };
         return icons[flavor] ?? 'mdi-circle-small';
     }
@@ -435,6 +583,7 @@
             ents = ents.filter((entity) => (degreeByNeid.value.get(entity.neid) ?? 0) >= 2);
         }
         const rels = visibleRelationships.value;
+        const entityNodeSet = new Set(ents.map((entity) => entity.neid));
 
         if (ents.length === 0) return;
 
@@ -447,12 +596,12 @@
             const propCount = Object.keys(entity.properties ?? {}).length;
             const degree = degreeByNeid.value.get(entity.neid) ?? 0;
             const size = Math.max(
-                6,
+                5,
                 Math.min(
-                    24,
+                    16,
                     analysisMode.value === 'centrality'
-                        ? 6 + degree * 1.2 + evtCount * 0.8
-                        : 6 + propCount * 0.6 + entity.sourceDocuments.length * 1.5
+                        ? 5 + degree * 0.9 + evtCount * 0.6
+                        : 5 + propCount * 0.45 + entity.sourceDocuments.length * 1.2
                 )
             );
             let color =
@@ -485,13 +634,94 @@
                 entity_type: entity.flavor,
                 eventCount: evtCount,
                 origin: entity.origin,
+                node_kind: 'entity',
             });
         }
 
         // Add edges
-        const relNodeSet = new Set(ents.map((entity) => entity.neid));
+        const eventByNeid = new Map(events.value.map((eventItem) => [eventItem.neid, eventItem]));
+        const docByNeid = new Map(documents.value.map((doc) => [doc.neid, doc]));
         for (const rel of rels) {
-            if (!relNodeSet.has(rel.sourceNeid) || !relNodeSet.has(rel.targetNeid)) continue;
+            const sourceInEntity = entityNodeSet.has(rel.sourceNeid);
+            const targetInEntity = entityNodeSet.has(rel.targetNeid);
+            const sourceInEvent = eventByNeid.has(rel.sourceNeid);
+            const targetInEvent = eventByNeid.has(rel.targetNeid);
+            const sourceInDoc = docByNeid.has(rel.sourceNeid);
+            const targetInDoc = docByNeid.has(rel.targetNeid);
+
+            const isEntityEntity = sourceInEntity && targetInEntity;
+            const isEntityEvent =
+                (sourceInEntity && targetInEvent) || (targetInEntity && sourceInEvent);
+            const isEntityDocument =
+                (sourceInEntity && targetInDoc) || (targetInEntity && sourceInDoc);
+
+            if (!isEntityEntity && !includeContextEndpoints.value) continue;
+            if (!isEntityEntity && !isEntityEvent && !isEntityDocument) continue;
+
+            if (includeContextEndpoints.value && (isEntityEvent || isEntityDocument)) {
+                if (sourceInEvent && !g.hasNode(rel.sourceNeid)) {
+                    const evt = eventByNeid.get(rel.sourceNeid);
+                    g.addNode(rel.sourceNeid, {
+                        label: evt?.name?.slice(0, 40) ?? 'Event',
+                        x: Math.random() * 100,
+                        y: Math.random() * 100,
+                        size: 4.2,
+                        node_base_size: 4.2,
+                        color: '#AB47BC',
+                        entity_type: 'event',
+                        eventCount: 0,
+                        origin: 'document',
+                        node_kind: 'event',
+                    });
+                }
+                if (targetInEvent && !g.hasNode(rel.targetNeid)) {
+                    const evt = eventByNeid.get(rel.targetNeid);
+                    g.addNode(rel.targetNeid, {
+                        label: evt?.name?.slice(0, 40) ?? 'Event',
+                        x: Math.random() * 100,
+                        y: Math.random() * 100,
+                        size: 4.2,
+                        node_base_size: 4.2,
+                        color: '#AB47BC',
+                        entity_type: 'event',
+                        eventCount: 0,
+                        origin: 'document',
+                        node_kind: 'event',
+                    });
+                }
+                if (sourceInDoc && !g.hasNode(rel.sourceNeid)) {
+                    const doc = docByNeid.get(rel.sourceNeid);
+                    g.addNode(rel.sourceNeid, {
+                        label: doc?.title?.slice(0, 40) ?? 'Document',
+                        x: Math.random() * 100,
+                        y: Math.random() * 100,
+                        size: 4.8,
+                        node_base_size: 4.8,
+                        color: '#607D8B',
+                        entity_type: 'document',
+                        eventCount: 0,
+                        origin: 'document',
+                        node_kind: 'document',
+                    });
+                }
+                if (targetInDoc && !g.hasNode(rel.targetNeid)) {
+                    const doc = docByNeid.get(rel.targetNeid);
+                    g.addNode(rel.targetNeid, {
+                        label: doc?.title?.slice(0, 40) ?? 'Document',
+                        x: Math.random() * 100,
+                        y: Math.random() * 100,
+                        size: 4.8,
+                        node_base_size: 4.8,
+                        color: '#607D8B',
+                        entity_type: 'document',
+                        eventCount: 0,
+                        origin: 'document',
+                        node_kind: 'document',
+                    });
+                }
+            }
+
+            if (!g.hasNode(rel.sourceNeid) || !g.hasNode(rel.targetNeid)) continue;
             if (rel.sourceNeid === rel.targetNeid) continue;
             const edgeKey = `${rel.sourceNeid}|${rel.targetNeid}|${rel.type}`;
             if (g.hasEdge(edgeKey)) continue;
@@ -503,9 +733,9 @@
                     label: rel.type.replace(/schema::relationship::/, '').replace(/_/g, ' '),
                     color: hexAlpha(
                         getRelTypeColor(rel.type),
-                        rel.origin === 'enriched' ? 0.25 : hasEvidence ? 0.68 : 0.32
+                        rel.origin === 'enriched' ? 0.55 : hasEvidence ? 0.9 : 0.7
                     ),
-                    size: hasEvidence ? 1.6 : 1,
+                    size: hasEvidence ? 2.4 : 1.8,
                     type: 'arrow',
                 });
             } catch {
@@ -544,22 +774,29 @@
             }
         }
 
-        // ForceAtlas2 layout
+        // ForceAtlas2 layout can fail on edge-case graphs; keep random layout as fallback.
         const nodeCount = g.order;
-        forceAtlas2.assign(g, {
-            iterations: Math.min(300, Math.max(100, Math.round(50000 / Math.max(nodeCount, 1)))),
-            settings: {
-                gravity: 1.0,
-                scalingRatio: nodeCount > 300 ? 20 : 10,
-                barnesHutOptimize: nodeCount > 100,
-                strongGravityMode: false,
-                linLogMode: true,
-                outboundAttractionDistribution: true,
-                adjustSizes: true,
-                edgeWeightInfluence: 1,
-                slowDown: 1,
-            },
-        });
+        try {
+            forceAtlas2.assign(g, {
+                iterations: Math.min(
+                    300,
+                    Math.max(100, Math.round(50000 / Math.max(nodeCount, 1)))
+                ),
+                settings: {
+                    gravity: 1.0,
+                    scalingRatio: nodeCount > 300 ? 20 : 10,
+                    barnesHutOptimize: nodeCount > 100,
+                    strongGravityMode: false,
+                    linLogMode: true,
+                    outboundAttractionDistribution: true,
+                    adjustSizes: true,
+                    edgeWeightInfluence: 1,
+                    slowDown: 1,
+                },
+            });
+        } catch {
+            // noop: keep initial positions if layout engine errors
+        }
 
         // Create Sigma instance
         sigmaInstance = new Sigma(g, graphContainer.value, {
@@ -575,8 +812,9 @@
             defaultEdgeType: 'arrow',
             defaultEdgeColor: hexAlpha(
                 currentThemeColors.value.border,
-                colorMode.value === 'dark' ? 0.45 : 0.6
+                colorMode.value === 'dark' ? 0.7 : 0.82
             ),
+            zIndex: true,
         });
 
         // Hover
@@ -588,7 +826,7 @@
             tooltip.value = {
                 name: attrs.label ?? node,
                 flavor: attrs.entity_type ?? '',
-                color: ENTITY_COLORS[attrs.entity_type] ?? '#9E9E9E',
+                color: ENTITY_COLORS[attrs.entity_type] ?? attrs.color ?? '#9E9E9E',
                 degree: g.degree(node),
                 events: attrs.eventCount ?? 0,
                 x: pointerX !== undefined ? pointerX - rect.left + 12 : 0,
@@ -622,7 +860,34 @@
         });
 
         applySelectedHighlight();
+        focusCameraOnCenterNode();
         refreshSigma();
+    }
+
+    function ensureBondCenterSelected() {
+        if (!hasBondCenterEntity.value) return;
+        const hasSelectedEntity = Boolean(selectedEntityNeid.value);
+        if (hasSelectedEntity) return;
+        selectEntity(BOND_CENTER_NEID);
+    }
+
+    function centerNodeNeid(): string | null {
+        if (selectedEntityNeid.value && graphInstance?.hasNode(selectedEntityNeid.value)) {
+            return selectedEntityNeid.value;
+        }
+        if (graphInstance?.hasNode(BOND_CENTER_NEID)) {
+            return BOND_CENTER_NEID;
+        }
+        return null;
+    }
+
+    function focusCameraOnCenterNode() {
+        if (!sigmaInstance || !graphInstance) return;
+        const nodeId = centerNodeNeid();
+        if (!nodeId) return;
+        const x = graphInstance.getNodeAttribute(nodeId, 'x') as number;
+        const y = graphInstance.getNodeAttribute(nodeId, 'y') as number;
+        sigmaInstance.getCamera().animate({ x, y, ratio: 0.6 }, { duration: 280 });
     }
 
     function hexAlpha(hex: string, alpha: number): string {
@@ -640,6 +905,7 @@
             relationshipTypeFilter,
             sourceBackedOnly,
             highConfidenceOnly,
+            includeContextEndpoints,
             searchQuery,
         ],
         () => {
@@ -649,7 +915,17 @@
     );
 
     watch(colorMode, () => buildGraph());
-    watch(selectedEntityNeid, () => applySelectedHighlight());
+    watch(selectedEntityNeid, () => {
+        applySelectedHighlight();
+        focusCameraOnCenterNode();
+    });
+    watch(
+        entities,
+        () => {
+            ensureBondCenterSelected();
+        },
+        { immediate: true }
+    );
     watch(graphHeight, () => refreshSigma());
 
     function refreshSigma() {
@@ -660,6 +936,9 @@
 
     function syncViewportHeight() {
         viewportHeight.value = window.innerHeight;
+        if (window.innerWidth < 1160) {
+            showLegend.value = false;
+        }
     }
 
     async function toggleFullscreen() {
@@ -678,6 +957,7 @@
     }
 
     onMounted(() => {
+        ensureBondCenterSelected();
         syncViewportHeight();
         nextTick(() => buildGraph());
         document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -764,6 +1044,10 @@
         position: relative;
     }
 
+    .graph-toolbar {
+        min-height: 40px;
+    }
+
     .graph-card {
         overflow: hidden;
         border: 1px solid var(--app-divider);
@@ -786,7 +1070,7 @@
 
     .graph-overlay {
         position: absolute;
-        top: 12px;
+        top: 46px;
         left: 12px;
         border: 1px solid;
         border-radius: 8px;
@@ -794,6 +1078,16 @@
         max-width: 200px;
         backdrop-filter: blur(6px);
         z-index: 10;
+    }
+
+    .legend-toggle {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 12;
+        border-radius: 8px;
+        border: 1px solid var(--app-divider);
+        backdrop-filter: blur(6px);
     }
 
     .legend-dot {
@@ -833,11 +1127,16 @@
         position: absolute;
         border: 1px solid;
         border-radius: 8px;
-        padding: 8px 10px;
+        padding: 10px 12px;
         pointer-events: none;
         z-index: 20;
-        backdrop-filter: blur(8px);
-        min-width: 130px;
+        backdrop-filter: blur(14px);
+        box-shadow:
+            0 18px 36px rgba(0, 0, 0, 0.38),
+            0 4px 14px rgba(0, 0, 0, 0.24);
+        min-width: 150px;
+        max-width: 280px;
+        line-height: 1.35;
     }
 
     .graph-empty {
@@ -851,13 +1150,6 @@
 
     .opacity-40 {
         opacity: 0.88;
-    }
-
-    .entity-overlay {
-        position: absolute;
-        inset: 12px 12px 12px auto;
-        width: min(420px, calc(100% - 24px));
-        z-index: 30;
     }
 
     .fullscreen-exit-btn {

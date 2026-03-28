@@ -37,12 +37,9 @@
             </div>
 
             <!-- Duration badge -->
-            <div
-                v-if="s.status === 'completed' && s.durationMs !== undefined"
-                class="flex-shrink-0"
-            >
-                <v-chip size="x-small" variant="tonal" color="success">
-                    {{ formatDuration(s.durationMs) }}
+            <div v-if="getLiveDuration(s)" class="flex-shrink-0">
+                <v-chip size="x-small" :variant="getChipVariant(s)" :color="getChipColor(s)">
+                    {{ getLiveDuration(s) }}
                 </v-chip>
             </div>
         </div>
@@ -50,15 +47,55 @@
 </template>
 
 <script setup lang="ts">
+    import { onMounted, onBeforeUnmount, ref } from 'vue';
     import type { RebuildStep } from '~/composables/useCollectionWorkspace';
 
     defineProps<{
         steps: RebuildStep[];
     }>();
 
+    const nowMs = ref(Date.now());
+    let ticker: ReturnType<typeof setInterval> | null = null;
+
+    onMounted(() => {
+        ticker = setInterval(() => {
+            nowMs.value = Date.now();
+        }, 250);
+    });
+
+    onBeforeUnmount(() => {
+        if (ticker) clearInterval(ticker);
+    });
+
     function formatDuration(ms: number): string {
         if (ms < 1000) return `${ms}ms`;
-        return `${(ms / 1000).toFixed(1)}s`;
+        if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+        const minutes = Math.floor(ms / 60_000);
+        const seconds = Math.floor((ms % 60_000) / 1000);
+        return `${minutes}m ${seconds}s`;
+    }
+
+    function getLiveDuration(step: RebuildStep): string | null {
+        if (step.status === 'working' && step.startedAtMs) {
+            return formatDuration(Math.max(0, nowMs.value - step.startedAtMs));
+        }
+        if (step.status === 'completed' && step.durationMs !== undefined) {
+            return formatDuration(step.durationMs);
+        }
+        if (step.status === 'completed' && step.startedAtMs) {
+            return formatDuration(Math.max(0, nowMs.value - step.startedAtMs));
+        }
+        return null;
+    }
+
+    function getChipColor(step: RebuildStep): string {
+        return step.status === 'working' ? 'primary' : 'success';
+    }
+
+    function getChipVariant(
+        step: RebuildStep
+    ): 'tonal' | 'flat' | 'outlined' | 'elevated' | 'text' | 'plain' {
+        return step.status === 'working' ? 'outlined' : 'tonal';
     }
 </script>
 

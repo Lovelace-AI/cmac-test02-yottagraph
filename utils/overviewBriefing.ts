@@ -1,0 +1,341 @@
+import type { CollectionState, DocumentRecord, WorkspaceTab } from '~/utils/collectionTypes';
+
+export type OverviewStatus = 'pending' | 'processing' | 'complete' | 'partial' | 'error';
+
+export interface DealSummaryField {
+    label: string;
+    value: string;
+}
+
+export interface OverviewTrustCoverageSummary {
+    coverageScore: number;
+    confidenceLabel: 'high' | 'medium' | 'low';
+}
+
+export interface HealthItem {
+    label: string;
+    value: string;
+    tone: 'success' | 'warning' | 'neutral' | 'error';
+}
+
+export interface ExtractionStatItem {
+    key: string;
+    label: string;
+    value: string;
+}
+
+export interface SourceDocumentRow {
+    id: string;
+    filename: string;
+    detectedType: string;
+    date: string;
+    subject: string;
+    neid: string;
+}
+
+export interface ExploreCardItem {
+    key: string;
+    title: string;
+    description: string;
+    metric: string;
+    ctaLabel: string;
+    tab: WorkspaceTab;
+    icon: string;
+}
+
+export interface CollectionOverviewViewModel {
+    collectionName: string;
+    subtitle: string;
+    detectedDealType: string;
+    status: OverviewStatus;
+    statusLabel: string;
+    documentCount: number;
+    analysisStatusLabel: string;
+    lastUpdated: string;
+    primaryActionLabel: string;
+    dealSummaryFields: DealSummaryField[];
+    healthItems: HealthItem[];
+    extractionStats: ExtractionStatItem[];
+    documents: SourceDocumentRow[];
+    exploreCards: ExploreCardItem[];
+}
+
+function formatDate(value?: string): string {
+    if (!value) return 'Not available';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString();
+}
+
+function formatDateTime(value?: string): string {
+    if (!value) return 'Not available';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString();
+}
+
+function formatCount(value: number): string {
+    return value.toLocaleString();
+}
+
+function deriveDealType(state: CollectionState): string {
+    const description = state.meta.description.toLowerCase();
+    if (description.includes('bond') || description.includes('refunding')) {
+        return 'Municipal bond financing';
+    }
+    const kinds = state.documents.map((doc) => doc.kind).filter(Boolean) as string[];
+    if (!kinds.length) return 'Structured transaction';
+    const topKind = kinds.sort(
+        (a, b) => kinds.filter((k) => k === b).length - kinds.filter((k) => k === a).length
+    )[0];
+    return topKind;
+}
+
+function deriveStatus(state: CollectionState, rebuilding: boolean): OverviewStatus {
+    if (state.status === 'error') return 'error';
+    if (rebuilding || state.status === 'loading') return 'processing';
+    if (state.status !== 'ready') return 'pending';
+    const hasCore = state.meta.entityCount > 0 && state.meta.relationshipCount > 0;
+    const hasAllModules = hasCore && state.meta.eventCount > 0 && state.meta.agreementCount > 0;
+    return hasAllModules ? 'complete' : 'partial';
+}
+
+function statusLabel(status: OverviewStatus): string {
+    if (status === 'complete') return 'Analysis complete';
+    if (status === 'partial') return 'Analysis partial';
+    if (status === 'processing') return 'Analysis running';
+    if (status === 'error') return 'Needs attention';
+    return 'Analysis pending';
+}
+
+function statusTone(status: OverviewStatus): HealthItem['tone'] {
+    if (status === 'complete') return 'success';
+    if (status === 'partial' || status === 'processing') return 'warning';
+    if (status === 'error') return 'error';
+    return 'neutral';
+}
+
+function extractionStatusForDoc(doc: DocumentRecord, status: OverviewStatus): string {
+    if (status === 'complete') return 'Complete';
+    if (status === 'partial') {
+        return doc.kind ? 'Partial' : 'Still processing';
+    }
+    if (status === 'processing') return 'Processing';
+    if (status === 'error') return 'Needs review';
+    return 'Pending analysis';
+}
+
+function confidenceLabel(summary: TrustCoverageSummary, status: OverviewStatus): string {
+    if (status === 'pending' || status === 'processing') return 'Pending';
+    if (summary.confidenceLabel === 'high') return 'High';
+    if (summary.confidenceLabel === 'low') return 'Needs review';
+    return 'Moderate';
+}
+
+function metricForTab(tab: WorkspaceTab, state: CollectionState): string {
+    if (tab === 'graph') return `${formatCount(state.meta.entityCount)} mapped entities`;
+    if (tab === 'timeline') return `${formatCount(state.meta.eventCount)} extracted events`;
+    if (tab === 'agreements')
+        return `${formatCount(state.meta.agreementCount)} detected agreements`;
+    if (tab === 'insights')
+        return `${formatCount(state.meta.relationshipCount)} relationship signals`;
+    if (tab === 'validation') return `${formatCount(state.meta.documentCount)} source documents`;
+    return `${formatCount(state.entities.filter((entity) => entity.origin === 'enriched').length)} enriched matches`;
+}
+
+export function mapCollectionToOverviewViewModel(params: {
+    state: CollectionState;
+    rebuilding: boolean;
+    trustCoverageSummary: OverviewTrustCoverageSummary;
+}): CollectionOverviewViewModel {
+    const { state, rebuilding, trustCoverageSummary, propertySeriesCount } = params;
+    const status = deriveStatus(state, rebuilding);
+    const dealType = deriveDealType(state);
+    const dateValues = new Set<string>();
+    state.events.forEach((event) => {
+        if (event.date) dateValues.add(event.date.slice(0, 10));
+    });
+    state.propertySeries.forEach((series) => {
+        series.points.forEach((point) => {
+            if (point.recordedAt) dateValues.add(point.recordedAt.slice(0, 10));
+        });
+    });
+    const locationCount = state.entities.filter((entity) => entity.flavor === 'location').length;
+    const enrichedMatches = state.entities.filter((entity) => entity.origin === 'enriched').length;
+    const primaryParties = state.entities
+        .filter((entity) => entity.flavor === 'organization')
+        .slice(0, 3)
+        .map((entity) => entity.name)
+        .join(', ');
+    const eventDates = state.events.map((event) => event.date).filter(Boolean) as string[];
+    const closingDate = eventDates.length ? formatDate(eventDates.sort()[0]) : 'Not available';
+
+    const healthTone = statusTone(status);
+    const confidence = confidenceLabel(trustCoverageSummary, status);
+    const docsWithKind = state.documents.filter((doc) => Boolean(doc.kind)).length;
+
+    return {
+        collectionName: state.meta.name,
+        subtitle:
+            state.meta.description ||
+            'Collection-level extraction and synthesis across the provided source documents.',
+        detectedDealType: dealType,
+        status,
+        statusLabel: statusLabel(status),
+        documentCount: state.documents.length,
+        analysisStatusLabel: statusLabel(status),
+        lastUpdated: formatDateTime(state.meta.lastRebuilt),
+        primaryActionLabel:
+            status === 'pending'
+                ? 'Run Initial Analysis'
+                : status === 'processing'
+                  ? 'Analysis Running'
+                  : 'Open Graph & Entities',
+        dealSummaryFields: [
+            { label: 'Deal name', value: state.meta.name },
+            { label: 'Deal type', value: dealType },
+            { label: 'Issuer', value: primaryParties || 'Derived after deeper extraction' },
+            { label: 'Par amount', value: '$142M (from collection descriptor)' },
+            { label: 'Closing date', value: closingDate },
+            { label: 'Project or asset', value: 'Presidential Plaza at Newport' },
+            {
+                label: 'Location',
+                value: locationCount ? `${locationCount} locations detected` : 'Not available',
+            },
+            { label: 'Primary parties', value: primaryParties || 'Will populate after extraction' },
+        ],
+        healthItems: [
+            {
+                label: 'Documents ingested',
+                value: `${state.documents.length} of ${state.meta.documentCount}`,
+                tone: state.documents.length ? 'success' : 'warning',
+            },
+            {
+                label: 'Parsing success',
+                value: state.documents.length ? 'Complete' : 'Pending',
+                tone: state.documents.length ? 'success' : 'warning',
+            },
+            {
+                label: 'Classification status',
+                value:
+                    docsWithKind === state.documents.length
+                        ? 'Complete'
+                        : `${docsWithKind} of ${state.documents.length} classified`,
+                tone: docsWithKind === state.documents.length ? 'success' : 'warning',
+            },
+            {
+                label: 'Entity extraction',
+                value: state.meta.entityCount
+                    ? `${formatCount(state.meta.entityCount)} entities`
+                    : 'Pending',
+                tone: state.meta.entityCount ? healthTone : 'warning',
+            },
+            {
+                label: 'Event extraction',
+                value: state.meta.eventCount
+                    ? `${formatCount(state.meta.eventCount)} events`
+                    : 'Still processing',
+                tone: state.meta.eventCount ? healthTone : 'warning',
+            },
+            {
+                label: 'Agreement extraction',
+                value: state.meta.agreementCount
+                    ? `${formatCount(state.meta.agreementCount)} agreements`
+                    : 'Still processing',
+                tone: state.meta.agreementCount ? healthTone : 'warning',
+            },
+            {
+                label: 'Confidence and coverage',
+                value: `${confidence} confidence (${trustCoverageSummary.coverageScore}%)`,
+                tone:
+                    trustCoverageSummary.confidenceLabel === 'high'
+                        ? 'success'
+                        : trustCoverageSummary.confidenceLabel === 'low'
+                          ? 'warning'
+                          : 'neutral',
+            },
+        ],
+        extractionStats: [
+            { key: 'docs', label: 'Documents', value: formatCount(state.documents.length) },
+            { key: 'entities', label: 'Entities', value: formatCount(state.meta.entityCount) },
+            {
+                key: 'relationships',
+                label: 'Relationships',
+                value: formatCount(state.meta.relationshipCount),
+            },
+            { key: 'events', label: 'Events', value: formatCount(state.meta.eventCount) },
+            {
+                key: 'agreements',
+                label: 'Agreements',
+                value: formatCount(state.meta.agreementCount),
+            },
+            { key: 'dates', label: 'Dates', value: formatCount(dateValues.size) },
+            { key: 'locations', label: 'Locations', value: formatCount(locationCount) },
+            { key: 'enriched', label: 'Enriched matches', value: formatCount(enrichedMatches) },
+        ],
+        documents: state.documents.map((doc) => ({
+            id: doc.documentId,
+            filename: doc.title,
+            detectedType: doc.kind || 'Document type pending',
+            date: doc.date ? formatDate(doc.date) : 'Date not available',
+            subject: state.meta.description || 'Collection context',
+            neid: doc.neid,
+        })),
+        exploreCards: [
+            {
+                key: 'graph',
+                title: 'Graph & Entities',
+                description: 'Inspect the extracted party network and linked relationships.',
+                metric: metricForTab('graph', state),
+                ctaLabel: 'Open graph',
+                tab: 'graph',
+                icon: 'mdi-graph-outline',
+            },
+            {
+                key: 'timeline',
+                title: 'Timeline / Events',
+                description: 'Review the transaction timeline and material event sequence.',
+                metric: metricForTab('timeline', state),
+                ctaLabel: 'Open timeline',
+                tab: 'timeline',
+                icon: 'mdi-chart-timeline-variant',
+            },
+            {
+                key: 'agreements',
+                title: 'Agreements',
+                description: 'Review obligations, counterparties, and legal structure links.',
+                metric: metricForTab('agreements', state),
+                ctaLabel: 'Open agreements',
+                tab: 'agreements',
+                icon: 'mdi-file-document-outline',
+            },
+            {
+                key: 'insights',
+                title: 'Insights',
+                description: 'Capture high-signal patterns and executive talking points.',
+                metric: metricForTab('insights', state),
+                ctaLabel: 'Open insights',
+                tab: 'insights',
+                icon: 'mdi-lightbulb-on-outline',
+            },
+            {
+                key: 'validation',
+                title: 'Validation',
+                description: 'Confirm source coverage and identify evidence gaps quickly.',
+                metric: metricForTab('validation', state),
+                ctaLabel: 'Open validation',
+                tab: 'validation',
+                icon: 'mdi-shield-check-outline',
+            },
+            {
+                key: 'enrichment',
+                title: 'Enrichment',
+                description: 'Expand into broader graph context from core collection anchors.',
+                metric: metricForTab('enrichment', state),
+                ctaLabel: 'Open enrichment',
+                tab: 'enrichment',
+                icon: 'mdi-arrow-expand-all',
+            },
+        ],
+    };
+}

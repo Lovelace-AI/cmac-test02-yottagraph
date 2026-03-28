@@ -1,0 +1,146 @@
+# Extracted Entity to NEID Map (2026-03-28)
+
+- Extracted entities: `131`
+- Resolved to canonical NEIDs: `116`
+- Still seed-only: `13`
+- Missing from app under same extracted label: `2`
+
+## Status legend
+
+- `resolved_neid`: extracted entity currently mapped to a canonical NEID
+- `seed_only`: extracted entity still only has a temporary `seed:` ID
+- `missing_from_app`: extracted label not present under the same name in app state
+
+## Full list
+
+- `$142,235,000 New Jersey Housing and Mortgage Finance Agency Multifamily Housing Revenue Refunding Bond` | `financial_instrument` | `none` | `missing_from_app`
+- `1851170072` | `fund_account` | `08665168153677074200` | `resolved_neid`
+- `210 MAIN STREET HACKENSACK, NEW JERSEY 07602` | `location` | `09028891369789562917` | `resolved_neid`
+- `2711 N. Haskell Avenue` | `location` | `04541494875554604248` | `resolved_neid`
+- `2711 N. Haskell Avenue, Lockbox 35, Suite 2600 SW, Dallas, TX 75204` | `location` | `02947201247694098125` | `resolved_neid`
+- `2711 NORTH HASKELL AVENUE` | `location` | `seed:entity:MjcxMSBub3J0aCBoYXNrZWxs` | `seed_only`
+- `385 RIFLE CAMP ROAD WEST PATERSON, NJ 07424` | `location` | `00451436081482840009` | `resolved_neid`
+- `452 Fifth Avenue, New York, N.Y. 10018` | `location` | `01788201509360398999` | `resolved_neid`
+- `51 WEST 52ND STREET, NEW YORK, NY 10019` | `location` | `08961398183215909633` | `resolved_neid`
+- `637 South Clinton Avenue` | `location` | `04798439779264810981` | `resolved_neid`
+- `637 South Clinton Avenue, P.O. Box 18550, Trenton, NJ 08650-2085` | `location` | `01490141290870989388` | `resolved_neid`
+- `7699940` | `fund_account` | `01896489344536128430` | `resolved_neid`
+- `931806` | `fund_account` | `02504986505545931558` | `resolved_neid`
+- `97-77 QUEENS BLVD. REGO PARK, N.Y. 11374` | `location` | `07942829951042429385` | `resolved_neid`
+- `A NEW JERSEY GENERAL PARTNERSHIP` | `organization` | `00324145471253932450` | `resolved_neid`
+- `ACS D52671BNY` | `fund_account` | `04520257385239843487` | `resolved_neid`
+- `AMENDMENT (NO. 002.00 )` | `financial_instrument` | `02381187644982522013` | `resolved_neid`
+- `AMENDMENT (NO. 003.02)` | `financial_instrument` | `02513431628796693811` | `resolved_neid`
+- `AMENDMENT (NO. 005.00 )` | `financial_instrument` | `01154936381389658373` | `resolved_neid`
+- `AMENDMENT (NO. 007 )` | `financial_instrument` | `03918206870515019731` | `resolved_neid`
+- `AMENDMENT (NO. 008 )` | `financial_instrument` | `08819374516737857756` | `resolved_neid`
+- `AMENDMENT (NO. 009 )` | `financial_instrument` | `03204175304077932961` | `resolved_neid`
+- `AMENDMENT (NO. 010 )` | `financial_instrument` | `05823406524061590731` | `resolved_neid`
+- `AMENDMENT (NO. 011 )` | `financial_instrument` | `08674044714312252700` | `resolved_neid`
+- `AMENDMENT (NO. 013 )` | `financial_instrument` | `02068854522204650134` | `resolved_neid`
+- `AMENDMENT (NO. 014 )` | `financial_instrument` | `06353477035103929731` | `resolved_neid`
+- `ARTHUR KLEIN` | `person` | `04008955034518895738` | `resolved_neid`
+- `BLICBANK NEW YORK` | `organization` | `03220685979272488431` | `resolved_neid`
+- `BLICUS 33` | `financial_instrument` | `03382116686024656995` | `resolved_neid`
+- `BLX` | `organization` | `seed:entity:Ymx4fG9yZ2FuaXphdGlvbg` | `seed_only`
+- `BLX Group LLC` | `organization` | `01470965072054453101` | `resolved_neid`
+- `BNY` | `organization` | `seed:entity:Ym55fG9yZ2FuaXphdGlvbg` | `seed_only`
+- `BNY Rebate Analysis: 4124255.pdf` | `financial_instrument` | `04899275328142043346` | `resolved_neid`
+- `Certificate as to Arbitrage` | `legal_agreement` | `09073217463430168172` | `resolved_neid`
+- `COLLATERAL SUBACCOUNT` | `fund_account` | `02352505202908928335` | `resolved_neid`
+- `Construction Account` | `fund_account` | `00226686358700946423` | `resolved_neid`
+- `CORPORATE TRUST DIVISION` | `organization` | `00541401425133389525` | `resolved_neid`
+- `Dallas, TX` | `location` | `seed:entity:ZGFsbGFzIHR4fGxvY2F0aW9u` | `seed_only`
+- `Dallas, TX 75206` | `location` | `05885379055126329646` | `resolved_neid`
+- `Debt Service Reserve Account` | `fund_account` | `00374030580716664244` | `resolved_neid`
+- `DEBT SERVICE RESERVE ACCOUNT` | `fund_account` | `00374030580716664244` | `resolved_neid`
+- `Department of the Treasury` | `organization` | `seed:entity:ZGVwYXJ0bWVudCBvZiB0cmVh` | `seed_only`
+- `engagement letter` | `legal_agreement` | `08129196958194220174` | `resolved_neid`
+- `Escrow Fund` | `fund_account` | `03499104088028066083` | `resolved_neid`
+- `EXHIBIT A` | `legal_agreement` | `01428311937107269689` | `resolved_neid`
+- `EXHIBIT B` | `legal_agreement` | `04378959058990797753` | `resolved_neid`
+- `EXHIBIT C` | `legal_agreement` | `00032845926869761085` | `resolved_neid`
+- `EXHIBIT D` | `legal_agreement` | `07010305909201796213` | `resolved_neid`
+- `Federated MM` | `financial_instrument` | `07669844269534725615` | `resolved_neid`
+- `HSBC` | `organization` | `seed:entity:aHNiY3xvcmdhbml6YXRpb24` | `seed_only`
+- `HSBC BANK USA` | `organization` | `seed:entity:aHNiYyBiYW5rIHVzYXxvcmdh` | `seed_only`
+- `HSBC Bank USA Trade Services` | `organization` | `none` | `missing_from_app`
+- `INTERIM ARBITRAGE REBATE ANALYSIS` | `legal_agreement` | `05651499468729638165` | `resolved_neid`
+- `Internal Revenue Service Form 8038-T` | `legal_agreement` | `03439765214018713853` | `resolved_neid`
+- `INTERNATIONAL CHAMBER OF COMMERCE PUBLICATION NO. 400` | `legal_agreement` | `07134683315725495957` | `resolved_neid`
+- `IRREVOCABLE LETTER OF CREDIT` | `legal_agreement` | `09170860967536978667` | `resolved_neid`
+- `JOSEPH E. LUDES` | `person` | `08382407775580926155` | `resolved_neid`
+- `JULIANNE MEDICI` | `person` | `08227710946729421751` | `resolved_neid`
+- `LEFRAK ORGANIZATION INC.` | `organization` | `07059425056973183461` | `resolved_neid`
+- `Liquidity I` | `fund_account` | `00212533258381375355` | `resolved_neid`
+- `Liquidity I Account` | `fund_account` | `07476737946181823597` | `resolved_neid`
+- `Liquidity II Account` | `fund_account` | `06638852300639391265` | `resolved_neid`
+- `Liquidity II Accounts` | `fund_account` | `seed:entity:bGlxdWlkaXR5IGlpIGFjY291` | `seed_only`
+- `Lockbox 35, Suite 2600 SW` | `location` | `02310895720670755529` | `resolved_neid`
+- `Morgan IA` | `financial_instrument` | `07160664882440639509` | `resolved_neid`
+- `NC HOUSING ASSOCIATES #200 CO.` | `organization` | `04104505588419472813` | `resolved_neid`
+- `New Jersey Housing and Mortgage Finance Agency` | `organization` | `06471256961308361850` | `resolved_neid`
+- `NEW JERSEY HOUSING AND MORTGAGE FINANCE AGENCY` | `organization` | `06471256961308361850` | `resolved_neid`
+- `New York, NY` | `location` | `seed:entity:bmV3IHlvcmsgbnl8bG9jYXRp` | `seed_only`
+- `New York, NY 10019-6142` | `location` | `06662360422077407907` | `resolved_neid`
+- `Newport 91 Col 11` | `fund_account` | `01066437395655026795` | `resolved_neid`
+- `Newport Project` | `location` | `05244065165148542602` | `resolved_neid`
+- `Notes and Assumptions` | `legal_agreement` | `09013206385896288509` | `resolved_neid`
+- `orrick` | `organization` | `02080889041561724035` | `resolved_neid`
+- `Orrick, Herrington & Sutcliffe LLP` | `organization` | `05477621199116204617` | `resolved_neid`
+- `P.O. Box 18550` | `location` | `01867702731957289564` | `resolved_neid`
+- `Presidential Plaza` | `location` | `03029826579187567535` | `resolved_neid`
+- `Presidential Plaza at Newport Project` | `location` | `07995807768282066926` | `resolved_neid`
+- `Prior Rebate Liability` | `legal_agreement` | `02258511055208974139` | `resolved_neid`
+- `Prior Rebate Liability` | `fund_account` | `02277784462984661168` | `resolved_neid`
+- `Prior Report` | `legal_agreement` | `03844814106996110754` | `resolved_neid`
+- `Report` | `legal_agreement` | `08879090567778783678` | `resolved_neid`
+- `REPUBLIC NATIONAL BANK OF NEW YORK` | `organization` | `04824620677155774613` | `resolved_neid`
+- `Reserve I` | `fund_account` | `05312626425379185141` | `resolved_neid`
+- `Reserve I Account` | `fund_account` | `09112734796193071548` | `resolved_neid`
+- `Reserve II` | `fund_account` | `05766542102150149251` | `resolved_neid`
+- `Reserve II Account` | `fund_account` | `02877916378535664072` | `resolved_neid`
+- `Revenue Account` | `fund_account` | `01477039329975055923` | `resolved_neid`
+- `Schedule A - Summary of Rebate Analysis` | `legal_agreement` | `03190929743969324823` | `resolved_neid`
+- `Schedule A - Summary of Rebate Analysis` | `fund_account` | `08523712635205527373` | `resolved_neid`
+- `Schedule B - Sources & Uses of Funds` | `fund_account` | `04190633011426224500` | `resolved_neid`
+- `Schedule B - Sources & Uses of Funds` | `legal_agreement` | `04662206365284782208` | `resolved_neid`
+- `Schedule C - Reserve I Account` | `fund_account` | `07684968567575696080` | `resolved_neid`
+- `Schedule C - Reserve I Account` | `legal_agreement` | `07565798991068528206` | `resolved_neid`
+- `Schedule C1 - Reserve I Account Remaining Balance Analyses` | `legal_agreement` | `00206579677833234805` | `resolved_neid`
+- `Schedule C2 - Reserve I Account Net Nonpurpose Investments Cash Flow` | `legal_agreement` | `08917349301390975997` | `resolved_neid`
+- `Schedule D - Reserve II Account` | `legal_agreement` | `08647261206502899303` | `resolved_neid`
+- `Schedule D - Reserve II Account` | `fund_account` | `04931428261163025225` | `resolved_neid`
+- `Schedule D1 - Reserve II Account Remaining Balance Analyses` | `legal_agreement` | `02990484481727744339` | `resolved_neid`
+- `Schedule D2 - Reserve II Account Net Nonpurpose Investments Cash Flow` | `legal_agreement` | `02576017519828814741` | `resolved_neid`
+- `Schedule E - Prior Rebate Liability` | `fund_account` | `07699163145713422733` | `resolved_neid`
+- `Schedule E - Prior Rebate Liability` | `legal_agreement` | `03896407521264998095` | `resolved_neid`
+- `Schedule E1 - Prior Rebate Liability Future Value Calculation` | `legal_agreement` | `07716519703989279091` | `resolved_neid`
+- `Schedule F - Liquidity I Account` | `fund_account` | `01667998524201661399` | `resolved_neid`
+- `Schedule F - Liquidity I Account` | `legal_agreement` | `06422763341505446459` | `resolved_neid`
+- `Schedule F1 - Liquidity I Account Remaining Balance Analyses` | `legal_agreement` | `06635759182396356344` | `resolved_neid`
+- `Schedule F2 - Liquidity I Account Net Nonpurpose Investments Cash Flow` | `legal_agreement` | `00042598379929581788` | `resolved_neid`
+- `Schedule G - Liquidity II Account` | `fund_account` | `06887584236230756927` | `resolved_neid`
+- `Schedule G - Liquidity II Account` | `legal_agreement` | `04194651737123043185` | `resolved_neid`
+- `Schedule G1 - Liquidity II Account Remaining Balance Analyses` | `legal_agreement` | `02562486007957623103` | `resolved_neid`
+- `Schedule G2 - Liquidity II Account Net Nonpurpose Investments Cash Flow` | `legal_agreement` | `06533606881395055487` | `resolved_neid`
+- `SDCMTN094714` | `financial_instrument` | `07005109958829846067` | `resolved_neid`
+- `SECTION 10.3` | `legal_agreement` | `08149435077860669278` | `resolved_neid`
+- `SECTION 5.6` | `legal_agreement` | `08753339908811957357` | `resolved_neid`
+- `STATE OF NEW YORK` | `location` | `seed:entity:c3RhdGUgb2YgbmV3IHlvcmt8` | `seed_only`
+- `Telex: 234967 (RCA)` | `financial_instrument` | `02006969212955648599` | `resolved_neid`
+- `Telex: 620274 (MCI), 7607367 (CCI)` | `financial_instrument` | `05895679362876652650` | `resolved_neid`
+- `Temporary Treasury Regulations Section 1.148-4T(e)(2)` | `legal_agreement` | `00996175972460951893` | `resolved_neid`
+- `THE BANK OF NEW YORK` | `organization` | `seed:entity:YmFuayBvZiBuZXcgeW9ya3xv` | `seed_only`
+- `Totals:` | `fund_account` | `08623770550156948762` | `resolved_neid`
+- `Transmittal Letter` | `legal_agreement` | `05121003150070824032` | `resolved_neid`
+- `Treasury` | `organization` | `07404718453994080710` | `resolved_neid`
+- `Trenton, NJ` | `location` | `seed:entity:dHJlbnRvbiBuanxsb2NhdGlv` | `seed_only`
+- `Trenton, NJ 08650-2085` | `location` | `07706441574885243436` | `resolved_neid`
+- `TRUST INDENTURE (THE INDENTURE) DATED AS OF OCTOBER 17, 1991` | `legal_agreement` | `02374661523630693574` | `resolved_neid`
+- `U.S. $1,307,116.07` | `financial_instrument` | `05989291099094186035` | `resolved_neid`
+- `UNIFORM CUSTOMS` | `legal_agreement` | `06208785035719167709` | `resolved_neid`
+- `UNIFORM CUSTOMS AND PRACTICE FOR DOCUMENTARY CREDITS (1983 REVISION)` | `legal_agreement` | `03127771656435772906` | `resolved_neid`
+- `UNITED JERSEY BANK` | `organization` | `seed:entity:dW5pdGVkIGplcnNleSBiYW5r` | `seed_only`
+- `United States` | `organization` | `08378183269956851171` | `resolved_neid`
+- `Willdan Financial Services` | `organization` | `07683517764755523583` | `resolved_neid`

@@ -17,14 +17,25 @@
                     v-for="(item, idx) in items"
                     :key="item.id"
                     class="px-0 app-click-target"
-                    :title="item.title"
-                    :subtitle="item.subtitle"
                     :append-icon="item.actionable ? 'mdi-chevron-right' : undefined"
+                    :lines="item.description ? 'three' : 'two'"
                     @click="item.actionable ? emit('select', item.id) : undefined"
                 >
                     <template #prepend>
                         <span class="text-caption rank-index mr-3">{{ idx + 1 }}</span>
                     </template>
+                    <v-list-item-title class="text-body-2 font-weight-medium">
+                        {{ item.title }}
+                    </v-list-item-title>
+                    <v-list-item-subtitle v-if="item.subtitle" class="text-wrap">
+                        {{ item.subtitle }}
+                    </v-list-item-subtitle>
+                    <v-list-item-subtitle
+                        v-if="item.description"
+                        class="text-wrap text-medium-emphasis mt-1"
+                    >
+                        {{ item.description }}
+                    </v-list-item-subtitle>
                     <template #append>
                         <span class="text-caption text-medium-emphasis ml-2">{{ item.meta }}</span>
                     </template>
@@ -39,6 +50,7 @@
         id: string;
         title: string;
         subtitle?: string;
+        description?: string;
         meta?: string;
         actionable?: boolean;
     }

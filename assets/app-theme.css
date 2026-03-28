@@ -1,23 +1,25 @@
 :root {
     --app-divider: rgba(255, 255, 255, 0.06);
     --app-divider-strong: rgba(255, 255, 255, 0.1);
-    --app-subtle-surface: rgba(0, 0, 0, 0.2);
-    --app-subtle-surface-2: rgba(0, 0, 0, 0.1);
+    --app-subtle-surface: rgba(30, 40, 58, 0.34);
+    --app-subtle-surface-2: rgba(30, 40, 58, 0.22);
     --app-code-bg: rgba(255, 255, 255, 0.08);
     --app-code-text: var(--dynamic-primary);
-    --app-focus-ring: #9ad7ff;
-    --app-focus-ring-shadow: rgba(154, 215, 255, 0.28);
+    --app-focus-ring: #85beff;
+    --app-focus-ring-shadow: rgba(133, 190, 255, 0.28);
     --app-min-target-size: 24px;
 }
 
 :root[data-app-color-mode='dark'] {
     color-scheme: dark;
-    --app-divider: rgba(255, 255, 255, 0.06);
-    --app-divider-strong: rgba(255, 255, 255, 0.12);
-    --app-subtle-surface: rgba(0, 0, 0, 0.2);
-    --app-subtle-surface-2: rgba(0, 0, 0, 0.1);
+    --app-divider: rgba(181, 194, 218, 0.18);
+    --app-divider-strong: rgba(181, 194, 218, 0.3);
+    --app-subtle-surface: rgba(30, 40, 58, 0.34);
+    --app-subtle-surface-2: rgba(30, 40, 58, 0.22);
     --app-code-bg: rgba(255, 255, 255, 0.08);
     --app-code-text: var(--dynamic-primary);
+    --app-focus-ring: #85beff;
+    --app-focus-ring-shadow: rgba(133, 190, 255, 0.28);
 }
 
 :root[data-app-color-mode='light'] {
@@ -64,18 +66,18 @@ code {
 }
 
 :where(
-        button,
-        [role='button'],
-        a[href],
-        summary,
-        input:not([type='hidden']),
-        select,
-        textarea,
-        .v-btn,
-        .v-tab,
-        .v-list-item[tabindex],
-        .v-chip[tabindex]
-    ):focus-visible {
+    button,
+    [role='button'],
+    a[href],
+    summary,
+    input:not([type='hidden']),
+    select,
+    textarea,
+    .v-btn,
+    .v-tab,
+    .v-list-item[tabindex],
+    .v-chip[tabindex]
+):focus-visible {
     outline: 2px solid var(--app-focus-ring);
     outline-offset: 2px;
     box-shadow: 0 0 0 3px var(--app-focus-ring-shadow);

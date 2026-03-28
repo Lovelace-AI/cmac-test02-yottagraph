@@ -1,246 +1,190 @@
 <template>
     <div class="overview-briefing">
-        <v-card class="mb-3 summary-strip" variant="flat">
-            <v-card-text class="py-3 px-4">
-                <div class="d-flex align-center justify-space-between flex-wrap ga-3">
-                    <div class="strip-copy">
-                        <div class="text-body-1 font-weight-medium">{{ meta.name }}</div>
-                        <div class="text-caption text-medium-emphasis mt-1">
-                            {{ summaryLine }}
-                        </div>
-                    </div>
-                    <div class="d-flex align-center flex-wrap ga-2">
-                        <v-chip
-                            size="small"
-                            :color="isReady ? 'success' : 'warning'"
-                            variant="tonal"
+        <CollectionHeaderCard
+            :title="overview.collectionName"
+            :subtitle="overview.subtitle"
+            :detected-deal-type="overview.detectedDealType"
+            :status="overview.status"
+            :status-label="overview.statusLabel"
+            :document-count="overview.documentCount"
+            :analysis-status="overview.analysisStatusLabel"
+            :last-updated="overview.lastUpdated"
+        />
+
+        <div class="briefing-grid mt-4">
+            <div class="span-2">
+                <DealSummaryCard v-if="showDealSummary" :fields="overview.dealSummaryFields" />
+                <v-card v-else class="placeholder-card" variant="flat">
+                    <v-card-item>
+                        <v-card-title class="text-body-1 placeholder-title"
+                            >Deal Summary</v-card-title
                         >
-                            {{
-                                isReady
-                                    ? COLLECTION_COPY.status.ready
-                                    : COLLECTION_COPY.status.notReady
-                            }}
-                        </v-chip>
-                        <span class="text-caption text-medium-emphasis">
-                            {{ collectionSummary }}
-                        </span>
-                        <span v-if="meta.lastRebuilt" class="text-caption text-medium-emphasis">
-                            Updated {{ new Date(meta.lastRebuilt).toLocaleString() }}
-                        </span>
-                    </div>
-                </div>
-            </v-card-text>
-        </v-card>
-
-        <v-card v-if="!isReady" variant="tonal" color="info" class="mb-3">
-            <v-card-text class="py-3 px-4 d-flex align-center ga-2 text-body-2">
-                <v-icon size="18">mdi-timer-sand</v-icon>
-                Awaiting analysis. Run initial analysis to populate key entities, event drivers, and
-                trust coverage evidence.
-            </v-card-text>
-        </v-card>
-
-        <v-row v-else class="mb-1">
-            <v-col cols="6" md="2.4" v-for="metric in primaryMetrics" :key="metric.label">
-                <InsightMetricCard
-                    :label="metric.label"
-                    :value="metric.value"
-                    :description="metric.description"
-                />
-            </v-col>
-        </v-row>
-
-        <v-row class="mb-1">
-            <v-col cols="12" lg="4">
-                <RankedInsightList
-                    title="Most Important Entities"
-                    subtitle="Ranked by connectivity and evidence"
-                    :items="entityItems"
-                    empty-text="Run extraction to identify key entities."
-                    @select="(id) => selectEntity(id)"
-                />
-            </v-col>
-            <v-col cols="12" lg="4">
-                <RankedInsightList
-                    title="Key Events"
-                    subtitle="Highest-impact events in this collection"
-                    :items="eventItems"
-                    empty-text="No events detected yet."
-                    @select="selectEventEntity"
-                />
-            </v-col>
-            <v-col cols="12" lg="4">
-                <TrustCoveragePanel :summary="trustCoverageSummary" :notes="keyCoverageNotes" />
-            </v-col>
-        </v-row>
-
-        <v-row class="supporting-row">
-            <v-col cols="12" lg="6">
-                <v-card variant="flat" class="supporting-card">
-                    <v-card-item>
-                        <v-card-title class="text-body-2">Source Documents</v-card-title>
                     </v-card-item>
-                    <v-card-text class="pa-0">
-                        <DocumentList />
+                    <v-card-text class="pt-0 text-body-2 text-medium-emphasis">
+                        Run initial analysis to synthesize the transaction structure, issuer,
+                        closing profile, and primary parties from uploaded documents.
                     </v-card-text>
                 </v-card>
-            </v-col>
-            <v-col cols="12" lg="6">
-                <v-card variant="flat" class="supporting-card">
-                    <v-card-item>
-                        <v-card-title class="text-body-2">Relationship Highlights</v-card-title>
-                        <template #append>
-                            <span class="text-caption text-medium-emphasis"
-                                >{{ relationshipHighlights.length }} types</span
-                            >
-                        </template>
-                    </v-card-item>
-                    <v-card-text class="pt-0 pb-2">
-                        <v-list density="compact" class="pa-0 bg-transparent">
-                            <v-list-item
-                                v-for="item in relationshipHighlights"
-                                :key="item.type"
-                                class="px-0"
-                            >
-                                <v-list-item-title class="text-body-2">
-                                    {{ formatRelationshipType(item.type) }}
-                                </v-list-item-title>
-                                <template #append>
-                                    <span class="text-caption text-medium-emphasis">{{
-                                        item.count
-                                    }}</span>
-                                </template>
-                            </v-list-item>
-                        </v-list>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-        </v-row>
+            </div>
+            <ExtractionStatsCard :stats="overview.extractionStats" />
+        </div>
 
-        <TaskActionStrip :actions="recommendedActions" class="mt-2" @run="runTaskAction" />
+        <div class="briefing-grid mt-4">
+            <div class="span-3">
+                <AICaseStudyNarrativeCard
+                    :narrative-paragraphs="narrativeParagraphs"
+                    :citation-count="narrativeCitations.length"
+                    @regenerate="loadOverviewLanguage"
+                />
+            </div>
+        </div>
+
+        <SourceDocumentsTable
+            class="mt-4"
+            :documents="overview.documents"
+            @preview="handlePreviewDoc"
+            @entities="handleViewEntities"
+            @citations="handleViewCitations"
+        />
+
+        <ExploreNextGrid class="mt-4" :cards="overview.exploreCards" @open="setTab" />
     </div>
 </template>
 
 <script setup lang="ts">
-    import type { RankedInsightItem } from '~/components/collection/RankedInsightList.vue';
-    import { COLLECTION_COPY, formatRelationshipType } from '~/utils/collectionCopy';
+    const { overviewViewModel, meta, isReady, setTab, focusDocument, addGeminiUsage } =
+        useCollectionWorkspace();
 
-    const {
-        meta,
-        isReady,
-        collectionSummary,
-        topEntities,
-        topEvents,
-        relationshipHighlights,
-        trustCoverageSummary,
-        keyCoverageNotes,
-        recommendedActions,
-        propertySeries,
-        selectEntity,
-        setTab,
-        resolveEntityName,
-    } = useCollectionWorkspace();
+    const liveNarrative = ref<string | null>(null);
+    const narrativeCitations = ref<Array<{ label: string; neid?: string }>>([]);
 
-    const summaryLine = computed(
-        () =>
-            meta.value.description ||
-            'Collection-level analysis with traceable entities, events, and evidence.'
+    const overview = computed(() => overviewViewModel.value);
+    const showDealSummary = computed(
+        () => overview.value.status === 'complete' || overview.value.status === 'partial'
     );
+    const narrativeParagraphs = computed(() => {
+        const narrative =
+            liveNarrative.value ||
+            (overview.value.status === 'pending' || overview.value.status === 'processing'
+                ? ''
+                : `${overview.value.collectionName} includes ${overview.value.documentCount} source documents that have been translated into a connected transaction graph.\n\nElemental identified major parties, agreements, events, and relationships and turned them into a coherent analytical baseline for downstream validation and enrichment.`);
+        return narrative
+            .split(/\n+/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    });
 
-    const primaryMetrics = computed(() => [
-        {
-            label: 'Entities',
-            value: meta.value.entityCount,
-            description: 'Distinct entities in this collection',
-        },
-        {
-            label: 'Events',
-            value: meta.value.eventCount,
-            description: 'Key events connected to entities',
-        },
-        {
-            label: 'Relationships',
-            value: meta.value.relationshipCount,
-            description: 'Links between parties and instruments',
-        },
-        {
-            label: 'Agreements',
-            value: meta.value.agreementCount,
-            description: 'Legal agreements identified',
-        },
-        {
-            label: COLLECTION_COPY.terms.propertyHistory,
-            value: propertySeries.value.length,
-            description: 'Historical property series available',
-        },
-    ]);
-
-    const entityItems = computed<RankedInsightItem[]>(() =>
-        topEntities.value.map((entity) => ({
-            id: entity.neid,
-            title: entity.name,
-            subtitle: `${entity.flavor.replace(/_/g, ' ')} · ${entity.relationshipCount} linked relationships`,
-            meta: `${entity.eventCount} events`,
-            actionable: true,
-        }))
-    );
-
-    const eventItems = computed<RankedInsightItem[]>(() =>
-        topEvents.value.map((event) => ({
-            id: event.neid,
-            title: event.name,
-            subtitle: `${event.category || 'uncategorized'}${event.date ? ` · ${event.date.slice(0, 10)}` : ''}`,
-            meta: `${event.participantCount} participants`,
-            actionable: true,
-        }))
-    );
-
-    function runTaskAction(actionId: string) {
-        const action = recommendedActions.value.find((item) => item.id === actionId);
-        if (!action) return;
-        setTab(action.tab);
-    }
-
-    function selectEventEntity(eventNeid: string) {
-        const event = topEvents.value.find((item) => item.neid === eventNeid);
-        if (!event) return;
-        const matching = topEntities.value.find((entity) =>
-            event.name.toLowerCase().includes(resolveEntityName(entity.neid).toLowerCase())
-        );
-        if (matching) {
-            selectEntity(matching.neid);
-            setTab('graph');
-        } else {
-            setTab('events');
+    async function loadOverviewLanguage() {
+        if (!isReady.value) {
+            liveNarrative.value = null;
+            narrativeCitations.value = [];
+            return;
+        }
+        try {
+            const result = await $fetch<{
+                summaryLine: string;
+                collectionSummary: string;
+                narrative?: string;
+                citations?: Array<{ label: string; neid?: string }>;
+                usage?: {
+                    model: string;
+                    promptTokens: number;
+                    completionTokens: number;
+                    totalTokens: number;
+                    costUsd: number;
+                };
+            }>('/api/collection/overview-language');
+            liveNarrative.value = result.narrative || null;
+            narrativeCitations.value = result.citations || [];
+            if (result.usage) {
+                addGeminiUsage({
+                    model: result.usage.model,
+                    promptTokens: result.usage.promptTokens,
+                    completionTokens: result.usage.completionTokens,
+                    totalTokens: result.usage.totalTokens,
+                    costUsd: result.usage.costUsd,
+                    latencyMs: 0,
+                    timestamp: new Date().toISOString(),
+                    label: 'overview_language',
+                });
+            }
+        } catch {
+            liveNarrative.value = null;
+            narrativeCitations.value = [];
         }
     }
+
+    function handlePreviewDoc(neid: string) {
+        focusDocument(neid);
+    }
+
+    function handleViewEntities(neid: string) {
+        focusDocument(neid);
+        setTab('graph');
+    }
+
+    function handleViewCitations(neid: string) {
+        focusDocument(neid);
+        setTab('validation');
+    }
+
+    onMounted(() => {
+        if (isReady.value) loadOverviewLanguage();
+    });
+    watch(
+        () => isReady.value,
+        (ready) => {
+            if (ready) loadOverviewLanguage();
+        }
+    );
+    watch(
+        () => meta.value.lastRebuilt,
+        () => {
+            if (isReady.value) loadOverviewLanguage();
+        }
+    );
 </script>
 
 <style scoped>
-    .overview-briefing :deep(.v-card-item) {
-        min-height: auto;
-        padding-top: 10px;
-        padding-bottom: 6px;
+    .overview-briefing {
+        max-width: 1420px;
+        margin: 0 auto;
+        padding: 12px 8px 24px;
     }
 
-    .summary-strip {
-        border: 1px solid var(--app-divider-strong);
+    .briefing-grid {
+        display: grid;
+        grid-template-columns: repeat(1, minmax(0, 1fr));
+        gap: 18px;
+    }
+
+    .placeholder-card {
+        border: 1px dashed var(--app-divider-strong);
+        border-radius: 16px;
         background: linear-gradient(
-            145deg,
-            color-mix(in srgb, var(--dynamic-secondary) 8%, transparent),
-            color-mix(in srgb, var(--dynamic-primary) 6%, transparent)
+            155deg,
+            color-mix(in srgb, var(--dynamic-panel-background) 84%, var(--dynamic-background) 16%),
+            color-mix(in srgb, var(--dynamic-surface) 90%, var(--dynamic-background) 10%)
         );
+        min-height: 220px;
     }
 
-    .strip-copy {
-        max-width: 520px;
+    .placeholder-title {
+        letter-spacing: 0.01em;
+        font-weight: 600;
     }
 
-    .supporting-row :deep(.v-card-text) {
-        padding-top: 0;
-    }
+    @media (min-width: 1280px) {
+        .briefing-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
 
-    .supporting-card {
-        border: 1px solid var(--app-divider);
+        .span-2 {
+            grid-column: span 2 / span 2;
+        }
+
+        .span-3 {
+            grid-column: span 3 / span 3;
+        }
     }
 </style>

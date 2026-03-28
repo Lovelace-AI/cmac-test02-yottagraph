@@ -4,7 +4,8 @@
             v-if="entityCount != null"
             size="x-small"
             color="primary"
-            variant="flat"
+            variant="tonal"
+            class="meta-pill"
             prepend-icon="mdi-domain"
         >
             {{ entityCount }} {{ entityLabel }}
@@ -13,7 +14,8 @@
         <v-chip
             v-if="eventCount != null"
             size="x-small"
-            variant="outlined"
+            variant="tonal"
+            class="meta-pill"
             prepend-icon="mdi-calendar-alert"
         >
             {{ eventCount }} events
@@ -22,22 +24,42 @@
         <v-chip
             v-if="relationshipCount != null"
             size="x-small"
-            variant="outlined"
+            variant="tonal"
+            class="meta-pill"
             prepend-icon="mdi-graph-outline"
         >
             {{ relationshipCount }} edges
         </v-chip>
 
         <v-chip
+            v-if="propertyCount != null"
+            size="x-small"
+            variant="tonal"
+            class="meta-pill"
+            prepend-icon="mdi-shape-outline"
+        >
+            {{ propertyCount }} properties{{
+                propertyRecordCount != null ? ` / ${propertyRecordCount} records` : ''
+            }}
+        </v-chip>
+
+        <v-chip
             v-if="propertySeries != null"
             size="x-small"
-            variant="outlined"
+            variant="tonal"
+            class="meta-pill"
             prepend-icon="mdi-chart-line"
         >
             {{ propertySeries }} prop series
         </v-chip>
 
-        <v-chip v-if="readTime" size="x-small" variant="outlined" prepend-icon="mdi-clock-outline">
+        <v-chip
+            v-if="readTime"
+            size="x-small"
+            variant="tonal"
+            class="meta-pill"
+            prepend-icon="mdi-clock-outline"
+        >
             {{ readTime }}
         </v-chip>
 
@@ -46,6 +68,7 @@
             size="x-small"
             color="deep-purple"
             variant="tonal"
+            class="meta-pill"
             prepend-icon="mdi-robot"
         >
             {{ displayModel(model) }}
@@ -54,14 +77,21 @@
         <template v-if="showUsage && usage">
             <v-chip
                 size="x-small"
-                variant="outlined"
+                variant="tonal"
+                class="meta-pill"
                 prepend-icon="mdi-counter"
                 :title="`${usage.prompt_tokens} in / ${usage.completion_tokens} out`"
             >
                 {{ formatTokens(usage.prompt_tokens) }} in /
                 {{ formatTokens(usage.completion_tokens) }} out
             </v-chip>
-            <v-chip size="x-small" color="success" variant="tonal" prepend-icon="mdi-currency-usd">
+            <v-chip
+                size="x-small"
+                color="success"
+                variant="tonal"
+                class="meta-pill"
+                prepend-icon="mdi-currency-usd"
+            >
                 {{ formatCost(usage.cost_usd) }}
             </v-chip>
         </template>
@@ -103,6 +133,8 @@
             entityCount?: number;
             eventCount?: number;
             relationshipCount?: number;
+            propertyCount?: number;
+            propertyRecordCount?: number;
             propertySeries?: number;
             entityLabel?: string;
             readTime?: string;
@@ -145,3 +177,10 @@
             .replace(/\b\w/g, (c) => c.toUpperCase());
     }
 </script>
+
+<style scoped>
+    .meta-pill {
+        border: 1px solid var(--app-divider);
+        letter-spacing: 0;
+    }
+</style>
