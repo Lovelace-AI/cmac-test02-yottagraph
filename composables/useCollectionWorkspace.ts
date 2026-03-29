@@ -1283,6 +1283,21 @@ export function useCollectionWorkspace() {
         mcpLog.value = [];
         rebuildSteps.value = INITIAL_STEPS.map((s) => ({ ...s }));
 
+        const runFallbackRebuild = async (reason: string) => {
+            const fallbackState = await $fetch<CollectionState>('/api/collection/rebuild', {
+                method: 'POST',
+            });
+            collection.value = fallbackState;
+            rebuildSteps.value = INITIAL_STEPS.map((step, idx) => ({
+                ...step,
+                status: 'completed',
+                detail:
+                    idx === INITIAL_STEPS.length - 1
+                        ? `Fallback rebuild completed (${reason}).`
+                        : step.detail,
+            }));
+        };
+
         try {
             const response = await fetch('/api/collection/rebuild-stream');
             if (!response.ok || !response.body) {
@@ -1293,7 +1308,8 @@ export function useCollectionWorkspace() {
                     detail = '';
                 }
                 const suffix = detail ? ` — ${detail.slice(0, 220)}` : '';
-                throw new Error(`Stream failed: ${response.status}${suffix}`);
+                await runFallbackRebuild(`stream unavailable: ${response.status}${suffix}`);
+                return;
             }
 
             const reader = response.body.getReader();
@@ -1318,8 +1334,14 @@ export function useCollectionWorkspace() {
                 }
             }
         } catch (e: any) {
-            collection.value.status = 'error';
-            collection.value.error = e.message || 'Rebuild failed';
+            try {
+                await runFallbackRebuild(
+                    e?.message ? String(e.message).slice(0, 220) : 'stream request failed'
+                );
+            } catch (fallbackError: any) {
+                collection.value.status = 'error';
+                collection.value.error = fallbackError?.message || e?.message || 'Rebuild failed';
+            }
         } finally {
             rebuilding.value = false;
         }
