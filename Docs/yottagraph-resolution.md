@@ -129,6 +129,7 @@ Current status:
 - `design/extracted-entity-neid-map-2026-03-28.md`
 - `design/extracted-graph-full-inventory-2026-03-28.md`
 - `design/remaining-seed-node-audit-2026-03-28.md`
+- `design/daily-update-2026-03-29.md`
 - `composables/useCollectionWorkspace.ts`
 - `utils/enrichmentLineage.ts`
 - `utils/collectionTypes.ts`

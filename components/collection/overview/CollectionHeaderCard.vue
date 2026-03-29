@@ -63,9 +63,9 @@
                     </v-icon>
                     {{ analysisStatus }}
                 </v-chip>
-                <v-chip size="small" variant="tonal" class="header-pill"
-                    >Updated {{ lastUpdated }}</v-chip
-                >
+                <v-chip size="small" variant="tonal" class="header-pill">{{
+                    lastUpdatedChipLabel
+                }}</v-chip>
             </div>
         </v-card-text>
     </v-card>
@@ -101,6 +101,12 @@
     });
 
     const isAnalysisRunning = computed(() => props.status === 'processing');
+    const lastUpdatedChipLabel = computed(() => {
+        if (props.lastUpdated === 'Updating now') return 'Updating now';
+        if (props.lastUpdated === 'Awaiting first analysis') return 'Awaiting first analysis';
+        if (props.lastUpdated === 'Timestamp pending') return 'Timestamp pending';
+        return `Updated ${props.lastUpdated}`;
+    });
 </script>
 
 <style scoped>

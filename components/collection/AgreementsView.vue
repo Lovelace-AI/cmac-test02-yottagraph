@@ -206,7 +206,6 @@
                             :key="docNeid"
                             size="small"
                             variant="outlined"
-                            @click="focusDocument(docNeid)"
                         >
                             {{ resolveEntityName(docNeid) }}
                         </v-chip>
@@ -220,8 +219,7 @@
 <script setup lang="ts">
     import type { EntityRecord } from '~/utils/collectionTypes';
 
-    const { agreements, relationships, resolveEntityName, selectEntity, focusDocument } =
-        useCollectionWorkspace();
+    const { agreements, relationships, resolveEntityName, selectEntity } = useCollectionWorkspace();
 
     const searchQuery = ref('');
     const selectedPartyNeid = ref<string | null>(null);

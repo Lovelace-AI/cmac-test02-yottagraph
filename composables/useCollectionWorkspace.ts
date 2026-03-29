@@ -83,6 +83,55 @@ export interface CollectionAction {
     tab: WorkspaceTab;
 }
 
+export type EnrichmentInsightKind =
+    | 'corporate_lineage'
+    | 'broader_activity'
+    | 'event_timeline'
+    | 'people_affiliation';
+
+export interface EnrichmentInsightCard {
+    id: string;
+    kind: EnrichmentInsightKind;
+    title: string;
+    subtitle: string;
+    anchorNeid?: string;
+    anchorName?: string;
+    documentContext: string;
+    kgContext: string;
+    evidence: string[];
+    askPrompt: string;
+    relatedEntityNeids: string[];
+    relatedEventNeids: string[];
+    plainSummary?: string;
+    relevanceLabel?: 'same_deal' | 'adjacent' | 'broader';
+    sizeLabel?: string | null;
+    totalEventCount?: number;
+    outsideEventCount?: number;
+    sameDealEventCount?: number;
+    participantCount?: number;
+    counterpartyCount?: number;
+    dateRangeLabel?: string | null;
+}
+
+interface EnrichmentLanguageCard {
+    id: string;
+    plainSummary: string;
+    relevanceLabel: 'same_deal' | 'adjacent' | 'broader';
+    sizeLabel?: string | null;
+}
+
+export interface WatchlistTheme {
+    themeLabel: string;
+    whyItMatters: string;
+    supportingEvents: string[];
+    participantsToWatch: string[];
+    suggestedAskPrompt: string;
+}
+
+function normalizeRelationshipType(type: string): string {
+    return type.replace(/^schema::relationship::/, '');
+}
+
 const INITIAL_STEPS: RebuildStep[] = [
     {
         step: 1,
@@ -120,7 +169,6 @@ const INITIAL_STEPS: RebuildStep[] = [
 const collection = ref<CollectionState>(emptyCollectionState());
 const activeTab = ref<WorkspaceTab>('overview');
 const selectedEntityNeid = ref<string | null>(null);
-const selectedDocumentNeid = ref<string | null>(null);
 const rebuilding = ref(false);
 const rebuildSteps = ref<RebuildStep[]>(INITIAL_STEPS.map((s) => ({ ...s })));
 const enriching = ref(false);
@@ -143,6 +191,13 @@ const agentResult = ref<{
 const mcpLog = ref<McpLogEntry[]>([]);
 const geminiLog = ref<GeminiUsageEntry[]>([]);
 let _geminiIdCounter = 0;
+const enrichmentWatchlistThemes = ref<WatchlistTheme[]>([]);
+const enrichmentWatchlistLoading = ref(false);
+const enrichmentWatchlistError = ref<string | null>(null);
+const enrichmentWatchlistGeneratedAt = ref<string | null>(null);
+const enrichmentLanguageByInsightId = ref<Record<string, EnrichmentLanguageCard>>({});
+const enrichmentLanguageLoading = ref(false);
+const enrichmentLanguageError = ref<string | null>(null);
 
 export function useCollectionWorkspace() {
     const isReady = computed(() => collection.value.status === 'ready');
@@ -228,6 +283,656 @@ export function useCollectionWorkspace() {
         () => enrichmentExpandedGraphRelationshipsCollapsed.value
     );
     const hasEnrichmentRun = computed(() => Boolean(enrichmentLastRun.value));
+    const INSIGHT_NOISE_ANCHORS = new Set<string>([
+        '08749664511655725314', // The Hongkong and Shanghai Banking Corporation Limited, Singapore Branch
+        '08883522583676895375', // United States Department of the Treasury
+        '07404718453994080710', // The Treasury
+        '08378183269956851171', // United States
+        '04648605347073135218', // New York
+        '05716789654794197421', // Dallas
+        '01054548445358605934', // Trenton, New Jersey
+    ]);
+    const LINEAGE_PRIORITY = new Map<string, number>([
+        ['04824620677155774613', 100], // REPUBLIC NATIONAL BANK OF NEW YORK
+        ['06157989400122873900', 95], // HSBC Bank USA, National Association
+    ]);
+    const RELATED_DEAL_PRIORITY = new Map<string, number>([
+        ['05384086983174826493', 110], // Bank of New York Mellon Corporation (BNY Mellon)
+        ['06157989400122873900', 105], // HSBC Bank USA, National Association
+        ['04824620677155774613', 100], // REPUBLIC NATIONAL BANK OF NEW YORK
+        ['05477621199116204617', 95], // Orrick, Herrington & Sutcliffe, LLP
+        ['02080889041561724035', 85], // Orrick
+        ['06967031221082229818', 80], // UNITED JERSEY BANK/CENTRAL,
+        ['06471256961308361850', 75], // New Jersey Housing and Mortgage Finance Agency
+    ]);
+    const EVENT_TIMELINE_PRIORITY = new Map<string, number>([
+        ['06157989400122873900', 100], // HSBC Bank USA, National Association
+        ['06967031221082229818', 95], // UNITED JERSEY BANK/CENTRAL,
+        ['06471256961308361850', 90], // New Jersey Housing and Mortgage Finance Agency
+    ]);
+    const PEOPLE_PRIORITY_BY_NAME = new Map<string, number>([
+        ['ARTHUR KLEIN', 100],
+        ['JOSEPH E. LUDES', 95],
+    ]);
+    const entityByNeid = computed(
+        () => new Map(collection.value.entities.map((entity) => [entity.neid, entity] as const))
+    );
+    const documentEntityNeids = computed(() => new Set(documentEntities.value.map((e) => e.neid)));
+    const eventCountByEntityNeid = computed(() => {
+        const counts = new Map<string, number>();
+        for (const eventItem of collection.value.events) {
+            for (const participantNeid of eventItem.participantNeids) {
+                counts.set(participantNeid, (counts.get(participantNeid) ?? 0) + 1);
+            }
+        }
+        return counts;
+    });
+    const outsideEvents = computed(() =>
+        collection.value.events.filter((eventItem) => !eventItem.extractedSeed)
+    );
+    const eventByNeid = computed(
+        () =>
+            new Map(
+                collection.value.events.map((eventItem) => [eventItem.neid, eventItem] as const)
+            )
+    );
+    const relationshipNeidPairs = computed(() =>
+        enrichmentExpandedGraphRelationships.value.map((relationship) => ({
+            ...relationship,
+            normalizedType: normalizeRelationshipType(relationship.type),
+        }))
+    );
+    const relationshipCountByEntityNeid = computed(() => {
+        const counts = new Map<string, number>();
+        for (const relationship of collection.value.relationships) {
+            counts.set(relationship.sourceNeid, (counts.get(relationship.sourceNeid) ?? 0) + 1);
+            counts.set(relationship.targetNeid, (counts.get(relationship.targetNeid) ?? 0) + 1);
+        }
+        return counts;
+    });
+    const priorityScore = (priorityMap: Map<string, number>, neid: string): number =>
+        priorityMap.get(neid) ?? 0;
+    const personRelationshipTypes = new Set([
+        'works_at',
+        'board_member_of',
+        'officer_of',
+        'advisor_to',
+        'partner_of',
+    ]);
+    const isNeidLike = (value: string): boolean => /^\d{16,24}$/.test(value.trim());
+    const propertyScalarText = (value: unknown): string => {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            const scalar = (value as Record<string, unknown>).value;
+            return String(scalar ?? '').trim();
+        }
+        return String(value ?? '').trim();
+    };
+    const entityDisplayName = (entity: EntityRecord | undefined): string => {
+        if (!entity) return '';
+        const direct = String(entity.name ?? '').trim();
+        if (direct && !isNeidLike(direct)) return direct;
+        const props = (entity.properties ?? {}) as Record<string, unknown>;
+        const candidateKeys = [
+            'matched_name',
+            'canonical_name',
+            'resolved_name',
+            'legal_name',
+            'issuer_name',
+            'name',
+        ];
+        for (const key of candidateKeys) {
+            const text = propertyScalarText(props[key]);
+            if (text && !isNeidLike(text)) return text;
+        }
+        return direct || entity.neid;
+    };
+    const relationshipLabel = (type: string): string => type.replace(/_/g, ' ');
+    const pluralize = (count: number, singular: string, plural = `${singular}s`): string =>
+        `${count} ${count === 1 ? singular : plural}`;
+    const eventYear = (eventItem: EventRecord): number => {
+        if (eventItem.date) {
+            const year = Number(String(eventItem.date).slice(0, 4));
+            if (!Number.isNaN(year) && year >= 1900 && year <= 2100) return year;
+        }
+        const match = eventItem.name.match(/(19|20)\d{2}/);
+        return match ? Number(match[0]) : 0;
+    };
+    const eventDateLabel = (eventItem: EventRecord): string | null => {
+        if (eventItem.date) return String(eventItem.date).slice(0, 10);
+        const year = eventYear(eventItem);
+        return year > 0 ? String(year) : null;
+    };
+    const inferEventLocation = (eventItem: EventRecord): string | null => {
+        for (const participantNeid of eventItem.participantNeids) {
+            const participant = entityByNeid.value.get(participantNeid);
+            if (!participant) continue;
+            if (participant.flavor === 'location') return entityDisplayName(participant);
+        }
+        const derivedLocation = eventItem.participantNeids
+            .map((participantNeid) => entityDisplayName(entityByNeid.value.get(participantNeid)))
+            .find((name) => /,\s*[A-Za-z]/.test(name));
+        return derivedLocation || null;
+    };
+    const eventParticipantNames = (eventItem: EventRecord, anchorNeid?: string): string[] =>
+        eventItem.participantNeids
+            .filter((participantNeid) => participantNeid !== anchorNeid)
+            .map((participantNeid) => entityDisplayName(entityByNeid.value.get(participantNeid)))
+            .filter((name): name is string => Boolean(name))
+            .slice(0, 3);
+    const eventEvidenceLine = (eventItem: EventRecord, anchorNeid?: string): string => {
+        const details: string[] = [];
+        const date = eventDateLabel(eventItem);
+        if (date) details.push(`date: ${date}`);
+        const participantNames = eventParticipantNames(eventItem, anchorNeid);
+        if (participantNames.length > 0)
+            details.push(`participants: ${participantNames.join(', ')}`);
+        const location = inferEventLocation(eventItem);
+        if (location) details.push(`location: ${location}`);
+        return details.length > 0 ? `${eventItem.name} (${details.join(' | ')})` : eventItem.name;
+    };
+    const eventDateRangeLabel = (items: EventRecord[]): string | null => {
+        const years = items
+            .map(eventYear)
+            .filter((year) => year > 0)
+            .sort((a, b) => a - b);
+        if (!years.length) return null;
+        const minYear = years[0];
+        const maxYear = years[years.length - 1];
+        if (minYear === maxYear) return String(minYear);
+        return `${minYear} - ${maxYear}`;
+    };
+    const amountKeyPattern =
+        /(amount|size|notional|par|principal|purchase_price|transaction_value|deal_value|valuation|gross_earnings|proceeds)/i;
+    const parseNumericAmount = (value: unknown): number | null => {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (typeof value !== 'string') return null;
+        const normalized = value.replace(/[, ]/g, '').trim();
+        if (!normalized) return null;
+        const scaledMatch = normalized.match(
+            /^\$?(-?\d+(?:\.\d+)?)([kKmMbB]|million|billion|thousand)?$/
+        );
+        if (scaledMatch) {
+            const base = Number(scaledMatch[1]);
+            if (!Number.isFinite(base)) return null;
+            const unit = (scaledMatch[2] ?? '').toLowerCase();
+            if (unit === 'k' || unit === 'thousand') return base * 1_000;
+            if (unit === 'm' || unit === 'million') return base * 1_000_000;
+            if (unit === 'b' || unit === 'billion') return base * 1_000_000_000;
+            return base;
+        }
+        const raw = Number(normalized.replace(/[^0-9.-]/g, ''));
+        return Number.isFinite(raw) ? raw : null;
+    };
+    const formatCompactUsd = (amount: number): string => {
+        const absolute = Math.abs(amount);
+        if (absolute >= 1_000_000_000) return `$${(amount / 1_000_000_000).toFixed(1)}B`;
+        if (absolute >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
+        if (absolute >= 1_000) return `$${(amount / 1_000).toFixed(1)}K`;
+        return `$${Math.round(amount).toLocaleString()}`;
+    };
+    const propertyScalarValue = (value: unknown): unknown => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+        const row = value as Record<string, unknown>;
+        if ('value' in row) return row.value;
+        return value;
+    };
+    const maxAmountFromProperties = (
+        properties: Record<string, unknown> | undefined
+    ): number | null => {
+        if (!properties) return null;
+        let best: number | null = null;
+        for (const [key, raw] of Object.entries(properties)) {
+            if (!amountKeyPattern.test(key)) continue;
+            const value = propertyScalarValue(raw);
+            const parsed = parseNumericAmount(value);
+            if (parsed === null) continue;
+            if (best === null || Math.abs(parsed) > Math.abs(best)) best = parsed;
+        }
+        return best;
+    };
+    const dealSizeLabelFromContext = (
+        relatedEventNeids: string[],
+        relatedEntityNeids: string[]
+    ): string | null => {
+        let bestAmount: number | null = null;
+        for (const eventNeid of relatedEventNeids) {
+            const eventItem = eventByNeid.value.get(eventNeid);
+            const amount = maxAmountFromProperties(eventItem?.properties);
+            if (amount === null) continue;
+            if (bestAmount === null || Math.abs(amount) > Math.abs(bestAmount)) bestAmount = amount;
+        }
+        for (const entityNeid of relatedEntityNeids) {
+            const entity = entityByNeid.value.get(entityNeid);
+            const amount = maxAmountFromProperties(entity?.properties);
+            if (amount === null) continue;
+            if (bestAmount === null || Math.abs(amount) > Math.abs(bestAmount)) bestAmount = amount;
+        }
+        if (bestAmount === null) return null;
+        return `Largest amount signal: ${formatCompactUsd(bestAmount)}`;
+    };
+    const fallbackInsightSummary = (insight: EnrichmentInsightCard): string => {
+        const parts = [insight.documentContext, insight.kgContext]
+            .map((line) => line.trim())
+            .filter(Boolean);
+        return parts.join(' ');
+    };
+    const insightLanguage = (insightId: string) => enrichmentLanguageByInsightId.value[insightId];
+    const documentPersonAffiliationKeys = computed(() => {
+        const keys = new Set<string>();
+        for (const relationship of documentRelationships.value) {
+            const source = entityByNeid.value.get(relationship.sourceNeid);
+            const target = entityByNeid.value.get(relationship.targetNeid);
+            if (!source || !target) continue;
+            const normalizedType = normalizeRelationshipType(relationship.type);
+            if (!personRelationshipTypes.has(normalizedType)) continue;
+            const sourceIsPerson = source.flavor === 'person';
+            const targetIsPerson = target.flavor === 'person';
+            if (!sourceIsPerson && !targetIsPerson) continue;
+            const person = sourceIsPerson ? source : target;
+            const organization = sourceIsPerson ? target : source;
+            if (organization.flavor !== 'organization') continue;
+            keys.add(`${person.neid}|${organization.neid}|${normalizedType}`);
+        }
+        return keys;
+    });
+    const lineageInsights = computed<EnrichmentInsightCard[]>(() => {
+        const cards: Array<EnrichmentInsightCard & { rankScore: number }> = [];
+        const seen = new Set<string>();
+        for (const relationship of relationshipNeidPairs.value) {
+            if (
+                relationship.normalizedType !== 'successor_to' &&
+                relationship.normalizedType !== 'predecessor_of'
+            ) {
+                continue;
+            }
+            const source = entityByNeid.value.get(relationship.sourceNeid);
+            const target = entityByNeid.value.get(relationship.targetNeid);
+            if (!source || !target) continue;
+            if (source.flavor !== 'organization' || target.flavor !== 'organization') continue;
+
+            const predecessor = relationship.normalizedType === 'successor_to' ? target : source;
+            const successor = relationship.normalizedType === 'successor_to' ? source : target;
+            if (
+                INSIGHT_NOISE_ANCHORS.has(predecessor.neid) ||
+                INSIGHT_NOISE_ANCHORS.has(successor.neid)
+            ) {
+                continue;
+            }
+            const cardKey = `${predecessor.neid}|${successor.neid}`;
+            if (seen.has(cardKey)) continue;
+            seen.add(cardKey);
+            if (
+                !documentEntityNeids.value.has(predecessor.neid) &&
+                !documentEntityNeids.value.has(successor.neid)
+            ) {
+                continue;
+            }
+
+            const rankScore =
+                priorityScore(LINEAGE_PRIORITY, predecessor.neid) * 10 +
+                priorityScore(LINEAGE_PRIORITY, successor.neid) * 10 +
+                (documentEntityNeids.value.has(predecessor.neid) ? 25 : 0) +
+                (documentEntityNeids.value.has(successor.neid) ? 20 : 0);
+            const cardId = `lineage:${cardKey}`;
+            const language = insightLanguage(cardId);
+            const predecessorName = entityDisplayName(predecessor);
+            const successorName = entityDisplayName(successor);
+            const relatedEventNeids = collection.value.events
+                .filter((eventItem) =>
+                    eventItem.participantNeids.some(
+                        (participantNeid) =>
+                            participantNeid === predecessor.neid ||
+                            participantNeid === successor.neid
+                    )
+                )
+                .map((eventItem) => eventItem.neid);
+            cards.push({
+                id: cardId,
+                kind: 'corporate_lineage',
+                title: `${predecessorName} -> ${successorName}`,
+                subtitle: 'Broader organization lineage context',
+                anchorNeid: predecessor.neid,
+                anchorName: predecessorName,
+                documentContext: `${predecessorName} appears in your document set, but the documents do not spell out who took over later.`,
+                kgContext:
+                    language?.plainSummary ||
+                    `${predecessorName} is linked to ${successorName} through successor/predecessor history in the broader graph.`,
+                evidence: [
+                    `${predecessorName} ${relationshipLabel(relationship.normalizedType)} ${successorName}`,
+                    `Lineage edge surfaced from second-hop context`,
+                ],
+                askPrompt: `Explain how ${predecessorName} and ${successorName} are connected in corporate lineage, and whether that lineage changes interpretation of this collection.`,
+                relatedEntityNeids: [predecessor.neid, successor.neid],
+                relatedEventNeids,
+                plainSummary:
+                    language?.plainSummary ||
+                    fallbackInsightSummary({
+                        id: cardId,
+                        kind: 'corporate_lineage',
+                        title: '',
+                        subtitle: '',
+                        documentContext: `${predecessorName} appears in your document set, but the documents do not spell out who took over later.`,
+                        kgContext: `${predecessorName} is linked to ${successorName} through successor/predecessor history in the broader graph.`,
+                        evidence: [],
+                        askPrompt: '',
+                        relatedEntityNeids: [predecessor.neid, successor.neid],
+                        relatedEventNeids,
+                    }),
+                relevanceLabel: language?.relevanceLabel ?? 'adjacent',
+                sizeLabel:
+                    language?.sizeLabel ??
+                    dealSizeLabelFromContext(relatedEventNeids, [predecessor.neid, successor.neid]),
+                totalEventCount: relatedEventNeids.length,
+                rankScore,
+            });
+        }
+        return cards
+            .sort((a, b) => b.rankScore - a.rankScore)
+            .slice(0, 2)
+            .map(({ rankScore: _, ...card }) => card);
+    });
+
+    const broaderActivityInsights = computed<EnrichmentInsightCard[]>(() => {
+        const cards: Array<EnrichmentInsightCard & { rankScore: number }> = [];
+        const priorityAnchors = [
+            '05477621199116204617', // Orrick, Herrington & Sutcliffe, LLP
+            '02080889041561724035', // Orrick
+            '06157989400122873900', // HSBC Bank USA, National Association
+            '06967031221082229818', // UNITED JERSEY BANK/CENTRAL,
+            '06471256961308361850', // New Jersey Housing and Mortgage Finance Agency
+        ];
+        const candidateAnchorNeids = new Set<string>([
+            ...priorityAnchors,
+            ...documentEntities.value.map((entity) => entity.neid),
+        ]);
+        for (const anchorNeid of candidateAnchorNeids) {
+            const anchor = entityByNeid.value.get(anchorNeid);
+            if (!anchor) continue;
+            if (INSIGHT_NOISE_ANCHORS.has(anchorNeid)) continue;
+            const anchorName = entityDisplayName(anchor);
+            const anchorEvents = outsideEvents.value.filter((eventItem) =>
+                eventItem.participantNeids.includes(anchorNeid)
+            );
+            if (anchorEvents.length < 2) continue;
+            const eventRows = anchorEvents.slice(0, 5);
+            const counterparties = new Set(
+                eventRows.flatMap((eventItem) => eventParticipantNames(eventItem, anchorNeid))
+            );
+            const counterpartyCount = counterparties.size;
+            const participantCount = new Set(
+                eventRows.flatMap((eventItem) => eventItem.participantNeids)
+            ).size;
+            const dateRangeLabel = eventDateRangeLabel(anchorEvents);
+            const cardId = `activity:${anchorNeid}`;
+            const language = insightLanguage(cardId);
+            const sizeLabel =
+                language?.sizeLabel ??
+                dealSizeLabelFromContext(
+                    eventRows.map((eventItem) => eventItem.neid),
+                    [anchorNeid]
+                );
+            const eventVolumeScore = Math.min(anchorEvents.length, 12);
+            const rankScore =
+                priorityScore(RELATED_DEAL_PRIORITY, anchorNeid) * 10 +
+                eventVolumeScore * 3 +
+                Math.min(counterpartyCount, 6) +
+                (documentEntityNeids.value.has(anchorNeid) ? 15 : 0);
+            cards.push({
+                id: cardId,
+                kind: 'broader_activity',
+                title: `${anchorName}: broader participant activity`,
+                subtitle: 'Outside activity connected to this participant',
+                anchorNeid,
+                anchorName,
+                documentContext: `${anchorName} appears in your document set. The items below are additional events linked to the same participant in the wider graph.`,
+                kgContext:
+                    anchorEvents.length > eventRows.length
+                        ? language?.plainSummary ||
+                          `${anchorName} is linked to ${pluralize(anchorEvents.length, 'outside event')}. This card shows ${pluralize(eventRows.length, 'example')} so you can decide whether they are truly related to your transaction.`
+                        : language?.plainSummary ||
+                          `${anchorName} is linked to ${pluralize(anchorEvents.length, 'outside event')} and ${pluralize(counterpartyCount, 'counterparty')} in broader platform data.`,
+                evidence: [
+                    ...eventRows.map((eventItem) => eventEvidenceLine(eventItem, anchorNeid)),
+                    ...(Array.from(counterparties)
+                        .slice(0, 3)
+                        .map((counterparty) => `Counterparty: ${counterparty}`) ?? []),
+                ],
+                askPrompt: `Summarize the broader participant activity connected to ${anchorName}, then distinguish what looks transaction-related versus general external context.`,
+                relatedEntityNeids: [anchorNeid],
+                relatedEventNeids: eventRows.map((eventItem) => eventItem.neid),
+                plainSummary:
+                    language?.plainSummary ||
+                    `${anchorName} has ${anchorEvents.length} outside events in second-hop context. These are participant-linked events and may or may not be part of the same core deal.`,
+                relevanceLabel: language?.relevanceLabel ?? 'broader',
+                sizeLabel,
+                totalEventCount: anchorEvents.length,
+                outsideEventCount: anchorEvents.length,
+                counterpartyCount,
+                participantCount,
+                dateRangeLabel,
+                rankScore,
+            });
+        }
+        return cards
+            .sort((a, b) => b.rankScore - a.rankScore)
+            .slice(0, 2)
+            .map(({ rankScore: _, ...card }) => card);
+    });
+
+    const eventTimelineInsights = computed<EnrichmentInsightCard[]>(() => {
+        const cards: Array<EnrichmentInsightCard & { rankScore: number }> = [];
+        const preferredAnchors = [
+            '06157989400122873900', // HSBC Bank USA, National Association
+            '06967031221082229818', // UNITED JERSEY BANK/CENTRAL,
+            '06471256961308361850', // New Jersey Housing and Mortgage Finance Agency
+        ];
+        for (const anchorNeid of preferredAnchors) {
+            const anchor = entityByNeid.value.get(anchorNeid);
+            if (!anchor) continue;
+            if (INSIGHT_NOISE_ANCHORS.has(anchorNeid)) continue;
+            const anchorName = entityDisplayName(anchor);
+            const linkedEvents = collection.value.events.filter((eventItem) =>
+                eventItem.participantNeids.includes(anchorNeid)
+            );
+            if (linkedEvents.length < 2) continue;
+            const outsideLinkedEvents = linkedEvents.filter(
+                (eventItem) => !eventItem.extractedSeed
+            );
+            const extractedLinkedEvents = linkedEvents.filter(
+                (eventItem) => eventItem.extractedSeed
+            );
+            const orderedEvents = [...linkedEvents]
+                .sort((a, b) => eventYear(a) - eventYear(b))
+                .slice(0, 6);
+            const uniqueParticipants = new Set(
+                linkedEvents.flatMap((eventItem) => eventItem.participantNeids)
+            );
+            const dateRangeLabel = eventDateRangeLabel(linkedEvents);
+            const cardId = `timeline:${anchorNeid}`;
+            const language = insightLanguage(cardId);
+            const eventVolumeScore = Math.min(linkedEvents.length, 10);
+            const rankScore =
+                priorityScore(EVENT_TIMELINE_PRIORITY, anchorNeid) * 10 +
+                eventVolumeScore * 3 +
+                (documentEntityNeids.value.has(anchorNeid) ? 20 : 0);
+            cards.push({
+                id: cardId,
+                kind: 'event_timeline',
+                title: `${anchorName}: broader timeline context`,
+                subtitle: 'Collection events versus outside participant-linked events',
+                anchorNeid,
+                anchorName,
+                documentContext: `${anchorName} appears in your documents, but the document set captures only part of the timeline around this participant.`,
+                kgContext:
+                    outsideLinkedEvents.length > 0
+                        ? language?.plainSummary ||
+                          `${anchorName} shows ${pluralize(extractedLinkedEvents.length, 'collection event')} plus ${pluralize(outsideLinkedEvents.length, 'outside event')}, which helps separate same-deal context from broader activity.`
+                        : language?.plainSummary ||
+                          `${anchorName} has ${pluralize(extractedLinkedEvents.length, 'collection event')} and limited outside activity in this run.`,
+                evidence: orderedEvents.map((eventItem) => {
+                    const scope = eventItem.extractedSeed
+                        ? 'same-deal document context'
+                        : 'outside related event';
+                    return `${scope}: ${eventEvidenceLine(eventItem, anchorNeid)}`;
+                }),
+                askPrompt: `Build a timeline for ${anchorName}, distinguishing same-deal events from outside related deals, and explain why each event matters.`,
+                relatedEntityNeids: [anchorNeid],
+                relatedEventNeids: orderedEvents.map((eventItem) => eventItem.neid),
+                plainSummary:
+                    language?.plainSummary ||
+                    `${anchorName} has ${linkedEvents.length} total events (${extractedLinkedEvents.length} collection, ${outsideLinkedEvents.length} outside).`,
+                relevanceLabel:
+                    language?.relevanceLabel ??
+                    (outsideLinkedEvents.length > 0 ? 'adjacent' : 'same_deal'),
+                sizeLabel:
+                    language?.sizeLabel ??
+                    dealSizeLabelFromContext(
+                        orderedEvents.map((eventItem) => eventItem.neid),
+                        [anchorNeid]
+                    ),
+                totalEventCount: linkedEvents.length,
+                outsideEventCount: outsideLinkedEvents.length,
+                sameDealEventCount: extractedLinkedEvents.length,
+                participantCount: uniqueParticipants.size,
+                dateRangeLabel,
+                rankScore,
+            });
+        }
+        return cards
+            .sort((a, b) => b.rankScore - a.rankScore)
+            .slice(0, 2)
+            .map(({ rankScore: _, ...card }) => card);
+    });
+
+    const peopleAffiliationInsights = computed<EnrichmentInsightCard[]>(() => {
+        const cards: Array<EnrichmentInsightCard & { rankScore: number }> = [];
+        const seen = new Set<string>();
+        for (const relationship of relationshipNeidPairs.value) {
+            if (relationship.origin !== 'enriched') continue;
+            const source = entityByNeid.value.get(relationship.sourceNeid);
+            const target = entityByNeid.value.get(relationship.targetNeid);
+            if (!source || !target) continue;
+
+            const sourceIsPerson = source.flavor === 'person';
+            const targetIsPerson = target.flavor === 'person';
+            if (!sourceIsPerson && !targetIsPerson) continue;
+            const person = sourceIsPerson ? source : target;
+            const organization = sourceIsPerson ? target : source;
+            if (organization.flavor !== 'organization') continue;
+            if (INSIGHT_NOISE_ANCHORS.has(organization.neid)) continue;
+            if (!personRelationshipTypes.has(relationship.normalizedType)) continue;
+            const key = `${person.neid}|${organization.neid}|${relationship.normalizedType}`;
+            if (seen.has(key)) continue;
+            if (documentPersonAffiliationKeys.value.has(key)) continue;
+            seen.add(key);
+            const personName = entityDisplayName(person);
+            const organizationName = entityDisplayName(organization);
+
+            const personNamePriority = priorityScore(
+                PEOPLE_PRIORITY_BY_NAME,
+                person.name.toUpperCase()
+            );
+            const rankScore =
+                personNamePriority * 10 +
+                (documentEntityNeids.value.has(person.neid) ? 20 : 0) +
+                (documentEntityNeids.value.has(organization.neid) ? 15 : 0) +
+                (eventCountByEntityNeid.value.get(person.neid) ?? 0) +
+                (relationshipCountByEntityNeid.value.get(person.neid) ?? 0);
+            const cardId = `people:${key}`;
+            const language = insightLanguage(cardId);
+
+            cards.push({
+                id: cardId,
+                kind: 'people_affiliation',
+                title: `${personName} -> ${organizationName}`,
+                subtitle: 'People and affiliation context added by KG',
+                anchorNeid: person.neid,
+                anchorName: personName,
+                documentContext: `${personName} is present in extraction, but this specific affiliation to ${organizationName} is not explicitly represented in the document-only graph.`,
+                kgContext:
+                    language?.plainSummary ||
+                    `Yottagraph contributes external affiliation context: ${personName} ${relationshipLabel(relationship.normalizedType)} ${organizationName}.`,
+                evidence: [
+                    `${personName} ${relationshipLabel(relationship.normalizedType)} ${organizationName}`,
+                ],
+                askPrompt: `Explain the external affiliation between ${personName} and ${organizationName}, and how it changes interpretation of the extracted deal participants.`,
+                relatedEntityNeids: [person.neid, organization.neid],
+                relatedEventNeids: [],
+                plainSummary:
+                    language?.plainSummary ||
+                    `${personName} is connected to ${organizationName} in broader graph context, which may add useful participant background.`,
+                relevanceLabel: language?.relevanceLabel ?? 'adjacent',
+                rankScore,
+            });
+        }
+        return cards
+            .sort((a, b) => b.rankScore - a.rankScore)
+            .slice(0, 2)
+            .map(({ rankScore: _, ...card }) => card);
+    });
+
+    const enrichmentInsights = computed<EnrichmentInsightCard[]>(() => [
+        ...lineageInsights.value,
+        ...broaderActivityInsights.value,
+        ...eventTimelineInsights.value,
+        ...peopleAffiliationInsights.value,
+    ]);
+    const enrichmentTakeawayBullets = computed<string[]>(() => {
+        const bullets: string[] = [];
+        const topLineage = lineageInsights.value[0];
+        const topActivity = broaderActivityInsights.value[0];
+        const topTimeline = eventTimelineInsights.value[0];
+        if (topLineage) {
+            bullets.push(`Corporate lineage context: ${topLineage.title}.`);
+        }
+        if (topActivity) {
+            bullets.push(
+                `Broader participant activity surfaced around ${topActivity.anchorName ?? topActivity.title}.`
+            );
+        }
+        if (topTimeline) {
+            bullets.push(
+                `Timeline context expanded for ${topTimeline.anchorName ?? topTimeline.title}.`
+            );
+        }
+        if (bullets.length === 0) {
+            bullets.push(
+                'Run context expansion to surface external entities, relationships, and events connected to your extracted anchors.'
+            );
+        }
+        return bullets.slice(0, 3);
+    });
+    const enrichmentValueSummary = computed(() => ({
+        documentEntityCount: documentEntities.value.length,
+        documentRelationshipCount: documentRelationships.value.length,
+        enrichedEntityCount: enrichedEntities.value.length,
+        enrichedRelationshipCount: enrichedRelationships.value.length,
+        totalEventCount: collection.value.events.length,
+        outsideEventCount: outsideEvents.value.length,
+        takeawayBullets: enrichmentTakeawayBullets.value,
+    }));
+    const enrichmentLanguageCards = computed(() =>
+        [...lineageInsights.value, ...broaderActivityInsights.value, ...eventTimelineInsights.value]
+            .slice(0, 8)
+            .map((insight) => ({
+                id: insight.id,
+                kind: insight.kind,
+                title: insight.title,
+                subtitle: insight.subtitle,
+                documentContext: insight.documentContext,
+                kgContext: insight.kgContext,
+                evidence: insight.evidence.slice(0, 6),
+                metrics: {
+                    totalEventCount: insight.totalEventCount ?? 0,
+                    outsideEventCount: insight.outsideEventCount ?? 0,
+                    sameDealEventCount: insight.sameDealEventCount ?? 0,
+                    participantCount: insight.participantCount ?? 0,
+                    counterpartyCount: insight.counterpartyCount ?? 0,
+                    dateRangeLabel: insight.dateRangeLabel ?? null,
+                    sizeLabel: insight.sizeLabel ?? null,
+                },
+            }))
+    );
     const agreements = computed(() =>
         collection.value.entities.filter((e) => e.flavor === 'legal_agreement')
     );
@@ -516,6 +1221,52 @@ export function useCollectionWorkspace() {
         })
     );
 
+    async function generateEnrichmentLanguage(): Promise<void> {
+        const cards = enrichmentLanguageCards.value;
+        if (!cards.length) {
+            enrichmentLanguageByInsightId.value = {};
+            enrichmentLanguageError.value = null;
+            return;
+        }
+        enrichmentLanguageLoading.value = true;
+        enrichmentLanguageError.value = null;
+        try {
+            const result = await $fetch<{
+                cards: EnrichmentLanguageCard[];
+                generationSource: 'gemini' | 'fallback';
+                generationNote?: string;
+            }>('/api/collection/enrichment-language', {
+                method: 'POST',
+                body: {
+                    cards,
+                    summary: {
+                        documentEntityCount: documentEntities.value.length,
+                        enrichedEntityCount: enrichedEntities.value.length,
+                        documentRelationshipCount: documentRelationships.value.length,
+                        enrichedRelationshipCount: enrichedRelationships.value.length,
+                        totalEventCount: collection.value.events.length,
+                        outsideEventCount: outsideEvents.value.length,
+                    },
+                },
+            });
+            const byId: Record<string, EnrichmentLanguageCard> = {};
+            for (const card of result.cards ?? []) {
+                if (!card?.id || !card?.plainSummary) continue;
+                byId[card.id] = card;
+            }
+            enrichmentLanguageByInsightId.value = byId;
+            enrichmentLanguageError.value = result.generationNote ?? null;
+        } catch (error: any) {
+            enrichmentLanguageError.value =
+                error?.data?.statusMessage ||
+                error?.message ||
+                'Unable to generate enrichment plain-language summaries.';
+            enrichmentLanguageByInsightId.value = {};
+        } finally {
+            enrichmentLanguageLoading.value = false;
+        }
+    }
+
     async function bootstrap(): Promise<void> {
         try {
             const data = await $fetch<CollectionState>('/api/collection/bootstrap');
@@ -629,6 +1380,11 @@ export function useCollectionWorkspace() {
             enrichmentAnchorNeids.value = [...anchorNeids];
             enrichmentHops.value = boundedHops;
             enrichmentIncludeEvents.value = includeEvents;
+            enrichmentWatchlistThemes.value = [];
+            enrichmentWatchlistError.value = null;
+            enrichmentWatchlistGeneratedAt.value = null;
+            enrichmentLanguageByInsightId.value = {};
+            enrichmentLanguageError.value = null;
             const result = await $fetch<{
                 entities: EntityRecord[];
                 relationships: RelationshipRecord[];
@@ -671,10 +1427,57 @@ export function useCollectionWorkspace() {
                 includeEvents,
                 ranAt: new Date().toISOString(),
             };
+            await generateEnrichmentLanguage();
         } catch (e: any) {
             console.error('Enrichment failed:', e.message);
         } finally {
             enriching.value = false;
+        }
+    }
+
+    async function generateEnrichmentWatchlist(options?: {
+        maxThemes?: number;
+        maxEvents?: number;
+    }): Promise<void> {
+        enrichmentWatchlistLoading.value = true;
+        enrichmentWatchlistError.value = null;
+        try {
+            const result = await $fetch<{
+                themes: WatchlistTheme[];
+                generatedFromEventCount: number;
+                generationSource: 'gemini' | 'fallback';
+                generationNote?: string;
+            }>('/api/collection/enrichment-watchlist', {
+                method: 'POST',
+                body: {
+                    maxThemes: options?.maxThemes ?? 4,
+                    maxEvents: options?.maxEvents ?? 24,
+                    context: {
+                        entities: collection.value.entities.map((entity) => ({
+                            neid: entity.neid,
+                            name: entity.name,
+                        })),
+                        events: collection.value.events.map((eventItem) => ({
+                            neid: eventItem.neid,
+                            name: eventItem.name,
+                            date: eventItem.date,
+                            category: eventItem.category,
+                            description: eventItem.description,
+                            participantNeids: eventItem.participantNeids,
+                            extractedSeed: eventItem.extractedSeed,
+                        })),
+                    },
+                },
+            });
+            enrichmentWatchlistThemes.value = result.themes ?? [];
+            enrichmentWatchlistGeneratedAt.value = new Date().toISOString();
+            if (result.generationNote) enrichmentWatchlistError.value = result.generationNote;
+        } catch (e: any) {
+            enrichmentWatchlistThemes.value = [];
+            enrichmentWatchlistError.value =
+                e?.data?.statusMessage || e?.message || 'Failed to generate watchlist insights.';
+        } finally {
+            enrichmentWatchlistLoading.value = false;
         }
     }
 
@@ -753,10 +1556,6 @@ export function useCollectionWorkspace() {
         selectedEntityNeid.value = neid;
     }
 
-    function focusDocument(neid: string | null): void {
-        selectedDocumentNeid.value = neid;
-    }
-
     function setTab(tab: WorkspaceTab): void {
         activeTab.value = tab;
     }
@@ -775,7 +1574,7 @@ export function useCollectionWorkspace() {
 
     function resolveEntityName(neid: string): string {
         const entity = collection.value.entities.find((e) => e.neid === neid);
-        if (entity) return entity.name;
+        if (entity) return entityDisplayName(entity);
         const doc = collection.value.documents.find((d) => d.neid === neid);
         if (doc) return doc.title;
         return neid;
@@ -785,7 +1584,6 @@ export function useCollectionWorkspace() {
         collection: computed(() => collection.value),
         activeTab: computed(() => activeTab.value),
         selectedEntityNeid: computed(() => selectedEntityNeid.value),
-        selectedDocumentNeid: computed(() => selectedDocumentNeid.value),
         selectedEntity,
         selectedEntityRelationships,
         selectedEntityEvents,
@@ -826,6 +1624,19 @@ export function useCollectionWorkspace() {
         enrichmentExpandedGraphRelationships: enrichmentExpandedGraphRelationshipsCollapsed,
         enrichmentCollapsedOrganizationCount,
         enrichmentCollapsedRepresentativeByNeid,
+        enrichmentInsights,
+        enrichmentTakeawayBullets,
+        enrichmentValueSummary,
+        lineageInsights,
+        broaderActivityInsights,
+        eventTimelineInsights,
+        peopleAffiliationInsights,
+        enrichmentLanguageLoading: computed(() => enrichmentLanguageLoading.value),
+        enrichmentLanguageError: computed(() => enrichmentLanguageError.value),
+        enrichmentWatchlistThemes: computed(() => enrichmentWatchlistThemes.value),
+        enrichmentWatchlistLoading: computed(() => enrichmentWatchlistLoading.value),
+        enrichmentWatchlistError: computed(() => enrichmentWatchlistError.value),
+        enrichmentWatchlistGeneratedAt: computed(() => enrichmentWatchlistGeneratedAt.value),
         agreements,
         extractedSeedEntities,
         mcpConfirmedEntities,
@@ -844,11 +1655,12 @@ export function useCollectionWorkspace() {
         bootstrap,
         rebuild,
         enrich,
+        generateEnrichmentLanguage,
+        generateEnrichmentWatchlist,
         fetchPropertyHistory,
         runAgentAction,
         addGeminiUsage,
         selectEntity,
-        focusDocument,
         setTab,
         setEnrichmentAnchors,
         setEnrichmentHops,

@@ -163,6 +163,18 @@ function documentNeidsFromNodeProperties(
 let cached: ExtractedSeedGraph | null = null;
 let cachedEntityNeidMap: Map<string, string> | null = null;
 
+const CANONICAL_ENTITY_NEID_OVERRIDES: Record<string, string> = {
+    // High-confidence canonicalizations verified against the current tenant graph.
+    [seedKeyFromNameAndFlavor(
+        '$142,235,000 New Jersey Housing and Mortgage Finance Agency Multifamily Housing Revenue Refunding Bond',
+        'financial_instrument'
+    )]: '08242646876499346416',
+    [seedKeyFromNameAndFlavor('HSBC BANK USA', 'organization')]: '06157989400122873900',
+    [seedKeyFromNameAndFlavor('THE BANK OF NEW YORK', 'organization')]: '05384086983174826493',
+    [seedKeyFromNameAndFlavor('HSBC Bank USA Trade Services', 'organization')]:
+        '02625373596646965640',
+};
+
 function normalizeNeid(neid: string): string {
     const unpadded = neid.replace(/^0+(?=\d)/, '') || '0';
     return unpadded.padStart(20, '0');
@@ -227,7 +239,8 @@ export function loadExtractedSeedGraph(): ExtractedSeedGraph {
                 name: node.name,
                 flavor,
                 nodeId: node.id,
-                canonicalNeid: canonicalEntityNeids.get(key),
+                canonicalNeid:
+                    CANONICAL_ENTITY_NEID_OVERRIDES[key] ?? canonicalEntityNeids.get(key),
                 sourceDocumentNeids: citedDocs,
                 properties: materializeNodeProperties(node.properties),
             });

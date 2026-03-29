@@ -25,7 +25,7 @@ function getRuntimeGeminiConfig() {
     const runtime = useRuntimeConfig();
     return {
         apiKey: runtime.geminiApiKey as string,
-        model: (runtime.geminiModel as string) || 'gemini-2.5-flash',
+        model: (runtime.geminiModel as string) || 'gemini-2.5-pro',
         temperature: Number(runtime.geminiTemperature ?? 3),
         timeoutMs: Number(runtime.geminiTimeoutMs ?? 25000),
     };

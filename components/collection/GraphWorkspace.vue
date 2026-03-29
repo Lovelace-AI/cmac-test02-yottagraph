@@ -163,7 +163,7 @@
                 class="graph-frame"
                 :style="{
                     height: `${graphHeight}px`,
-                    background: currentThemeColors.graphBackground,
+                    background: graphCanvasBackground,
                 }"
             >
                 <v-btn
@@ -324,13 +324,21 @@
         showEnrichedRelationships?: boolean;
     }>();
 
-    const ENTITY_COLORS: Record<string, string> = {
+    const ENTITY_COLORS_DARK: Record<string, string> = {
         organization: '#42A5F5',
         person: '#FFA726',
         financial_instrument: '#66BB6A',
         location: '#AB47BC',
         fund_account: '#66BB6A',
         legal_agreement: '#EF5350',
+    };
+    const ENTITY_COLORS_LIGHT: Record<string, string> = {
+        organization: '#1D4ED8',
+        person: '#B45309',
+        financial_instrument: '#047857',
+        location: '#7E22CE',
+        fund_account: '#047857',
+        legal_agreement: '#B91C1C',
     };
 
     const REL_COLORS: Record<string, string> = {
@@ -380,9 +388,15 @@
     const viewportHeight = ref(900);
     const searchQuery = ref('');
     const hiddenFlavors = ref<Set<string>>(new Set(['location']));
-    const analysisMode = ref<'centrality' | 'relationship' | 'timeline' | 'source' | 'simplified'>(
-        'centrality'
-    );
+    const analysisMode = ref<
+        | 'centrality'
+        | 'relationship'
+        | 'timeline'
+        | 'source'
+        | 'simplified'
+        | 'enrichment_cluster'
+        | 'edge_cluster'
+    >('centrality');
     const relationshipTypeFilter = ref<string | null>(null);
     const sourceBackedOnly = ref(false);
     const highConfidenceOnly = ref(false);
@@ -412,16 +426,26 @@
     }
     const tooltip = ref<TooltipState | null>(null);
 
-    const flavorColorEntries = computed(() => Object.entries(ENTITY_COLORS));
+    const flavorColorEntries = computed(() => Object.entries(ENTITY_COLORS.value));
+    const ENTITY_COLORS = computed<Record<string, string>>(() =>
+        colorMode.value === 'dark' ? ENTITY_COLORS_DARK : ENTITY_COLORS_LIGHT
+    );
+    const graphCanvasBackground = computed(() =>
+        colorMode.value === 'dark'
+            ? 'radial-gradient(120% 100% at 50% 10%, #1C2540 0%, #131A2E 52%, #0C1221 100%)'
+            : 'radial-gradient(130% 110% at 50% 0%, #F5F9FF 0%, #EEF4FF 48%, #E6EEFB 100%)'
+    );
     const analysisModes = [
         { label: 'Centrality', value: 'centrality' },
         { label: 'Relationship Type', value: 'relationship' },
         { label: 'Timeline Linked', value: 'timeline' },
         { label: 'Source Document', value: 'source' },
         { label: 'Clustered / Simplified', value: 'simplified' },
+        { label: 'Edge Cluster (Community)', value: 'edge_cluster' },
+        { label: 'Enrichment Cluster', value: 'enrichment_cluster' },
     ];
 
-    const visibleEntities = computed(() => {
+    const filteredEntities = computed(() => {
         const q = searchQuery.value.trim().toLowerCase();
         return entities.value.filter((e) => {
             if (hiddenFlavors.value.has(e.flavor)) return false;
@@ -461,6 +485,17 @@
         });
     });
     const entityNeidSet = computed(() => new Set(entities.value.map((entity) => entity.neid)));
+    const connectedEntityNeids = computed(() => {
+        const connected = new Set<string>();
+        for (const rel of visibleRelationships.value) {
+            if (entityNeidSet.value.has(rel.sourceNeid)) connected.add(rel.sourceNeid);
+            if (entityNeidSet.value.has(rel.targetNeid)) connected.add(rel.targetNeid);
+        }
+        return connected;
+    });
+    const visibleEntities = computed(() =>
+        filteredEntities.value.filter((entity) => connectedEntityNeids.value.has(entity.neid))
+    );
     const eventNeidSet = computed(() => new Set(events.value.map((eventItem) => eventItem.neid)));
     const documentNeidSet = computed(() => new Set(documents.value.map((doc) => doc.neid)));
 
@@ -576,6 +611,31 @@
         return REL_COLORS[relType] ?? '#9E9E9E';
     }
 
+    function edgeAlpha(origin: string, hasEvidence: boolean): number {
+        if (origin === 'enriched') return colorMode.value === 'dark' ? 0.26 : 0.14;
+        if (hasEvidence) return colorMode.value === 'dark' ? 0.74 : 0.46;
+        return colorMode.value === 'dark' ? 0.46 : 0.24;
+    }
+
+    function sourceModeColor(sourceCount: number): string {
+        if (colorMode.value === 'dark') {
+            return sourceCount >= 3
+                ? '#60A5FA'
+                : sourceCount === 2
+                  ? '#4ADE80'
+                  : sourceCount === 1
+                    ? '#C084FC'
+                    : '#9CA3AF';
+        }
+        return sourceCount >= 3
+            ? '#1D4ED8'
+            : sourceCount === 2
+              ? '#15803D'
+              : sourceCount === 1
+                ? '#7E22CE'
+                : '#64748B';
+    }
+
     function toggleFlavor(flavor: string): void {
         const s = new Set(hiddenFlavors.value);
         if (s.has(flavor)) s.delete(flavor);
@@ -587,6 +647,7 @@
     function buildGraph(): void {
         if (!graphContainer.value) return;
 
+        const rels = visibleRelationships.value;
         let ents = visibleEntities.value;
         if (analysisMode.value === 'timeline') {
             ents = ents.filter((entity) => timelineLinkedNeids.value.has(entity.neid));
@@ -594,15 +655,14 @@
         if (analysisMode.value === 'simplified') {
             ents = ents.filter((entity) => (degreeByNeid.value.get(entity.neid) ?? 0) >= 2);
         }
-        const rels = visibleRelationships.value;
         const entityNodeSet = new Set(ents.map((entity) => entity.neid));
-
-        if (ents.length === 0) return;
 
         if (sigmaInstance) {
             sigmaInstance.kill();
             sigmaInstance = null;
         }
+        graphInstance = null;
+        if (ents.length === 0 || rels.length === 0) return;
 
         const g = new Graph({ type: 'mixed', multi: false });
         graphInstance = g;
@@ -612,33 +672,28 @@
             const evtCount = eventCountByNeid.value.get(entity.neid) ?? 0;
             const propCount = Object.keys(entity.properties ?? {}).length;
             const degree = degreeByNeid.value.get(entity.neid) ?? 0;
-            const size = Math.max(
+            let size = Math.max(
                 5,
                 Math.min(
-                    16,
+                    14,
                     analysisMode.value === 'centrality'
                         ? 5 + degree * 0.9 + evtCount * 0.6
                         : 5 + propCount * 0.45 + entity.sourceDocuments.length * 1.2
                 )
             );
+            if (entity.origin === 'enriched') size = Math.max(4.6, size * 0.82);
+            const baseColor = ENTITY_COLORS.value[entity.flavor] ?? '#9E9E9E';
             let color =
                 entity.origin === 'enriched'
-                    ? hexAlpha(ENTITY_COLORS[entity.flavor] ?? '#9E9E9E', 0.4)
-                    : (ENTITY_COLORS[entity.flavor] ?? '#9E9E9E');
+                    ? hexAlpha(baseColor, colorMode.value === 'dark' ? 0.32 : 0.2)
+                    : baseColor;
 
             if (analysisMode.value === 'source') {
                 const sourceCount = entity.sourceDocuments.length;
-                color =
-                    sourceCount >= 3
-                        ? '#1E88E5'
-                        : sourceCount === 2
-                          ? '#43A047'
-                          : sourceCount === 1
-                            ? '#8E24AA'
-                            : '#9E9E9E';
+                color = sourceModeColor(sourceCount);
             }
             if (analysisMode.value === 'timeline' && evtCount === 0) {
-                color = hexAlpha(color, 0.3);
+                color = hexAlpha(color, colorMode.value === 'dark' ? 0.26 : 0.18);
             }
 
             g.addNode(entity.neid, {
@@ -648,6 +703,7 @@
                 size,
                 node_base_size: size,
                 color,
+                labelColor: readableLabelColor(color, colorMode.value),
                 entity_type: entity.flavor,
                 eventCount: evtCount,
                 origin: entity.origin,
@@ -685,6 +741,7 @@
                         size: 4.2,
                         node_base_size: 4.2,
                         color: '#AB47BC',
+                        labelColor: readableLabelColor('#AB47BC', colorMode.value),
                         entity_type: 'event',
                         eventCount: 0,
                         origin: 'document',
@@ -700,6 +757,7 @@
                         size: 4.2,
                         node_base_size: 4.2,
                         color: '#AB47BC',
+                        labelColor: readableLabelColor('#AB47BC', colorMode.value),
                         entity_type: 'event',
                         eventCount: 0,
                         origin: 'document',
@@ -714,7 +772,8 @@
                         y: Math.random() * 100,
                         size: 4.8,
                         node_base_size: 4.8,
-                        color: '#607D8B',
+                        color: colorMode.value === 'dark' ? '#94A3B8' : '#475569',
+                        labelColor: readableLabelColor('#607D8B', colorMode.value),
                         entity_type: 'document',
                         eventCount: 0,
                         origin: 'document',
@@ -729,7 +788,8 @@
                         y: Math.random() * 100,
                         size: 4.8,
                         node_base_size: 4.8,
-                        color: '#607D8B',
+                        color: colorMode.value === 'dark' ? '#94A3B8' : '#475569',
+                        labelColor: readableLabelColor('#607D8B', colorMode.value),
                         entity_type: 'document',
                         eventCount: 0,
                         origin: 'document',
@@ -748,11 +808,8 @@
                     (Array.isArray(rel.citations) && rel.citations.length > 0);
                 g.addEdgeWithKey(edgeKey, rel.sourceNeid, rel.targetNeid, {
                     label: rel.type.replace(/schema::relationship::/, '').replace(/_/g, ' '),
-                    color: hexAlpha(
-                        getRelTypeColor(rel.type),
-                        rel.origin === 'enriched' ? 0.55 : hasEvidence ? 0.9 : 0.7
-                    ),
-                    size: hasEvidence ? 2.4 : 1.8,
+                    color: hexAlpha(getRelTypeColor(rel.type), edgeAlpha(rel.origin, hasEvidence)),
+                    size: hasEvidence ? 1.9 : 1.25,
                     type: 'arrow',
                 });
             } catch {
@@ -761,7 +818,12 @@
         }
 
         // Community detection in cluster mode
-        if (analysisMode.value === 'simplified' && g.order > 2) {
+        if (
+            (analysisMode.value === 'simplified' ||
+                analysisMode.value === 'enrichment_cluster' ||
+                analysisMode.value === 'edge_cluster') &&
+            g.order > 2
+        ) {
             try {
                 const communities = louvain(g);
                 const communityColors = [
@@ -784,7 +846,18 @@
                 g.forEachNode((node) => {
                     const c = communities[node] ?? 0;
                     const clusterColor = communityColors[c % communityColors.length];
-                    g.setNodeAttribute(node, 'color', hexAlpha(clusterColor, 0.85));
+                    g.setNodeAttribute(
+                        node,
+                        'color',
+                        hexAlpha(
+                            clusterColor,
+                            analysisMode.value === 'enrichment_cluster'
+                                ? 0.9
+                                : analysisMode.value === 'edge_cluster'
+                                  ? 0.94
+                                  : 0.82
+                        )
+                    );
                 });
             } catch {
                 // Louvain may fail on disconnected graphs
@@ -815,17 +888,23 @@
             // noop: keep initial positions if layout engine errors
         }
         stabilizeNodePositions(g);
+        if (analysisMode.value === 'edge_cluster') {
+            applyEdgeClusterLayout(g);
+        }
+        if (analysisMode.value === 'enrichment_cluster') {
+            applyEnrichmentClusterLayout(g);
+        }
 
         // Create Sigma instance
         sigmaInstance = new Sigma(g, graphContainer.value, {
             renderEdgeLabels: false,
             allowInvalidContainer: true,
             labelFont: '"Inter", "Roboto", sans-serif',
-            labelSize: 13,
-            labelWeight: 'bold',
-            labelColor: { color: currentThemeColors.value.textPrimary },
-            labelRenderedSizeThreshold: 3,
-            labelDensity: 0.2,
+            labelSize: 12,
+            labelWeight: '600',
+            labelColor: { attribute: 'labelColor', color: currentThemeColors.value.textPrimary },
+            labelRenderedSizeThreshold: 7,
+            labelDensity: 0.08,
             labelGridCellSize: 100,
             defaultEdgeType: 'arrow',
             defaultEdgeColor: hexAlpha(
@@ -854,7 +933,7 @@
             tooltip.value = {
                 name: attrs.label ?? node,
                 flavor: attrs.entity_type ?? '',
-                color: ENTITY_COLORS[attrs.entity_type] ?? attrs.color ?? '#9E9E9E',
+                color: ENTITY_COLORS.value[attrs.entity_type] ?? attrs.color ?? '#9E9E9E',
                 degree: g.degree(node),
                 events: attrs.eventCount ?? 0,
                 x: pointerX !== undefined ? pointerX - rect.left + 12 : 0,
@@ -920,6 +999,26 @@
         return `rgba(${r},${g},${b},${alpha})`;
     }
 
+    function parseColor(color: string): { r: number; g: number; b: number } | null {
+        if (color.startsWith('#') && color.length === 7) {
+            return {
+                r: parseInt(color.slice(1, 3), 16),
+                g: parseInt(color.slice(3, 5), 16),
+                b: parseInt(color.slice(5, 7), 16),
+            };
+        }
+        const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+        if (!match) return null;
+        return { r: Number(match[1]), g: Number(match[2]), b: Number(match[3]) };
+    }
+
+    function readableLabelColor(nodeColor: string, mode: 'light' | 'dark'): string {
+        const rgb = parseColor(nodeColor);
+        if (!rgb) return mode === 'dark' ? '#F8FAFC' : '#111827';
+        const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+        return luminance > 0.62 ? '#0F172A' : '#F8FAFC';
+    }
+
     function stabilizeNodePositions(graph: Graph): void {
         const nodes = graph.nodes();
         if (!nodes.length) return;
@@ -967,6 +1066,195 @@
             const y = Number(graph.getNodeAttribute(node, 'y'));
             graph.setNodeAttribute(node, 'x', ((x - centerX) / maxSpan) * targetSpan);
             graph.setNodeAttribute(node, 'y', ((y - centerY) / maxSpan) * targetSpan);
+        }
+    }
+
+    function applyEdgeClusterLayout(graph: Graph): void {
+        if (graph.order < 3) return;
+        try {
+            const communities = louvain(graph);
+            const communityMembers = new Map<string, string[]>();
+            const communityByNode = new Map<string, string>();
+            graph.forEachNode((nodeId) => {
+                const communityId = String(communities[nodeId] ?? '0');
+                communityByNode.set(nodeId, communityId);
+                const bucket = communityMembers.get(communityId) ?? [];
+                bucket.push(nodeId);
+                communityMembers.set(communityId, bucket);
+            });
+
+            const communityIds = Array.from(communityMembers.keys());
+            if (communityIds.length <= 1) return;
+
+            const interEdgeWeights = new Map<string, number>();
+            graph.forEachEdge((_edge, _attrs, source, target) => {
+                const sourceCommunity = communityByNode.get(source);
+                const targetCommunity = communityByNode.get(target);
+                if (!sourceCommunity || !targetCommunity || sourceCommunity === targetCommunity)
+                    return;
+                const [a, b] =
+                    sourceCommunity < targetCommunity
+                        ? [sourceCommunity, targetCommunity]
+                        : [targetCommunity, sourceCommunity];
+                const key = `${a}|${b}`;
+                interEdgeWeights.set(key, (interEdgeWeights.get(key) ?? 0) + 1);
+            });
+
+            const centers = new Map<string, { x: number; y: number; vx: number; vy: number }>();
+            const initialRadius = Math.max(180, communityIds.length * 34);
+            communityIds.forEach((communityId, index) => {
+                const angle = (index / communityIds.length) * Math.PI * 2;
+                centers.set(communityId, {
+                    x: Math.cos(angle) * initialRadius,
+                    y: Math.sin(angle) * initialRadius,
+                    vx: 0,
+                    vy: 0,
+                });
+            });
+
+            const repulsion = 5400;
+            const springStrength = 0.014;
+            const damping = 0.82;
+            for (let iter = 0; iter < 180; iter += 1) {
+                for (let i = 0; i < communityIds.length; i += 1) {
+                    for (let j = i + 1; j < communityIds.length; j += 1) {
+                        const ci = centers.get(communityIds[i]);
+                        const cj = centers.get(communityIds[j]);
+                        if (!ci || !cj) continue;
+                        const dx = cj.x - ci.x;
+                        const dy = cj.y - ci.y;
+                        const distSq = Math.max(dx * dx + dy * dy, 1);
+                        const dist = Math.sqrt(distSq);
+                        const force = repulsion / distSq;
+                        const fx = (dx / dist) * force;
+                        const fy = (dy / dist) * force;
+                        ci.vx -= fx;
+                        ci.vy -= fy;
+                        cj.vx += fx;
+                        cj.vy += fy;
+                    }
+                }
+
+                interEdgeWeights.forEach((weight, key) => {
+                    const [a, b] = key.split('|');
+                    const ca = centers.get(a);
+                    const cb = centers.get(b);
+                    if (!ca || !cb) return;
+                    const dx = cb.x - ca.x;
+                    const dy = cb.y - ca.y;
+                    const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+                    const targetDist = 210 - Math.min(130, Math.log1p(weight) * 32);
+                    const delta = dist - targetDist;
+                    const force = delta * springStrength * Math.max(1, Math.log1p(weight));
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    ca.vx += fx;
+                    ca.vy += fy;
+                    cb.vx -= fx;
+                    cb.vy -= fy;
+                });
+
+                centers.forEach((center) => {
+                    center.vx *= damping;
+                    center.vy *= damping;
+                    center.x += center.vx;
+                    center.y += center.vy;
+                });
+            }
+
+            communityIds.forEach((communityId) => {
+                const center = centers.get(communityId);
+                const members = communityMembers.get(communityId);
+                if (!center || !members?.length) return;
+                const ordered = [...members].sort(
+                    (a, b) =>
+                        Number(graph.getNodeAttribute(b, 'node_base_size') ?? 0) -
+                        Number(graph.getNodeAttribute(a, 'node_base_size') ?? 0)
+                );
+                const localRadius = Math.max(28, Math.min(140, Math.sqrt(ordered.length) * 18));
+                ordered.forEach((nodeId, index) => {
+                    const angle = (index / Math.max(ordered.length, 1)) * Math.PI * 2;
+                    const radial =
+                        localRadius * (0.35 + 0.65 * Math.sqrt((index + 1) / ordered.length));
+                    const isEnriched =
+                        String(graph.getNodeAttribute(nodeId, 'origin')) === 'enriched';
+                    const edgeOffset = isEnriched ? radial * 1.22 : radial;
+                    graph.setNodeAttribute(nodeId, 'x', center.x + Math.cos(angle) * edgeOffset);
+                    graph.setNodeAttribute(nodeId, 'y', center.y + Math.sin(angle) * edgeOffset);
+                });
+            });
+            stabilizeNodePositions(graph);
+        } catch {
+            // fallback: keep previous layout on failure
+        }
+    }
+
+    function applyEnrichmentClusterLayout(graph: Graph): void {
+        if (graph.order < 2) return;
+        try {
+            const communities = louvain(graph);
+            const nodesByCommunity = new Map<string, string[]>();
+            graph.forEachNode((nodeId) => {
+                const key = String(communities[nodeId] ?? '0');
+                const bucket = nodesByCommunity.get(key) ?? [];
+                bucket.push(nodeId);
+                nodesByCommunity.set(key, bucket);
+            });
+
+            const orderedCommunities = Array.from(nodesByCommunity.entries()).sort(
+                (a, b) => b[1].length - a[1].length
+            );
+            const communityCount = orderedCommunities.length;
+            const ringRadius = Math.min(360, Math.max(140, communityCount * 26));
+
+            orderedCommunities.forEach(([, members], communityIndex) => {
+                const angle =
+                    communityCount <= 1 ? 0 : (communityIndex / communityCount) * Math.PI * 2;
+                const centerX = Math.cos(angle) * ringRadius;
+                const centerY = Math.sin(angle) * ringRadius;
+                const localStep = (Math.PI * 2) / Math.max(1, members.length);
+                const localRadius = Math.max(36, Math.min(140, Math.sqrt(members.length) * 20));
+
+                members.forEach((nodeId, memberIndex) => {
+                    const nodeKind = String(
+                        graph.getNodeAttribute(nodeId, 'node_kind') ?? 'entity'
+                    );
+                    const nodeOrigin = String(
+                        graph.getNodeAttribute(nodeId, 'origin') ?? 'document'
+                    );
+                    const baseAngle = memberIndex * localStep;
+                    const originOffset =
+                        nodeOrigin === 'enriched'
+                            ? localRadius
+                            : nodeKind === 'entity'
+                              ? localRadius * 0.55
+                              : localRadius * 0.35;
+                    const jitter = memberIndex % 2 === 0 ? 6 : -6;
+                    graph.setNodeAttribute(
+                        nodeId,
+                        'x',
+                        centerX + Math.cos(baseAngle) * originOffset + jitter
+                    );
+                    graph.setNodeAttribute(
+                        nodeId,
+                        'y',
+                        centerY + Math.sin(baseAngle) * originOffset - jitter
+                    );
+                    if (nodeOrigin === 'enriched') {
+                        const baseSize = Number(
+                            graph.getNodeAttribute(nodeId, 'node_base_size') ?? 5
+                        );
+                        graph.setNodeAttribute(nodeId, 'size', Math.max(4.5, baseSize * 0.92));
+                        graph.setNodeAttribute(
+                            nodeId,
+                            'node_base_size',
+                            Math.max(4.5, baseSize * 0.92)
+                        );
+                    }
+                });
+            });
+        } catch {
+            // fallback: keep prior layout when clustering fails
         }
     }
 

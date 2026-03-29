@@ -183,15 +183,8 @@ function persistToStorage(fingerprint: string): void {
 }
 
 export function useInsightsWorkspace() {
-    const {
-        collection,
-        entities,
-        addGeminiUsage,
-        collectionSummary,
-        isReady,
-        meta,
-        selectedDocumentNeid,
-    } = useCollectionWorkspace();
+    const { collection, entities, addGeminiUsage, collectionSummary, isReady, meta } =
+        useCollectionWorkspace();
 
     const allQuestions = computed(() => categories.flatMap((category) => category.questions));
     const totalQuestions = computed(() => allQuestions.value.length);
@@ -222,7 +215,6 @@ export function useInsightsWorkspace() {
             entityCount: collection.value.meta.entityCount,
             eventCount: collection.value.meta.eventCount,
             relCount: collection.value.meta.relationshipCount,
-            selectedDocumentNeid: selectedDocumentNeid.value ?? '',
         })
     );
 

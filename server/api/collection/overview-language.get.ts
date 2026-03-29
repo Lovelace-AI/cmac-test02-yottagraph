@@ -2,6 +2,42 @@ import { getCachedCollection } from '~/server/api/collection/bootstrap.get';
 import { generateGeminiText } from '~/server/utils/gemini';
 import type { EntityRecord, EventRecord } from '~/utils/collectionTypes';
 
+const MUNICIPAL_BOND_NEID = '08242646876499346416';
+
+function normalizeNeid(value: string): string {
+    const unpadded = value.replace(/^0+(?=\d)/, '') || '0';
+    return unpadded.padStart(20, '0');
+}
+
+function isNeidLike(value: string): boolean {
+    return /^\d{16,24}$/.test(value.trim());
+}
+
+function entityDisplayName(entity?: EntityRecord): string | null {
+    if (!entity) return null;
+    const direct = String(entity.name ?? '').trim();
+    if (direct && !isNeidLike(direct)) return direct;
+    const props = (entity.properties ?? {}) as Record<string, unknown>;
+    const candidateKeys = [
+        'matched_name',
+        'canonical_name',
+        'resolved_name',
+        'legal_name',
+        'issuer_name',
+        'name',
+    ];
+    for (const key of candidateKeys) {
+        const raw = props[key];
+        const value =
+            raw && typeof raw === 'object' && !Array.isArray(raw)
+                ? (raw as Record<string, unknown>).value
+                : raw;
+        const text = String(value ?? '').trim();
+        if (text && !isNeidLike(text)) return text;
+    }
+    return null;
+}
+
 function countBy<T>(items: T[], keyFn: (item: T) => string): Map<string, number> {
     const counts = new Map<string, number>();
     for (const item of items) {
@@ -57,17 +93,40 @@ export default defineEventHandler(async () => {
     }
 
     const { meta, entities, events, documents } = collection;
+    const targetBond = entities.find(
+        (entity) => normalizeNeid(entity.neid) === normalizeNeid(MUNICIPAL_BOND_NEID)
+    );
+    const municipalBondLabel =
+        entityDisplayName(targetBond) ?? 'the municipal bond at the center of this transaction';
+    const documentTitles = documents
+        .map((doc) => doc.title)
+        .filter(Boolean)
+        .slice(0, 4)
+        .join('; ');
+    const kindCounts = countBy(
+        documents.filter((doc) => Boolean(doc.kind)),
+        (doc) => String(doc.kind)
+    );
+    const kindSummary = Array.from(kindCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([kind, count]) => `${count} ${kind}`)
+        .join(', ');
     const fallbackSummaryLine =
-        meta.description ||
-        'Collection-level analysis with traceable entities, events, and evidence.';
+        meta.description || 'Corpus-level view describing what these source documents are about.';
     const fallbackCollectionSummary = `${documents.length} source document${
         documents.length === 1 ? '' : 's'
     } produced ${entities.length} entities and ${events.length} events. ${topEntityLine(entities)} ${topEventLine(events)}`;
     const fallbackNarrative = [
-        `${meta.name} brings together ${documents.length} source documents that Elemental has ingested and classified into one transaction-focused collection.`,
-        `From this corpus, Elemental synthesized ${entities.length} entities, ${meta.relationshipCount} relationships, ${events.length} events, and ${meta.agreementCount} agreement signals into an evidence-linked deal structure.`,
-        `This overview is designed to support executive review: what the deal is, who the primary parties are, what changed over time, and where confidence is strongest or still needs verification.`,
-    ].join('\n\n');
+        `${meta.name} is a corpus of ${documents.length} source documents describing the same financing transaction and related parties.`,
+        `The corpus centers on ${municipalBondLabel}, so the documents should be read as one municipal bond financing story.`,
+        kindSummary
+            ? `The documents mostly cover ${kindSummary}, and they read as one connected deal story rather than unrelated topics.`
+            : `The documents read as one connected deal story rather than unrelated topics.`,
+        documentTitles
+            ? `Key files in this corpus include: ${documentTitles}.`
+            : `These files together describe deal structure, legal obligations, and material timeline events.`,
+    ].join(' ');
 
     const flavorCounts = countBy(entities, (entity) => entity.flavor);
     const eventCategories = countBy(events, (eventItem) => eventItem.category || 'uncategorized');
@@ -89,19 +148,22 @@ export default defineEventHandler(async () => {
                 'You are Ask Yotta. Write concise executive-briefing copy grounded in supplied collection stats. Return strict JSON only.',
             prompt: [
                 'Return a JSON object with exactly these keys:',
-                '- summaryLine: a 1-2 sentence description of what this document collection contains and why it matters',
-                '- collectionSummary: one sentence with counts and analytical significance',
-                '- narrative: 2-4 short paragraphs in coherent business language',
+                '- summaryLine: a 1-2 sentence corpus description focused on what the documents are about',
+                '- collectionSummary: one sentence with corpus content and analytical significance',
+                '- narrative: 2-3 plain-English sentences describing what this corpus represents',
                 '',
                 `Collection name: ${meta.name}`,
                 `Description: ${meta.description || 'N/A'}`,
                 `Documents: ${documents.length}, Entities: ${entities.length}, Events: ${events.length}, Relationships: ${meta.relationshipCount}`,
                 `Agreements: ${meta.agreementCount}`,
+                `Document titles sample: ${documentTitles || 'N/A'}`,
+                `Document type mix: ${kindSummary || 'N/A'}`,
                 `Entity mix: ${flavorSummary || 'N/A'}`,
                 `Event category mix: ${eventSummary || 'N/A'}`,
+                `Municipal bond anchor name: ${municipalBondLabel}`,
                 topEntityLine(entities),
                 topEventLine(events),
-                'Tone requirements: product UX voice, no backend jargon, no mention of MCP, no empty-state diagnostics.',
+                'Tone requirements: plain English, explain corpus meaning, explicitly mention the municipal bond anchor by name, never include NEID identifiers, do not describe ingestion/extraction process, no backend/tool references.',
             ].join('\n'),
             temperature: 0.3,
             maxOutputTokens: 520,

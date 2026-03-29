@@ -28,6 +28,48 @@
                     Run Initial Analysis
                 </v-btn>
             </div>
+
+            <div class="narrative-section">
+                <div class="d-flex align-center justify-space-between ga-2 mb-2">
+                    <div class="text-caption text-medium-emphasis text-uppercase">
+                        Corpus Description
+                    </div>
+                    <div class="d-flex align-center ga-1 flex-wrap">
+                        <v-btn
+                            v-if="hasSummary"
+                            size="x-small"
+                            variant="text"
+                            class="narrative-action"
+                            :loading="isRegenerating"
+                            :disabled="isRegenerating"
+                            @click="$emit('regenerate')"
+                        >
+                            Refresh
+                        </v-btn>
+                        <v-chip
+                            v-if="citationCount > 0"
+                            size="x-small"
+                            variant="tonal"
+                            prepend-icon="mdi-file-document-outline"
+                        >
+                            {{ citationCount }} source references
+                        </v-chip>
+                    </div>
+                </div>
+                <template v-if="narrativeParagraphs.length">
+                    <p
+                        v-for="paragraph in narrativeParagraphs"
+                        :key="paragraph"
+                        class="text-body-2 mb-2 narrative-paragraph"
+                    >
+                        {{ paragraph }}
+                    </p>
+                </template>
+                <p v-else class="empty-copy mb-0">
+                    Run analysis to generate a short plain-language description of what this corpus
+                    is about.
+                </p>
+            </div>
         </v-card-text>
     </v-card>
 </template>
@@ -39,10 +81,14 @@
     const props = defineProps<{
         fields: DealSummaryField[];
         status: OverviewStatus;
+        narrativeParagraphs: string[];
+        citationCount: number;
+        isRegenerating?: boolean;
     }>();
 
     defineEmits<{
         'run-analysis': [];
+        regenerate: [];
     }>();
 
     const visibleFields = computed(() =>
@@ -104,6 +150,25 @@
         font-size: 0.83rem;
         line-height: 1.4;
         color: var(--dynamic-text-secondary);
+    }
+
+    .narrative-section {
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid var(--app-divider);
+    }
+
+    .narrative-paragraph {
+        line-height: 1.5;
+        font-size: 0.86rem;
+        color: var(--dynamic-text-primary);
+    }
+
+    .narrative-action {
+        text-transform: none;
+        letter-spacing: 0;
+        border-radius: 999px;
+        min-width: 0;
     }
 
     @media (max-width: 760px) {

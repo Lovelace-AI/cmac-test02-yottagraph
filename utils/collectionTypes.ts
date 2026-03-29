@@ -116,8 +116,9 @@ export const BNY_DOCUMENTS: DocumentRecord[] = [
     {
         neid: '07526709763959495568',
         documentId: '4124255',
-        title: 'Irrevocable Letter of Credit',
+        title: 'Irrevocable Letter of Credit (1993)',
         kind: 'Letter of Credit',
+        date: '1993-10-07',
     },
     {
         neid: '07780293260382878366',

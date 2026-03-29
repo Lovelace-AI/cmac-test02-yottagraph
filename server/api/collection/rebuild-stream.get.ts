@@ -182,15 +182,6 @@ function formatMs(ms: number): string {
     return `${(ms / 1000).toFixed(1)}s`;
 }
 
-const CANONICAL_ENTITY_NEID_OVERRIDES: Record<string, string> = {
-    // The extracted bond label resolves to the same canonical instrument hub NEID
-    // used elsewhere in the BNY collection workflow.
-    [seedKeyFromNameAndFlavor(
-        '$142,235,000 New Jersey Housing and Mortgage Finance Agency Multifamily Housing Revenue Refunding Bond',
-        'financial_instrument'
-    )]: '08242646876499346416',
-};
-
 export default defineEventHandler(async (event) => {
     setResponseHeaders(event, {
         'Content-Type': 'text/event-stream',
@@ -254,9 +245,7 @@ export default defineEventHandler(async (event) => {
             ];
             seedEntityDocsByKey.set(seedEntity.key, new Set(seededDocs));
             const canonicalNeid =
-                CANONICAL_ENTITY_NEID_OVERRIDES[seedEntity.key] ??
-                seedEntity.canonicalNeid ??
-                seedIdForKey('entity', seedEntity.key);
+                seedEntity.canonicalNeid ?? seedIdForKey('entity', seedEntity.key);
             entityByKey.set(seedEntity.key, {
                 neid: canonicalNeid,
                 name: seedEntity.name,

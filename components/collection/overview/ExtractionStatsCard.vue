@@ -4,7 +4,10 @@
             <v-card-title class="section-title">Extraction Stats</v-card-title>
         </v-card-item>
         <v-card-text class="pt-0 pb-4">
-            <div class="stats-grid" :class="{ 'stats-grid--muted': !hasMetrics }">
+            <div
+                class="stats-grid"
+                :class="{ 'stats-grid--muted': !hasMetrics, 'stats-grid--single': stacked }"
+            >
                 <div v-for="item in stats" :key="item.key" class="stat-tile">
                     <div class="stat-value">{{ item.value }}</div>
                     <div class="stat-label">{{ item.label }}</div>
@@ -34,6 +37,7 @@
     const props = defineProps<{
         stats: ExtractionStatItem[];
         status: OverviewStatus;
+        stacked?: boolean;
     }>();
 
     defineEmits<{
@@ -62,6 +66,10 @@
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
+    }
+
+    .stats-grid--single {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .stats-grid--muted .stat-tile {

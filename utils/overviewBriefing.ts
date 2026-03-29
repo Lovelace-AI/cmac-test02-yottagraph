@@ -62,9 +62,17 @@ export interface CollectionOverviewViewModel {
 
 function formatDate(value?: string): string {
     if (!value) return 'Not available';
+    const direct = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (direct) {
+        const [, year, month, day] = direct;
+        return `${month}-${day}-${year}`;
+    }
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString();
+    const iso = date.toISOString().slice(0, 10);
+    const parts = iso.split('-');
+    if (parts.length !== 3) return value;
+    return `${parts[1]}-${parts[2]}-${parts[0]}`;
 }
 
 function formatDateTime(value?: string): string {
@@ -85,6 +93,57 @@ function formatLastUpdated(value: string | undefined, status: OverviewStatus): s
 
 function formatCount(value: number): string {
     return value.toLocaleString();
+}
+
+function normalizeDateOnly(value?: string): string | null {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const direct = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (direct?.[1]) return direct[1];
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+}
+
+function formatDateRangeLabel(values: Iterable<string>): string {
+    const normalized = Array.from(values)
+        .map((value) => normalizeDateOnly(value))
+        .filter(Boolean) as string[];
+    if (!normalized.length) return 'Not available';
+    const sorted = [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
+    const earliest = formatDate(sorted[0]);
+    const latest = formatDate(sorted[sorted.length - 1]);
+    return earliest === latest ? earliest : `${earliest} -> ${latest}`;
+}
+
+function isNeidLike(value: string): boolean {
+    const normalized = value.trim();
+    return /^\d{16,24}$/.test(normalized);
+}
+
+function entityLabel(entity: CollectionState['entities'][number]): string {
+    const name = String(entity.name ?? '').trim();
+    if (name && !isNeidLike(name)) return name;
+    const props = (entity.properties ?? {}) as Record<string, unknown>;
+    const candidateKeys = [
+        'matched_name',
+        'canonical_name',
+        'resolved_name',
+        'legal_name',
+        'issuer_name',
+        'name',
+    ];
+    for (const key of candidateKeys) {
+        const raw = props[key];
+        const value =
+            raw && typeof raw === 'object' && !Array.isArray(raw)
+                ? (raw as Record<string, unknown>).value
+                : raw;
+        const text = String(value ?? '').trim();
+        if (text && !isNeidLike(text)) return text;
+    }
+    return '';
 }
 
 function deriveDealType(state: CollectionState): string {
@@ -162,19 +221,26 @@ export function mapCollectionToOverviewViewModel(params: {
     const dealType = deriveDealType(state);
     const dateValues = new Set<string>();
     state.events.forEach((event) => {
-        if (event.date) dateValues.add(event.date.slice(0, 10));
+        const normalized = normalizeDateOnly(event.date);
+        if (normalized) dateValues.add(normalized);
     });
     state.propertySeries.forEach((series) => {
         series.points.forEach((point) => {
-            if (point.recordedAt) dateValues.add(point.recordedAt.slice(0, 10));
+            const normalized = normalizeDateOnly(point.recordedAt);
+            if (normalized) dateValues.add(normalized);
         });
     });
+    state.documents.forEach((doc) => {
+        const normalized = normalizeDateOnly(doc.date);
+        if (normalized) dateValues.add(normalized);
+    });
     const locationCount = state.entities.filter((entity) => entity.flavor === 'location').length;
-    const enrichedMatches = state.entities.filter((entity) => entity.origin === 'enriched').length;
     const primaryParties = state.entities
         .filter((entity) => entity.flavor === 'organization')
+        .sort((a, b) => b.sourceDocuments.length - a.sourceDocuments.length)
+        .map((entity) => entityLabel(entity))
+        .filter(Boolean)
         .slice(0, 3)
-        .map((entity) => entity.name)
         .join(', ');
     const eventDates = state.events.map((event) => event.date).filter(Boolean) as string[];
     const closingDate = eventDates.length ? formatDate(eventDates.sort()[0]) : 'Not available';
@@ -201,7 +267,10 @@ export function mapCollectionToOverviewViewModel(params: {
                   ? 'Analysis Running'
                   : 'Open Graph & Entities',
         dealSummaryFields: [
-            { label: 'Deal name', value: state.meta.name },
+            {
+                label: 'Deal name',
+                value: 'NJHMFA Multifamily Housing Revenue Refunding Bonds — Presidential Plaza at Newport Project',
+            },
             { label: 'Deal type', value: dealType },
             { label: 'Issuer', value: primaryParties || 'Derived after deeper extraction' },
             { label: 'Par amount', value: '$142M (from collection descriptor)' },
@@ -278,9 +347,12 @@ export function mapCollectionToOverviewViewModel(params: {
                 label: 'Agreements',
                 value: formatCount(state.meta.agreementCount),
             },
-            { key: 'dates', label: 'Dates', value: formatCount(dateValues.size) },
+            {
+                key: 'date_range',
+                label: 'Date range',
+                value: formatDateRangeLabel(dateValues),
+            },
             { key: 'locations', label: 'Locations', value: formatCount(locationCount) },
-            { key: 'enriched', label: 'Enriched matches', value: formatCount(enrichedMatches) },
         ],
         documents: state.documents.map((doc) => ({
             id: doc.documentId,

@@ -85,7 +85,7 @@
                             :key="doc.neid"
                         >
                             <span :class="changeClass(item, doc.neid)">
-                                {{ item[doc.neid] ?? '—' }}
+                                {{ item[doc.neid] ?? '' }}
                             </span>
                         </template>
                     </v-data-table>
@@ -226,9 +226,9 @@
             for (let i = 1; i < sortedDocuments.value.length; i += 1) {
                 const prevDoc = sortedDocuments.value[i - 1];
                 const nextDoc = sortedDocuments.value[i];
-                const fromValue = row[prevDoc.neid] ?? '—';
-                const toValue = row[nextDoc.neid] ?? '—';
-                if (fromValue === toValue || fromValue === '—' || toValue === '—') continue;
+                const fromValue = row[prevDoc.neid] ?? '';
+                const toValue = row[nextDoc.neid] ?? '';
+                if (fromValue === toValue || fromValue === '' || toValue === '') continue;
                 changes.push({
                     key: `${row.propertyName}-${prevDoc.neid}-${nextDoc.neid}`,
                     propertyName: row.propertyName,
@@ -251,19 +251,21 @@
             if (point.recordedAt.slice(0, 10) <= date.slice(0, 10)) candidate = point;
         }
         if (!candidate && sorted.length) candidate = sorted[0];
-        return candidate ? formatValue(candidate.value) : '—';
+        return candidate ? formatValue(candidate.value) : '';
     }
 
     function latestValue(points: PropertyPoint[]): string {
-        if (!points.length) return '—';
+        if (!points.length) return '';
         const sorted = [...points].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
         return formatValue(sorted[sorted.length - 1].value);
     }
 
     function formatValue(value: unknown): string {
-        if (value === null || value === undefined) return '—';
+        if (value === null || value === undefined) return '';
         if (typeof value === 'number') return compactNumber(value);
-        return String(value);
+        const text = String(value).trim();
+        if (!text || text.toLowerCase() === 'null' || text.toLowerCase() === 'undefined') return '';
+        return text;
     }
 
     function compactNumber(value: number): string {

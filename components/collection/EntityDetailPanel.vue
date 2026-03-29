@@ -153,8 +153,6 @@
                             :key="docNeid"
                             size="small"
                             variant="tonal"
-                            class="app-chip-button"
-                            @click="focusDocument(docNeid)"
                         >
                             {{ resolveEntityName(docNeid) }}
                         </v-chip>
@@ -352,8 +350,6 @@
                             :key="`source-${docNeid}`"
                             size="small"
                             variant="outlined"
-                            class="app-chip-button"
-                            @click="focusDocument(docNeid)"
                         >
                             {{ resolveEntityName(docNeid) }}
                         </v-chip>
@@ -453,7 +449,6 @@
         selectedEntityEvents,
         selectedEntityPropertySeries,
         selectEntity,
-        focusDocument,
         resolveEntityName,
         runAgentAction,
         enrich,
@@ -825,10 +820,7 @@
     function handleCitationSelect(citation: Citation) {
         if (!citation.neid) return;
         const doc = BNY_DOCUMENTS.find((item) => item.neid === citation.neid);
-        if (doc) {
-            focusDocument(doc.neid);
-            return;
-        }
+        if (doc) return;
         selectEntity(citation.neid);
     }
 </script>

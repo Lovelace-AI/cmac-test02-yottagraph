@@ -6,9 +6,23 @@ This document lists every extracted entity and event in the current collection s
 - whether it has at least one connection outside the current document-extracted collection (`outside_connected`)
 - the number of outside connections found in a 1-hop probe (`outside_count`)
 
+For a process-oriented summary of how we used MCP for entity resolution,
+canonical bank recovery, and rebuild-time canonicalization on 2026-03-29, see
+`design/daily-update-2026-03-29.md`.
+
 ## Executive Summary
 
-The current document collection contains a small set of extracted entities that appear to enrich successfully into the broader graph, plus a smaller set of entities that look like they should resolve through strong external identifiers but do not currently do so cleanly in this tenant context.
+The current document collection contains a small set of extracted entities that
+appear to enrich successfully into the broader graph, plus a smaller set of
+entities that still do not resolve cleanly through their expected strong
+identifiers in this tenant context.
+
+Since the original audit, we also recovered the key bank aliases used in the
+documents:
+
+- extracted `HSBC BANK USA` now canonicalizes to `HSBC Bank USA, National Association` (`06157989400122873900`)
+- extracted `THE BANK OF NEW YORK` now canonicalizes to `Bank of New York Mellon Corporation (BNY Mellon)` (`05384086983174826493`)
+- extracted `HSBC Bank USA Trade Services` now canonicalizes to `02625373596646965640`
 
 ### Enrichable Extracted Entities
 
@@ -38,7 +52,8 @@ ARTHUR KLEIN|person|04008955034518895738|1
 
 ### Extracted Entities Expected But Unresolved
 
-These extracted entities exist in the collection, but their expected identifier-based resolution paths do not currently resolve cleanly.
+These extracted entities exist in the collection, but their expected
+identifier-based resolution paths do not currently resolve cleanly.
 
 `name|flavor|neid|expected_identifier`
 
@@ -103,7 +118,15 @@ For the complete per-node list, see the full audit table below (`outside_connect
 
 ## Expected But Unresolved
 
-These are cases where the collection contains an extracted node and we have a strong external identifier for it, but the expected identifier-based resolution path does not currently resolve cleanly in this tenant context.
+These are cases where the collection contains an extracted node and we have a
+strong external identifier for it, but the expected identifier-based resolution
+path does not currently resolve cleanly in this tenant context.
+
+Important distinction:
+
+- some extracted bank aliases are now recovered in rebuild-time canonicalization
+  and appear in app state as canonical entities
+- that does not mean every historical FDIC/CIK strong-ID path is now fixed
 
 This section is separate from the enrichability audit:
 
@@ -126,11 +149,15 @@ What we checked:
 - Name lookup for `REPUBLIC NATIONAL BANK OF NEW YORK` resolved successfully to `04824620677155774613`.
 - Relationship lookup from that NEID returns `HSBC Bank USA, National Association` (`06157989400122873900`) as a related organization.
 - `HSBC Bank USA, National Association` exposes `fdic_certificate_number = 57890`, so FDIC-backed bank identity data is present in the tenant graph.
+- `fdic_certificate_number = 57890` resolves directly to `HSBC Bank USA, National Association` (`06157989400122873900`).
+- extracted label `HSBC BANK USA` is now canonicalized in rebuild-time app state to `HSBC Bank USA, National Association` (`06157989400122873900`).
+- extracted label `THE BANK OF NEW YORK` is now canonicalized in rebuild-time app state to `Bank of New York Mellon Corporation (BNY Mellon)` (`05384086983174826493`), and `fdic_certificate_number = 639` resolves to that same canonical bank entity.
 
 Current status:
 
 - Treat this as a likely resolution gap or property-surface gap rather than a complete KG miss.
-- The merger/successor relationship appears to exist, but the extracted Republic National Bank node is not currently resolving via `fdic_certificate_number = 19545`.
+- The merger/successor relationship appears to exist, and the surrounding bank aliases used in the documents are now recovered to canonical bank NEIDs in app state.
+- The remaining gap is that `REPUBLIC NATIONAL BANK OF NEW YORK` still does not resolve directly through `fdic_certificate_number = 19545`.
 
 Additional check:
 

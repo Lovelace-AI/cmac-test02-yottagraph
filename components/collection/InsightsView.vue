@@ -139,9 +139,6 @@
                         />
                     </v-col>
                 </v-row>
-                <div class="text-caption text-medium-emphasis mt-2">
-                    {{ collectionFingerprint }}
-                </div>
             </v-card-text>
         </v-card>
 

@@ -166,7 +166,7 @@ export default defineNuxtConfig({
     runtimeConfig: {
         qsApiKey: bcYaml.qsApiKey || '',
         geminiApiKey: process.env.GEMINI_API_KEY || '',
-        geminiModel: 'gemini-2.5-flash',
+        geminiModel: 'gemini-2.5-pro',
         geminiTemperature: 3,
         geminiTimeoutMs: 25000,
         public: {

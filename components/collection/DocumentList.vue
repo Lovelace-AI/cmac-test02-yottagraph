@@ -6,17 +6,7 @@
         </v-card-item>
         <v-card-text class="pt-0">
             <v-list density="compact" class="pa-0">
-                <v-list-item
-                    v-for="doc in documents"
-                    :key="doc.neid"
-                    class="px-0"
-                    :active="selectedDocumentNeid === doc.neid"
-                    tabindex="0"
-                    role="button"
-                    @click="focusDocument(doc.neid)"
-                    @keydown.enter.prevent="focusDocument(doc.neid)"
-                    @keydown.space.prevent="focusDocument(doc.neid)"
-                >
+                <v-list-item v-for="doc in documents" :key="doc.neid" class="px-0">
                     <template v-slot:prepend>
                         <v-icon size="small" color="info" class="mr-2"> mdi-file-pdf-box </v-icon>
                     </template>
@@ -35,5 +25,5 @@
 </template>
 
 <script setup lang="ts">
-    const { documents, selectedDocumentNeid, focusDocument } = useCollectionWorkspace();
+    const { documents } = useCollectionWorkspace();
 </script>

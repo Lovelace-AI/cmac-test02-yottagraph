@@ -30,6 +30,15 @@ interface EnrichResult {
         events: boolean;
         eventHubs: boolean;
     };
+    diagnostics: {
+        totalMs: number;
+        relatedCalls: number;
+        relatedErrors: number;
+        eventCalls: number;
+        eventErrors: number;
+        hopMs: Array<{ depth: number; ms: number; sourceCount: number; discoveredCount: number }>;
+        eventsMs: number;
+    };
 }
 
 const ENRICHMENT_FLAVORS = ['organization', 'person', 'financial_instrument', 'location'] as const;
@@ -42,6 +51,8 @@ const DEFAULT_MAX_RELATIONSHIPS = 20000;
 const DEFAULT_MAX_EVENTS = 6000;
 const RELATED_TOOL_TIMEOUT_MS = 8_000;
 const EVENTS_TOOL_TIMEOUT_MS = 8_000;
+const RELATED_CALL_CONCURRENCY = 10;
+const EVENT_CALL_CONCURRENCY = 4;
 
 function normalizeNeid(neid: string): string {
     const unpadded = neid.replace(/^0+(?=\d)/, '') || '0';
@@ -50,6 +61,18 @@ function normalizeNeid(neid: string): string {
 
 function sortedUniqueNeids(neids: string[]): string[] {
     return Array.from(new Set(neids.map((neid) => normalizeNeid(neid)))).sort();
+}
+
+function uniqueOrderedNeids(neids: string[]): string[] {
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    for (const neid of neids) {
+        const normalized = normalizeNeid(neid);
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+        ordered.push(normalized);
+    }
+    return ordered;
 }
 
 function relationshipTypesFromRow(row: any): string[] {
@@ -63,6 +86,22 @@ function relationshipTypesFromRow(row: any): string[] {
                 .sort()
         )
     );
+}
+
+async function pMap<T>(
+    items: T[],
+    fn: (item: T) => Promise<void>,
+    concurrency: number
+): Promise<void> {
+    let nextIndex = 0;
+    async function worker() {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex++;
+            await fn(items[currentIndex]);
+        }
+    }
+    const workerCount = Math.max(1, Math.min(concurrency, items.length));
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
 }
 
 export default defineEventHandler(async (event): Promise<EnrichResult> => {
@@ -87,10 +126,23 @@ export default defineEventHandler(async (event): Promise<EnrichResult> => {
     const seenRelationships = new Set<string>();
     const seenEvents = new Set<string>();
     const participantRelationshipType = 'schema::relationship::participant';
+    const runStartedAt = Date.now();
+    const hopMs: Array<{
+        depth: number;
+        ms: number;
+        sourceCount: number;
+        discoveredCount: number;
+    }> = [];
+    let relatedCalls = 0;
+    let relatedErrors = 0;
+    let eventCalls = 0;
+    let eventErrors = 0;
     let entitiesTruncated = false;
     let relationshipsTruncated = false;
     let eventsTruncated = false;
     let eventHubsTruncated = false;
+    const capsReached = () =>
+        entities.length >= maxEntities || relationships.length >= maxRelationships;
 
     function upsertEntity(row: any, fallbackFlavor: string): string | null {
         if (!row?.neid) return null;
@@ -178,9 +230,15 @@ export default defineEventHandler(async (event): Promise<EnrichResult> => {
 
     async function expandOneHop(sourceNeids: string[]): Promise<string[]> {
         const discovered = new Set<string>();
-        for (const neid of sortedUniqueNeids(sourceNeids)) {
-            for (const flavor of ENRICHMENT_FLAVORS) {
+        const tasks = sortedUniqueNeids(sourceNeids).flatMap((neid) =>
+            ENRICHMENT_FLAVORS.map((flavor) => ({ neid, flavor }))
+        );
+        await pMap(
+            tasks,
+            async ({ neid, flavor }) => {
+                if (capsReached()) return;
                 try {
+                    relatedCalls += 1;
                     const result = await mcpCallTool(
                         'elemental_get_related',
                         {
@@ -200,6 +258,7 @@ export default defineEventHandler(async (event): Promise<EnrichResult> => {
                         }
                     );
                     for (const rel of sortedRelationships) {
+                        if (capsReached()) break;
                         const targetNeid = upsertEntity(rel, flavor);
                         if (!targetNeid) continue;
                         const relationshipTypes = relationshipTypesFromRow(rel);
@@ -209,10 +268,12 @@ export default defineEventHandler(async (event): Promise<EnrichResult> => {
                         discovered.add(targetNeid);
                     }
                 } catch {
+                    relatedErrors += 1;
                     // Non-critical: skip flavors that error
                 }
-            }
-        }
+            },
+            RELATED_CALL_CONCURRENCY
+        );
         return Array.from(discovered).sort();
     }
 
@@ -223,8 +284,15 @@ export default defineEventHandler(async (event): Promise<EnrichResult> => {
         frontierVisited.add(neid);
     }
     for (let depth = 1; depth <= hops && frontier.length > 0; depth += 1) {
-        if (entities.length >= maxEntities && relationships.length >= maxRelationships) break;
+        if (capsReached()) break;
+        const hopStartedAt = Date.now();
+        const sourceCount = frontier.length;
         const discovered = await expandOneHop(frontier);
+        const hopElapsed = Date.now() - hopStartedAt;
+        hopMs.push({ depth, ms: hopElapsed, sourceCount, discoveredCount: discovered.length });
+        console.info(
+            `[enrich] hop ${depth} finished in ${hopElapsed}ms (sources=${sourceCount}, discovered=${discovered.length}, entities=${entities.length}, relationships=${relationships.length})`
+        );
         frontier = discovered.filter((neid) => {
             if (frontierVisited.has(neid)) return false;
             frontierVisited.add(neid);
@@ -232,63 +300,76 @@ export default defineEventHandler(async (event): Promise<EnrichResult> => {
         });
     }
 
+    let eventsMs = 0;
     if (includeEvents) {
+        const eventsStartedAt = Date.now();
         const sortedHubNeids = Array.from(frontierVisited).sort();
-        const eventHubNeids = sortedHubNeids.slice(0, maxEventHubs);
+        const prioritizedHubNeids = uniqueOrderedNeids([...body.anchorNeids, ...sortedHubNeids]);
+        const eventHubNeids = prioritizedHubNeids.slice(0, maxEventHubs);
         eventHubsTruncated = sortedHubNeids.length > eventHubNeids.length;
-        for (const hubNeid of eventHubNeids) {
-            if (events.length >= maxEvents) break;
-            try {
-                const result = await mcpCallTool(
-                    'elemental_get_events',
-                    {
-                        entity_id: { id_type: 'neid', id: hubNeid },
-                        limit: MAX_EVENTS_PER_HUB,
-                        include_participants: true,
-                    },
-                    { timeoutMs: EVENTS_TOOL_TIMEOUT_MS }
-                );
-                const sortedEvents = Array.from(result?.events ?? []).sort((a: any, b: any) =>
-                    normalizeNeid(String(a?.neid ?? '')).localeCompare(
-                        normalizeNeid(String(b?.neid ?? ''))
-                    )
-                );
-                for (const evt of sortedEvents) {
-                    if (events.length >= maxEvents) {
-                        eventsTruncated = true;
-                        break;
+        await pMap(
+            eventHubNeids,
+            async (hubNeid) => {
+                if (events.length >= maxEvents) return;
+                try {
+                    eventCalls += 1;
+                    const result = await mcpCallTool(
+                        'elemental_get_events',
+                        {
+                            entity_id: { id_type: 'neid', id: hubNeid },
+                            limit: MAX_EVENTS_PER_HUB,
+                            include_participants: true,
+                        },
+                        { timeoutMs: EVENTS_TOOL_TIMEOUT_MS }
+                    );
+                    const sortedEvents = Array.from(result?.events ?? []).sort((a: any, b: any) =>
+                        normalizeNeid(String(a?.neid ?? '')).localeCompare(
+                            normalizeNeid(String(b?.neid ?? ''))
+                        )
+                    );
+                    for (const evt of sortedEvents) {
+                        if (events.length >= maxEvents) {
+                            eventsTruncated = true;
+                            break;
+                        }
+                        const eventNeid = upsertEvent(evt);
+                        if (!eventNeid) continue;
+                        for (const participant of evt.participants ?? []) {
+                            if (!participant?.neid) continue;
+                            const participantNeid = upsertEntity(
+                                {
+                                    neid: participant.neid,
+                                    name: participant.name,
+                                    flavor: participant.flavor ?? 'organization',
+                                    properties: participant.properties ?? {},
+                                },
+                                'organization'
+                            );
+                            if (!participantNeid) continue;
+                            upsertRelationship(
+                                participantNeid,
+                                eventNeid,
+                                participantRelationshipType,
+                                {
+                                    properties: participant?.properties ?? {},
+                                    citations: Array.isArray(participant?.citations)
+                                        ? participant.citations
+                                        : [],
+                                }
+                            );
+                        }
                     }
-                    const eventNeid = upsertEvent(evt);
-                    if (!eventNeid) continue;
-                    for (const participant of evt.participants ?? []) {
-                        if (!participant?.neid) continue;
-                        const participantNeid = upsertEntity(
-                            {
-                                neid: participant.neid,
-                                name: participant.name,
-                                flavor: participant.flavor ?? 'organization',
-                                properties: participant.properties ?? {},
-                            },
-                            'organization'
-                        );
-                        if (!participantNeid) continue;
-                        upsertRelationship(
-                            participantNeid,
-                            eventNeid,
-                            participantRelationshipType,
-                            {
-                                properties: participant?.properties ?? {},
-                                citations: Array.isArray(participant?.citations)
-                                    ? participant.citations
-                                    : [],
-                            }
-                        );
-                    }
+                } catch {
+                    eventErrors += 1;
+                    // Non-critical: skip hubs that error
                 }
-            } catch {
-                // Non-critical: skip hubs that error
-            }
-        }
+            },
+            EVENT_CALL_CONCURRENCY
+        );
+        eventsMs = Date.now() - eventsStartedAt;
+        console.info(
+            `[enrich] event expansion finished in ${eventsMs}ms (hubs=${eventHubNeids.length}, events=${events.length})`
+        );
     }
 
     return {
@@ -309,6 +390,15 @@ export default defineEventHandler(async (event): Promise<EnrichResult> => {
             relationships: relationshipsTruncated,
             events: eventsTruncated,
             eventHubs: eventHubsTruncated,
+        },
+        diagnostics: {
+            totalMs: Date.now() - runStartedAt,
+            relatedCalls,
+            relatedErrors,
+            eventCalls,
+            eventErrors,
+            hopMs,
+            eventsMs,
         },
     };
 });

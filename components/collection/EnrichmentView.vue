@@ -1,59 +1,551 @@
 <template>
     <div class="d-flex flex-column ga-3">
         <v-tabs v-model="activeSubtab" density="compact" color="primary" class="mb-1">
+            <v-tab value="summary">
+                <v-icon start size="small">mdi-star-four-points-outline</v-icon>
+                What Enrichment Added
+            </v-tab>
+            <v-tab value="proof">
+                <v-icon start size="small">mdi-lightbulb-on-outline</v-icon>
+                Proof &amp; Stories
+            </v-tab>
             <v-tab value="graph">
                 <v-icon start size="small">mdi-graph-outline</v-icon>
-                Graph
+                Explore Graph
             </v-tab>
             <v-tab value="setup">
                 <v-icon start size="small">mdi-tune-variant</v-icon>
-                Setup
+                Settings
             </v-tab>
         </v-tabs>
 
         <v-window v-model="activeSubtab">
-            <v-window-item value="graph">
-                <v-card class="mb-3">
-                    <v-card-text class="d-flex align-center justify-space-between flex-wrap ga-2">
-                        <div class="d-flex align-center ga-2 flex-wrap">
-                            <template v-if="hasEnrichmentRun">
-                                <v-switch
-                                    v-model="showEnrichedEntities"
-                                    hide-details
-                                    density="compact"
-                                    color="info"
-                                    label="Show enriched entities"
-                                    class="mr-1"
-                                />
-                                <v-switch
-                                    v-model="showEnrichedRelationships"
-                                    hide-details
-                                    density="compact"
-                                    color="info"
-                                    label="Show enriched edges"
-                                />
-                            </template>
-                            <v-chip v-else size="small" variant="tonal" color="primary">
-                                Document graph only
-                            </v-chip>
-                            <v-chip size="small" variant="tonal" color="success">
-                                {{ visibleGraphEntityCount }} nodes
-                            </v-chip>
-                            <v-chip size="small" variant="tonal" color="primary">
-                                {{ visibleGraphRelationshipCount }} links
-                            </v-chip>
-                            <v-chip
-                                v-if="
-                                    hasEnrichmentRun &&
-                                    showEnrichedEntities &&
-                                    enrichmentCollapsedOrganizationCount > 0
-                                "
+            <v-window-item value="summary">
+                <v-alert v-if="!hasEnrichmentRun" type="info" variant="tonal" class="mb-3">
+                    Expand context after document extraction to reveal additional counterparties,
+                    lineage links, and related events outside the source documents.
+                </v-alert>
+                <template v-else>
+                    <v-card class="mb-3">
+                        <v-card-item>
+                            <v-card-title class="text-body-1"
+                                >Enrichment Value Summary</v-card-title
+                            >
+                            <v-card-subtitle>
+                                Documents gave us a strong baseline; context expansion adds broader
+                                network coverage around those same participants.
+                            </v-card-subtitle>
+                        </v-card-item>
+                        <v-card-text>
+                            <v-row>
+                                <v-col cols="12" md="6">
+                                    <div class="text-caption text-medium-emphasis mb-1">
+                                        From extracted documents
+                                    </div>
+                                    <div class="d-flex justify-space-between py-1">
+                                        <span class="text-body-2">Entities</span>
+                                        <span class="text-body-2 font-weight-medium">
+                                            {{ enrichmentValueSummary.documentEntityCount }}
+                                        </span>
+                                    </div>
+                                    <div class="d-flex justify-space-between py-1">
+                                        <span class="text-body-2">Relationships</span>
+                                        <span class="text-body-2 font-weight-medium">
+                                            {{ enrichmentValueSummary.documentRelationshipCount }}
+                                        </span>
+                                    </div>
+                                    <div class="d-flex justify-space-between py-1">
+                                        <span class="text-body-2">Events</span>
+                                        <span class="text-body-2 font-weight-medium">
+                                            {{
+                                                enrichmentValueSummary.totalEventCount -
+                                                enrichmentValueSummary.outsideEventCount
+                                            }}
+                                        </span>
+                                    </div>
+                                </v-col>
+                                <v-col cols="12" md="6">
+                                    <div class="text-caption text-medium-emphasis mb-1">
+                                        Added by context expansion
+                                    </div>
+                                    <div class="d-flex justify-space-between py-1">
+                                        <span class="text-body-2">New entities</span>
+                                        <span class="text-body-2 font-weight-medium text-blue">
+                                            {{ enrichmentValueSummary.enrichedEntityCount }}
+                                        </span>
+                                    </div>
+                                    <div class="d-flex justify-space-between py-1">
+                                        <span class="text-body-2">New relationships</span>
+                                        <span class="text-body-2 font-weight-medium text-blue">
+                                            {{ enrichmentValueSummary.enrichedRelationshipCount }}
+                                        </span>
+                                    </div>
+                                    <div class="d-flex justify-space-between py-1">
+                                        <span class="text-body-2">Outside related events</span>
+                                        <span class="text-body-2 font-weight-medium text-blue">
+                                            {{ enrichmentValueSummary.outsideEventCount }}
+                                        </span>
+                                    </div>
+                                    <div class="d-flex justify-space-between py-1">
+                                        <span class="text-body-2">Total events surfaced</span>
+                                        <span class="text-body-2 font-weight-medium text-blue">
+                                            {{ enrichmentValueSummary.totalEventCount }}
+                                        </span>
+                                    </div>
+                                </v-col>
+                            </v-row>
+                        </v-card-text>
+                    </v-card>
+
+                    <v-card>
+                        <v-card-item>
+                            <v-card-title class="text-body-1">Top Takeaways</v-card-title>
+                            <v-card-subtitle>
+                                High-signal stories surfaced from expanded graph context.
+                            </v-card-subtitle>
+                        </v-card-item>
+                        <v-card-text>
+                            <ul class="pl-5 mb-0">
+                                <li
+                                    v-for="(bullet, idx) in enrichmentTakeawayBullets"
+                                    :key="`takeaway:${idx}`"
+                                    class="text-body-2 mb-1"
+                                >
+                                    {{ bullet }}
+                                </li>
+                            </ul>
+                        </v-card-text>
+                    </v-card>
+                </template>
+            </v-window-item>
+
+            <v-window-item value="proof">
+                <v-alert v-if="!hasEnrichmentRun" type="info" variant="tonal" class="mb-3">
+                    Expand context first. This view surfaces evidence-backed stories connected to
+                    extracted entities.
+                </v-alert>
+                <template v-else>
+                    <v-alert type="info" variant="tonal" class="mb-3">
+                        Findings below include both collection-linked context and broader
+                        participant activity from the platform graph. Broader activity is not
+                        automatically the same deal.
+                    </v-alert>
+                    <v-alert
+                        v-if="enrichmentLanguageLoading"
+                        type="info"
+                        variant="tonal"
+                        class="mb-3"
+                    >
+                        Rewriting enrichment stories into plain-English summaries...
+                    </v-alert>
+                    <v-alert
+                        v-else-if="enrichmentLanguageError"
+                        type="warning"
+                        variant="tonal"
+                        class="mb-3"
+                    >
+                        {{ enrichmentLanguageError }}
+                    </v-alert>
+                    <v-alert v-if="enrichmentInsights.length === 0" type="info" variant="tonal">
+                        No enrichment stories were derived from this run. Try 2-hop expansion or
+                        include related events.
+                    </v-alert>
+                    <v-alert
+                        v-else-if="enrichmentInsights.length > 0"
+                        type="info"
+                        variant="tonal"
+                        class="mb-3"
+                    >
+                        <div class="d-flex align-center justify-space-between flex-wrap ga-2">
+                            <span class="text-body-2">
+                                Need synthesized themes across these stories?
+                            </span>
+                            <v-btn
                                 size="small"
                                 variant="tonal"
-                                color="info"
+                                color="primary"
+                                prepend-icon="mdi-chat-question-outline"
+                                @click="
+                                    launchAskYotta(
+                                        'Synthesize the main themes across these enrichment findings and ground each theme in specific entities and events.'
+                                    )
+                                "
                             >
-                                {{ enrichmentCollapsedOrganizationCount }} acquired orgs collapsed
-                            </v-chip>
+                                Ask Yotta for themes
+                            </v-btn>
+                        </div>
+                    </v-alert>
+
+                    <div v-if="enrichmentInsights.length > 0" class="d-flex flex-column ga-3">
+                        <v-card v-if="lineageInsights.length > 0">
+                            <v-card-item>
+                                <v-card-title class="text-body-1">Corporate Lineage</v-card-title>
+                                <v-card-subtitle>
+                                    Successor and predecessor links provide broader legal-entity
+                                    history around extracted participants.
+                                </v-card-subtitle>
+                            </v-card-item>
+                            <v-card-text class="d-flex flex-column ga-3">
+                                <v-card
+                                    v-for="insight in lineageInsights"
+                                    :key="insight.id"
+                                    variant="outlined"
+                                >
+                                    <v-card-item>
+                                        <v-card-title class="text-body-2">{{
+                                            insight.title
+                                        }}</v-card-title>
+                                        <v-card-subtitle>{{ insight.subtitle }}</v-card-subtitle>
+                                    </v-card-item>
+                                    <v-card-text>
+                                        <div class="text-body-2 font-weight-medium mb-2">
+                                            {{ insight.plainSummary }}
+                                        </div>
+                                        <div class="d-flex flex-wrap ga-1 mb-3">
+                                            <v-chip
+                                                v-if="insight.relevanceLabel"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="blue-grey"
+                                            >
+                                                Context:
+                                                {{ insight.relevanceLabel.replace(/_/g, ' ') }}
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.totalEventCount !== undefined"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="info"
+                                            >
+                                                {{ insight.totalEventCount }} linked events
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.sizeLabel"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="deep-purple"
+                                            >
+                                                {{ insight.sizeLabel }}
+                                            </v-chip>
+                                        </div>
+                                        <div class="text-caption text-medium-emphasis mb-1">
+                                            Document context
+                                        </div>
+                                        <div class="text-body-2 mb-3">
+                                            {{ insight.documentContext }}
+                                        </div>
+                                        <div class="text-caption text-medium-emphasis mb-1">
+                                            What platform context adds
+                                        </div>
+                                        <div class="text-body-2 mb-3">{{ insight.kgContext }}</div>
+                                        <div class="text-caption text-medium-emphasis mb-1">
+                                            Evidence
+                                        </div>
+                                        <div class="d-flex flex-wrap ga-1 mb-3">
+                                            <v-chip
+                                                v-for="line in insight.evidence"
+                                                :key="`${insight.id}:${line}`"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="info"
+                                            >
+                                                {{ line }}
+                                            </v-chip>
+                                        </div>
+                                        <div class="d-flex align-center ga-2">
+                                            <v-btn
+                                                size="small"
+                                                variant="tonal"
+                                                color="primary"
+                                                prepend-icon="mdi-chat-question-outline"
+                                                @click="launchAskYotta(insight.askPrompt)"
+                                            >
+                                                Ask Yotta
+                                            </v-btn>
+                                            <v-btn
+                                                v-if="insight.anchorNeid"
+                                                size="small"
+                                                variant="text"
+                                                @click="selectEntity(insight.anchorNeid)"
+                                            >
+                                                Open anchor
+                                            </v-btn>
+                                        </div>
+                                    </v-card-text>
+                                </v-card>
+                            </v-card-text>
+                        </v-card>
+
+                        <v-card v-if="broaderActivityInsights.length > 0">
+                            <v-card-item>
+                                <v-card-title class="text-body-1">
+                                    Broader Participant Activity
+                                </v-card-title>
+                                <v-card-subtitle>
+                                    These are outside events linked to the same participants. They
+                                    may be adjacent context rather than the same underlying deal.
+                                </v-card-subtitle>
+                            </v-card-item>
+                            <v-card-text class="d-flex flex-column ga-3">
+                                <v-card
+                                    v-for="insight in broaderActivityInsights"
+                                    :key="insight.id"
+                                    variant="outlined"
+                                >
+                                    <v-card-item>
+                                        <v-card-title class="text-body-2">{{
+                                            insight.title
+                                        }}</v-card-title>
+                                    </v-card-item>
+                                    <v-card-text>
+                                        <div class="text-body-2 font-weight-medium mb-2">
+                                            {{ insight.plainSummary }}
+                                        </div>
+                                        <div class="d-flex flex-wrap ga-1 mb-3">
+                                            <v-chip
+                                                v-if="insight.relevanceLabel"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="blue-grey"
+                                            >
+                                                Context:
+                                                {{ insight.relevanceLabel.replace(/_/g, ' ') }}
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.outsideEventCount !== undefined"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="info"
+                                            >
+                                                {{ insight.outsideEventCount }} outside events
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.counterpartyCount !== undefined"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="primary"
+                                            >
+                                                {{ insight.counterpartyCount }} counterparties
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.dateRangeLabel"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="indigo"
+                                            >
+                                                {{ insight.dateRangeLabel }}
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.sizeLabel"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="deep-purple"
+                                            >
+                                                {{ insight.sizeLabel }}
+                                            </v-chip>
+                                        </div>
+                                        <div class="text-body-2 mb-2">
+                                            {{ insight.documentContext }}
+                                        </div>
+                                        <div class="text-body-2 mb-3">{{ insight.kgContext }}</div>
+                                        <div class="text-caption text-medium-emphasis mb-1">
+                                            Notable outside events (examples)
+                                        </div>
+                                        <ul class="pl-5 mb-3">
+                                            <li
+                                                v-for="line in insight.evidence"
+                                                :key="`${insight.id}:${line}`"
+                                                class="text-body-2"
+                                            >
+                                                {{ line }}
+                                            </li>
+                                        </ul>
+                                        <v-btn
+                                            size="small"
+                                            variant="tonal"
+                                            color="primary"
+                                            prepend-icon="mdi-chat-question-outline"
+                                            @click="launchAskYotta(insight.askPrompt)"
+                                        >
+                                            Ask Yotta
+                                        </v-btn>
+                                    </v-card-text>
+                                </v-card>
+                            </v-card-text>
+                        </v-card>
+
+                        <v-card v-if="eventTimelineInsights.length > 0">
+                            <v-card-item>
+                                <v-card-title class="text-body-1"
+                                    >Expanded Timeline Context</v-card-title
+                                >
+                                <v-card-subtitle>
+                                    Timeline sequencing shows collection events alongside broader
+                                    participant-linked activity.
+                                </v-card-subtitle>
+                            </v-card-item>
+                            <v-card-text class="d-flex flex-column ga-3">
+                                <v-card
+                                    v-for="insight in eventTimelineInsights"
+                                    :key="insight.id"
+                                    variant="outlined"
+                                >
+                                    <v-card-item>
+                                        <v-card-title class="text-body-2">{{
+                                            insight.title
+                                        }}</v-card-title>
+                                    </v-card-item>
+                                    <v-card-text>
+                                        <div class="text-body-2 font-weight-medium mb-2">
+                                            {{ insight.plainSummary }}
+                                        </div>
+                                        <div class="d-flex flex-wrap ga-1 mb-3">
+                                            <v-chip
+                                                v-if="insight.totalEventCount !== undefined"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="info"
+                                            >
+                                                {{ insight.totalEventCount }} total events
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.sameDealEventCount !== undefined"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="success"
+                                            >
+                                                {{ insight.sameDealEventCount }} collection events
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.outsideEventCount !== undefined"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="primary"
+                                            >
+                                                {{ insight.outsideEventCount }} outside events
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.dateRangeLabel"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="indigo"
+                                            >
+                                                {{ insight.dateRangeLabel }}
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="insight.sizeLabel"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="deep-purple"
+                                            >
+                                                {{ insight.sizeLabel }}
+                                            </v-chip>
+                                        </div>
+                                        <div class="text-body-2 mb-2">
+                                            {{ insight.documentContext }}
+                                        </div>
+                                        <div class="text-body-2 mb-3">{{ insight.kgContext }}</div>
+                                        <div class="text-caption text-medium-emphasis mb-1">
+                                            Timeline points
+                                        </div>
+                                        <ul class="pl-5 mb-3">
+                                            <li
+                                                v-for="line in insight.evidence"
+                                                :key="`${insight.id}:${line}`"
+                                                class="text-body-2"
+                                            >
+                                                {{ line }}
+                                            </li>
+                                        </ul>
+                                        <v-btn
+                                            size="small"
+                                            variant="tonal"
+                                            color="primary"
+                                            prepend-icon="mdi-chat-question-outline"
+                                            @click="launchAskYotta(insight.askPrompt)"
+                                        >
+                                            Ask Yotta
+                                        </v-btn>
+                                    </v-card-text>
+                                </v-card>
+                            </v-card-text>
+                        </v-card>
+
+                        <v-card v-if="peopleAffiliationInsights.length > 0">
+                            <v-card-item>
+                                <v-card-title class="text-body-1"
+                                    >People and Affiliations</v-card-title
+                                >
+                                <v-card-subtitle>
+                                    Person-to-organization links reveal context outside extraction.
+                                </v-card-subtitle>
+                            </v-card-item>
+                            <v-card-text class="d-flex flex-column ga-3">
+                                <v-card
+                                    v-for="insight in peopleAffiliationInsights"
+                                    :key="insight.id"
+                                    variant="outlined"
+                                >
+                                    <v-card-item>
+                                        <v-card-title class="text-body-2">{{
+                                            insight.title
+                                        }}</v-card-title>
+                                    </v-card-item>
+                                    <v-card-text>
+                                        <div class="text-body-2 font-weight-medium mb-2">
+                                            {{ insight.plainSummary }}
+                                        </div>
+                                        <div class="text-body-2 mb-2">
+                                            {{ insight.documentContext }}
+                                        </div>
+                                        <div class="text-body-2 mb-3">{{ insight.kgContext }}</div>
+                                        <div class="d-flex flex-wrap ga-1 mb-3">
+                                            <v-chip
+                                                v-for="line in insight.evidence"
+                                                :key="`${insight.id}:${line}`"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="info"
+                                            >
+                                                {{ line }}
+                                            </v-chip>
+                                        </div>
+                                        <v-btn
+                                            size="small"
+                                            variant="tonal"
+                                            color="primary"
+                                            prepend-icon="mdi-chat-question-outline"
+                                            @click="launchAskYotta(insight.askPrompt)"
+                                        >
+                                            Ask Yotta
+                                        </v-btn>
+                                    </v-card-text>
+                                </v-card>
+                            </v-card-text>
+                        </v-card>
+                    </div>
+                </template>
+            </v-window-item>
+
+            <v-window-item value="graph">
+                <v-card class="mb-3">
+                    <v-card-text class="d-flex align-center justify-space-between flex-wrap ga-3">
+                        <div class="d-flex align-center ga-2 flex-wrap">
+                            <v-switch
+                                v-model="showEnrichedEntities"
+                                hide-details
+                                density="compact"
+                                color="info"
+                                label="Show expanded entities"
+                                class="mr-1"
+                            />
+                            <v-switch
+                                v-model="showEnrichedRelationships"
+                                hide-details
+                                density="compact"
+                                color="info"
+                                label="Show expanded relationships"
+                            />
                         </div>
                         <div class="text-caption text-medium-emphasis">
                             {{ graphModeDescription }}
@@ -71,8 +563,8 @@
                     variant="tonal"
                     class="mb-3"
                 >
-                    Expanded mode adds broader Yottagraph context while merging acquired banks into
-                    surviving parent organizations to keep the view readable.
+                    Expanded view adds broader platform context while merging acquired banks into
+                    surviving parent organizations to keep the graph readable.
                 </v-alert>
 
                 <v-card
@@ -91,8 +583,8 @@
                             </v-chip>
                         </v-card-title>
                         <v-card-subtitle>
-                            Each row lists acquired organizations that are merged into one surviving
-                            parent node.
+                            Each row lists acquired organizations merged into one surviving parent
+                            node.
                         </v-card-subtitle>
                     </v-card-item>
                     <v-card-text class="pt-0">
@@ -141,96 +633,98 @@
                 <v-alert v-if="!enrichmentLastRun" type="info" variant="tonal" class="mb-3">
                     <div class="text-body-2 font-weight-medium mb-1">Quick start</div>
                     <ol class="pl-5 mb-1">
-                        <li>Select 3-5 anchor entities from the document graph.</li>
-                        <li>Start with 1-hop expansion for a focused first pass.</li>
-                        <li>Run Expand Context, then review the result in Graph.</li>
+                        <li>Choose expansion depth.</li>
+                        <li>Turn on related events if you want timeline context.</li>
+                        <li>Run Expand Context to load broader graph coverage.</li>
                     </ol>
                 </v-alert>
 
                 <v-row class="mb-4">
-                    <v-col cols="12" md="8">
-                        <v-card>
-                            <v-card-item>
-                                <v-card-title class="text-body-1"
-                                    >Select Anchor Entities</v-card-title
-                                >
-                                <v-card-subtitle>
-                                    Choose document-derived anchors, then expand into Yottagraph
-                                    context.
-                                </v-card-subtitle>
-                            </v-card-item>
-                            <v-card-text>
-                                <v-text-field
-                                    v-model="anchorSearch"
-                                    label="Search entities"
-                                    density="compact"
-                                    variant="outlined"
-                                    prepend-inner-icon="mdi-magnify"
-                                    clearable
-                                    hide-details
-                                    class="mb-3"
-                                />
-
-                                <div style="max-height: 300px; overflow-y: auto">
-                                    <v-list density="compact" class="pa-0">
-                                        <v-list-item
-                                            v-for="entity in filteredAnchors"
-                                            :key="entity.neid"
-                                            @click="toggleAnchor(entity.neid)"
-                                        >
-                                            <template #prepend>
-                                                <v-checkbox-btn
-                                                    :model-value="
-                                                        selectedAnchorSet.has(entity.neid)
-                                                    "
-                                                    color="primary"
-                                                    @click.stop="toggleAnchor(entity.neid)"
-                                                />
-                                            </template>
-                                            <v-list-item-title class="text-body-2">
-                                                {{ entity.name }}
-                                            </v-list-item-title>
-                                            <v-list-item-subtitle class="text-caption">
-                                                {{ entity.flavor }}
-                                            </v-list-item-subtitle>
-                                        </v-list-item>
-                                    </v-list>
-                                </div>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-
-                    <v-col cols="12" md="4">
+                    <v-col cols="12" md="6">
                         <v-card>
                             <v-card-item>
                                 <v-card-title class="text-body-1">Expansion Settings</v-card-title>
                             </v-card-item>
                             <v-card-text>
                                 <div class="text-body-2 mb-2">
-                                    Selected anchors: {{ selectedAnchors.length }}
+                                    Enrichable anchors in this collection:
+                                    {{ autoEnrichmentAnchors.length }}
                                 </div>
                                 <div
-                                    v-if="selectedAnchors.length === 0"
+                                    v-if="autoEnrichmentAnchors.length === 0"
                                     class="text-caption text-medium-emphasis mb-2"
                                 >
-                                    Select at least one anchor to run enrichment.
+                                    No enrichable anchors were found in extracted entities.
                                 </div>
+                                <v-expansion-panels
+                                    v-else
+                                    variant="accordion"
+                                    class="mb-3"
+                                    density="compact"
+                                >
+                                    <v-expansion-panel>
+                                        <v-expansion-panel-title class="text-body-2 py-2">
+                                            Included anchors ({{
+                                                autoEnrichmentAnchorEntities.length
+                                            }})
+                                        </v-expansion-panel-title>
+                                        <v-expansion-panel-text class="pt-2">
+                                            <div class="d-flex flex-wrap ga-1">
+                                                <v-chip
+                                                    v-for="entity in autoEnrichmentAnchorEntities"
+                                                    :key="entity.neid"
+                                                    size="x-small"
+                                                    variant="tonal"
+                                                    :title="entity.name"
+                                                    :color="
+                                                        entity.presentInCollection
+                                                            ? 'primary'
+                                                            : 'secondary'
+                                                    "
+                                                    :class="
+                                                        entity.presentInCollection
+                                                            ? 'app-click-target'
+                                                            : undefined
+                                                    "
+                                                    @click="
+                                                        entity.presentInCollection &&
+                                                        selectEntity(entity.neid)
+                                                    "
+                                                >
+                                                    {{ entity.label }} · {{ entity.typeLabel }}
+                                                </v-chip>
+                                            </div>
+                                            <div
+                                                v-if="autoEnrichmentContextAnchorCount > 0"
+                                                class="text-caption text-medium-emphasis mt-2"
+                                            >
+                                                Added {{ autoEnrichmentContextAnchorCount }} related
+                                                context anchor{{
+                                                    autoEnrichmentContextAnchorCount === 1
+                                                        ? ''
+                                                        : 's'
+                                                }}
+                                                based on extracted participants.
+                                            </div>
+                                        </v-expansion-panel-text>
+                                    </v-expansion-panel>
+                                </v-expansion-panels>
 
                                 <v-radio-group v-model="hopsModel" inline hide-details class="mb-3">
-                                    <v-radio label="1-hop" :value="1" />
-                                    <v-radio label="2-hop" :value="2" />
+                                    <v-radio label="1-hop (focused)" :value="1" />
+                                    <v-radio label="2-hop (broader)" :value="2" />
                                 </v-radio-group>
                                 <v-switch
                                     v-model="includeEventsModel"
                                     color="primary"
                                     hide-details
                                     density="comfortable"
-                                    label="Include related events in enrichment"
+                                    label="Include related events"
                                     class="mb-2"
                                 />
                                 <div class="text-caption text-medium-emphasis mb-3">
-                                    Recommendation: start with 1-hop, then use 2-hop with a narrow
-                                    anchor set.
+                                    Start with 1-hop for quick signal, then use 2-hop for broader
+                                    context.
                                 </div>
 
                                 <v-btn
@@ -238,81 +732,108 @@
                                     block
                                     prepend-icon="mdi-arrow-expand-all"
                                     :loading="enriching"
-                                    :disabled="selectedAnchors.length === 0"
+                                    :disabled="
+                                        !isReady ||
+                                        documentEntities.length === 0 ||
+                                        autoEnrichmentAnchors.length === 0
+                                    "
                                     @click="runEnrichment"
                                 >
                                     Expand Context
                                 </v-btn>
 
-                                <v-btn
-                                    variant="text"
-                                    size="small"
-                                    class="mt-2"
-                                    :disabled="!isReady"
-                                    @click="autoSelectAnchors"
-                                >
-                                    Auto-select highest-impact anchors
-                                </v-btn>
-                                <div class="text-caption text-medium-emphasis mt-1">
-                                    Highest-impact anchors are ranked by current graph connectivity.
-                                </div>
+                                <v-expand-transition>
+                                    <v-card
+                                        v-if="enriching"
+                                        variant="tonal"
+                                        color="primary"
+                                        class="mt-3"
+                                    >
+                                        <v-card-text class="pb-2">
+                                            <div
+                                                class="d-flex align-center justify-space-between flex-wrap ga-2 mb-2"
+                                            >
+                                                <div class="d-flex align-center ga-2">
+                                                    <v-icon size="18" class="enrichment-spinner">
+                                                        mdi-sync
+                                                    </v-icon>
+                                                    <span class="text-body-2 font-weight-medium">
+                                                        Context expansion in progress
+                                                    </span>
+                                                </div>
+                                                <span class="text-caption text-medium-emphasis">
+                                                    {{ enrichmentProgressSeconds }}s elapsed
+                                                </span>
+                                            </div>
+                                            <div class="text-caption text-medium-emphasis mb-2">
+                                                {{ enrichmentProgressStage }}
+                                            </div>
+                                            <v-progress-linear
+                                                indeterminate
+                                                color="primary"
+                                                rounded
+                                                height="6"
+                                            />
+                                        </v-card-text>
+                                    </v-card>
+                                </v-expand-transition>
 
                                 <div
                                     v-if="enrichmentLastRun"
                                     class="text-caption text-medium-emphasis mt-3"
                                 >
                                     Last run: {{ enrichmentLastRun.anchorNeids.length }} anchors,
-                                    hop
-                                    {{ enrichmentLastRun.hops }}
+                                    {{ enrichmentLastRun.hops }}-hop
                                     <span v-if="enrichmentLastRun.includeEvents">
                                         , with related events
                                     </span>
                                 </div>
                             </v-card-text>
                         </v-card>
-
-                        <v-card class="mt-3">
+                    </v-col>
+                    <v-col cols="12" md="6">
+                        <v-card>
                             <v-card-item>
-                                <v-card-title class="text-body-1">What This Changes</v-card-title>
+                                <v-card-title class="text-body-1">Impact Preview</v-card-title>
                             </v-card-item>
                             <v-card-text>
                                 <div class="d-flex justify-space-between py-1">
-                                    <span class="text-body-2">Document-derived entities</span>
+                                    <span class="text-body-2">Document entities</span>
                                     <span class="text-body-2 font-weight-medium text-green">
                                         {{ documentEntities.length }}
                                     </span>
                                 </div>
                                 <div class="d-flex justify-space-between py-1">
-                                    <span class="text-body-2">New context entities</span>
+                                    <span class="text-body-2">Added context entities</span>
                                     <span class="text-body-2 font-weight-medium text-blue">
                                         {{ enrichedEntities.length }}
                                     </span>
                                 </div>
                                 <div class="d-flex justify-space-between py-1">
-                                    <span class="text-body-2">Document-derived links</span>
+                                    <span class="text-body-2">Document relationships</span>
                                     <span class="text-body-2 font-weight-medium text-green">
                                         {{ documentRelationshipCount }}
                                     </span>
                                 </div>
                                 <div class="d-flex justify-space-between py-1">
-                                    <span class="text-body-2">New context links</span>
+                                    <span class="text-body-2">Added context relationships</span>
                                     <span class="text-body-2 font-weight-medium text-blue">
                                         {{ enrichedRelationshipCount }}
                                     </span>
                                 </div>
                                 <v-divider class="my-2" />
                                 <div class="d-flex justify-space-between py-1">
-                                    <span class="text-body-2 font-weight-medium"
-                                        >Combined total</span
-                                    >
+                                    <span class="text-body-2 font-weight-medium">
+                                        Combined entities
+                                    </span>
                                     <span class="text-body-2 font-weight-medium">
                                         {{ documentEntities.length + enrichedEntities.length }}
                                     </span>
                                 </div>
                                 <div class="d-flex justify-space-between py-1">
-                                    <span class="text-body-2 font-weight-medium"
-                                        >Combined links</span
-                                    >
+                                    <span class="text-body-2 font-weight-medium">
+                                        Combined relationships
+                                    </span>
                                     <span class="text-body-2 font-weight-medium">
                                         {{ documentRelationshipCount + enrichedRelationshipCount }}
                                     </span>
@@ -325,7 +846,7 @@
                 <v-card v-if="enrichedEntities.length > 0">
                     <v-card-item>
                         <v-card-title class="text-body-1">
-                            Enriched Entities
+                            Added Context Entities
                             <v-chip size="x-small" variant="tonal" color="info" class="ml-2">
                                 {{ enrichedEntities.length }}
                             </v-chip>
@@ -342,7 +863,7 @@
                         >
                             <template #item.origin="{ item }">
                                 <v-chip size="x-small" variant="tonal" color="info">
-                                    {{ item.origin }}
+                                    {{ originLabel(item.origin) }}
                                 </v-chip>
                             </template>
                         </v-data-table>
@@ -354,8 +875,14 @@
 </template>
 
 <script setup lang="ts">
-    const AUTO_SELECT_ALLOWLIST = new Set<string>([
-        // High-signal enrichable anchors from Docs/enrichment-analysis.md
+    const emit = defineEmits<{
+        (e: 'open-chat', prompt: string): void;
+    }>();
+
+    const ENRICHABLE_ANCHOR_NEIDS = new Set<string>([
+        // Enrichable extracted entities from Docs/enrichment-analysis.md executive summary
+        '08749664511655725314', // The Hongkong and Shanghai Banking Corporation Limited, Singapore Branch
+        '05384086983174826493', // Bank of New York Mellon Corporation (BNY Mellon)
         '06157989400122873900', // HSBC Bank USA, National Association
         '05477621199116204617', // Orrick, Herrington & Sutcliffe, LLP
         '02080889041561724035', // Orrick
@@ -366,27 +893,31 @@
         '04008955034518895738', // ARTHUR KLEIN
         '07942829951042429385', // 97-77 QUEENS BLVD. REGO PARK, N.Y. 11374
     ]);
-    const AUTO_SELECT_BLOCKLIST = new Set<string>([
-        // Broad/global anchors that tend to produce noisy expansions
-        '08749664511655725314', // The Hongkong and Shanghai Banking Corporation Limited, Singapore Branch
-        '08883522583676895375', // United States Department of the Treasury
-        '07404718453994080710', // The Treasury
-        '08378183269956851171', // United States
-        '05384086983174826493', // Bank of New York Mellon Corporation (BNY Mellon)
-        '04648605347073135218', // New York
-        '05716789654794197421', // Dallas
-        '01054548445358605934', // Trenton, New Jersey
-    ]);
+    const CURATED_CONTEXT_ANCHORS = [
+        {
+            neid: '08749664511655725314',
+            name: 'The Hongkong and Shanghai Banking Corporation Limited, Singapore Branch',
+            label: 'HSBC Singapore Branch',
+            typeLabel: 'organization',
+        },
+        {
+            neid: '06967031221082229818',
+            name: 'UNITED JERSEY BANK/CENTRAL,',
+            label: 'United Jersey Bank/Central',
+            typeLabel: 'organization',
+        },
+    ] as const;
+    const HSBC_US_NEID = '06157989400122873900';
+    const REPUBLIC_NEID = '04824620677155774613';
 
     const {
         documentEntities,
         enrichedEntities,
+        relationships,
         enriching,
         isReady,
         enrich,
         selectEntity,
-        relationships,
-        enrichmentAnchorNeids,
         enrichmentHops,
         enrichmentIncludeEvents,
         hasEnrichmentRun,
@@ -397,21 +928,152 @@
         enrichmentSupersetGraphRelationships,
         enrichmentCollapsedOrganizationCount,
         enrichmentCollapsedRepresentativeByNeid,
-        setEnrichmentAnchors,
+        enrichmentInsights,
+        enrichmentTakeawayBullets,
+        enrichmentValueSummary,
+        lineageInsights,
+        broaderActivityInsights,
+        eventTimelineInsights,
+        peopleAffiliationInsights,
+        enrichmentLanguageLoading,
+        enrichmentLanguageError,
         setEnrichmentHops,
         setEnrichmentIncludeEvents,
     } = useCollectionWorkspace();
 
-    const activeSubtab = ref<'graph' | 'setup'>(enrichmentLastRun.value ? 'graph' : 'setup');
-    const anchorSearch = ref('');
+    const activeSubtab = ref<'summary' | 'proof' | 'graph' | 'setup'>(
+        enrichmentLastRun.value ? 'summary' : 'setup'
+    );
     const showEnrichedEntities = ref(true);
     const showEnrichedRelationships = ref(true);
+    const enrichmentProgressStartMs = ref<number | null>(null);
+    const enrichmentProgressNowMs = ref(Date.now());
+    let enrichmentProgressTimer: ReturnType<typeof setInterval> | null = null;
 
-    const selectedAnchors = computed<string[]>({
-        get: () => enrichmentAnchorNeids.value,
-        set: (anchors) => setEnrichmentAnchors(anchors),
+    const enrichmentProgressSeconds = computed(() => {
+        if (!enrichmentProgressStartMs.value) return 0;
+        return Math.max(
+            1,
+            Math.floor((enrichmentProgressNowMs.value - enrichmentProgressStartMs.value) / 1000)
+        );
     });
-    const selectedAnchorSet = computed(() => new Set(selectedAnchors.value));
+    const enrichmentProgressStage = computed(() => {
+        if (!enriching.value) return '';
+        const seconds = enrichmentProgressSeconds.value;
+        if (seconds < 4) return 'Finding connected entities from selected anchors...';
+        if (seconds < 9) return 'Loading relationships across the expanded context...';
+        if (seconds < 15) return 'Collecting related events and participants...';
+        return 'Finalizing expanded graph results...';
+    });
+
+    function startEnrichmentProgressAnimation(): void {
+        enrichmentProgressStartMs.value = Date.now();
+        enrichmentProgressNowMs.value = Date.now();
+        if (enrichmentProgressTimer) clearInterval(enrichmentProgressTimer);
+        enrichmentProgressTimer = setInterval(() => {
+            enrichmentProgressNowMs.value = Date.now();
+        }, 300);
+    }
+
+    function stopEnrichmentProgressAnimation(): void {
+        if (enrichmentProgressTimer) {
+            clearInterval(enrichmentProgressTimer);
+            enrichmentProgressTimer = null;
+        }
+        enrichmentProgressStartMs.value = null;
+    }
+
+    function normalizeAnchorName(name: string): string {
+        return name.trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+
+    function anchorDisplayLabel(entity: { neid: string; name: string }): string {
+        if (entity.neid === '05384086983174826493') return 'BNY Mellon';
+        if (entity.neid === '06157989400122873900') return 'HSBC Bank USA';
+        if (entity.neid === '08749664511655725314') return 'HSBC Singapore Branch';
+        if (entity.neid === '06967031221082229818') return 'United Jersey Bank/Central';
+        return entity.name;
+    }
+
+    const documentEntityByNeid = computed(
+        () => new Map(documentEntities.value.map((entity) => [entity.neid, entity] as const))
+    );
+    const documentEntityNames = computed(
+        () => new Set(documentEntities.value.map((entity) => normalizeAnchorName(entity.name)))
+    );
+    const hasHsbcFamilyDocumentContext = computed(
+        () =>
+            documentEntityByNeid.value.has(HSBC_US_NEID) ||
+            documentEntityByNeid.value.has(REPUBLIC_NEID) ||
+            documentEntities.value.some((entity) =>
+                normalizeAnchorName(entity.name).includes('hsbc')
+            )
+    );
+    const hasUnitedJerseyDocumentContext = computed(
+        () =>
+            documentEntityByNeid.value.has('06967031221082229818') ||
+            documentEntityNames.value.has(normalizeAnchorName('UNITED JERSEY BANK')) ||
+            documentEntities.value.some((entity) =>
+                normalizeAnchorName(entity.name).includes('united jersey bank')
+            )
+    );
+    const autoEnrichmentAnchorEntities = computed(() => {
+        const anchors = new Map<
+            string,
+            {
+                neid: string;
+                name: string;
+                label: string;
+                typeLabel: string;
+                presentInCollection: boolean;
+                source: 'document' | 'context';
+            }
+        >();
+
+        for (const entity of documentEntities.value) {
+            if (!ENRICHABLE_ANCHOR_NEIDS.has(entity.neid)) continue;
+            anchors.set(entity.neid, {
+                neid: entity.neid,
+                name: entity.name,
+                label: anchorDisplayLabel(entity),
+                typeLabel: entity.flavor.replace(/_/g, ' '),
+                presentInCollection: true,
+                source: 'document',
+            });
+        }
+
+        if (hasHsbcFamilyDocumentContext.value) {
+            const branchAnchor = CURATED_CONTEXT_ANCHORS[0];
+            if (!anchors.has(branchAnchor.neid)) {
+                anchors.set(branchAnchor.neid, {
+                    ...branchAnchor,
+                    presentInCollection: false,
+                    source: 'context',
+                });
+            }
+        }
+
+        if (hasUnitedJerseyDocumentContext.value) {
+            const ujbAnchor = CURATED_CONTEXT_ANCHORS[1];
+            if (!anchors.has(ujbAnchor.neid)) {
+                anchors.set(ujbAnchor.neid, {
+                    ...ujbAnchor,
+                    presentInCollection: false,
+                    source: 'context',
+                });
+            }
+        }
+
+        return Array.from(anchors.values()).sort((a, b) => a.name.localeCompare(b.name));
+    });
+    const autoEnrichmentAnchors = computed(() =>
+        autoEnrichmentAnchorEntities.value.map((entity) => entity.neid)
+    );
+    const autoEnrichmentContextAnchorCount = computed(
+        () =>
+            autoEnrichmentAnchorEntities.value.filter((entity) => entity.source === 'context')
+                .length
+    );
     const hopsModel = computed<1 | 2>({
         get: () => enrichmentHops.value,
         set: (hops) => setEnrichmentHops(hops),
@@ -431,42 +1093,20 @@
             ? enrichmentSupersetGraphRelationships.value
             : enrichmentDocumentGraphRelationships.value
     );
-    const enrichedEntityNeidSet = computed(
-        () => new Set(enrichedEntities.value.map((e) => e.neid))
-    );
-    const visibleGraphEntityCount = computed(() =>
-        showEnrichedEntities.value
-            ? activeGraphEntities.value.length
-            : activeGraphEntities.value.filter((entity) => entity.origin !== 'enriched').length
-    );
-    const visibleGraphRelationshipCount = computed(() => {
-        let list = activeGraphRelationships.value;
-        if (!showEnrichedRelationships.value) {
-            list = list.filter((relationship) => relationship.origin !== 'enriched');
-        }
-        if (!showEnrichedEntities.value) {
-            list = list.filter(
-                (relationship) =>
-                    !enrichedEntityNeidSet.value.has(relationship.sourceNeid) &&
-                    !enrichedEntityNeidSet.value.has(relationship.targetNeid)
-            );
-        }
-        return list.length;
-    });
     const graphModeDescription = computed(() => {
         if (!hasEnrichmentRun.value) {
-            return 'Showing source-derived document graph. Run Expand Context to reveal broader graph context.';
+            return 'Showing the document-only graph. Run Expand Context to reveal broader connections.';
         }
         if (!showEnrichedEntities.value && !showEnrichedRelationships.value) {
-            return 'Expanded graph loaded; enriched layer is hidden.';
+            return 'Expanded graph is loaded, with added entities and relationships hidden.';
         }
         if (!showEnrichedEntities.value) {
-            return 'Showing document entities with selected enriched edges hidden.';
+            return 'Showing document entities while hiding added entities.';
         }
         if (!showEnrichedRelationships.value) {
-            return 'Showing enriched entities while hiding enriched edges.';
+            return 'Showing added entities while hiding added relationships.';
         }
-        return 'Expanded graph overlays Yottagraph context on top of document-derived structure.';
+        return 'Expanded graph overlays broader platform context on top of document-derived structure.';
     });
     const documentRelationshipCount = computed(
         () =>
@@ -519,74 +1159,38 @@
             .sort((a, b) => b.collapsedMembers.length - a.collapsedMembers.length);
     });
 
-    const filteredAnchors = computed(() => {
-        let list = documentEntities.value;
-        if (anchorSearch.value) {
-            const query = anchorSearch.value.toLowerCase();
-            list = list.filter((entity) => entity.name.toLowerCase().includes(query));
-        }
-        return list.slice(0, 80);
-    });
-
-    function toggleAnchor(neid: string) {
-        const next = new Set(selectedAnchorSet.value);
-        if (next.has(neid)) next.delete(neid);
-        else next.add(neid);
-        selectedAnchors.value = Array.from(next);
-    }
-
     async function runEnrichment() {
-        await enrich(selectedAnchors.value, hopsModel.value, includeEventsModel.value);
-        showEnrichedEntities.value = true;
-        showEnrichedRelationships.value = true;
-        activeSubtab.value = 'graph';
+        const anchors = autoEnrichmentAnchors.value;
+        if (anchors.length === 0) return;
+        startEnrichmentProgressAnimation();
+        try {
+            await enrich(anchors, hopsModel.value, includeEventsModel.value);
+            showEnrichedEntities.value = true;
+            showEnrichedRelationships.value = true;
+            activeSubtab.value = 'summary';
+        } finally {
+            stopEnrichmentProgressAnimation();
+        }
     }
 
-    function autoSelectAnchors() {
-        const connectionCount = new Map<string, number>();
-        for (const relationship of relationships.value) {
-            connectionCount.set(
-                relationship.sourceNeid,
-                (connectionCount.get(relationship.sourceNeid) || 0) + 1
-            );
-            connectionCount.set(
-                relationship.targetNeid,
-                (connectionCount.get(relationship.targetNeid) || 0) + 1
-            );
-        }
-
-        const curatedTopAnchors = documentEntities.value
-            .filter(
-                (entity) =>
-                    AUTO_SELECT_ALLOWLIST.has(entity.neid) &&
-                    !AUTO_SELECT_BLOCKLIST.has(entity.neid)
-            )
-            .map((entity) => ({ neid: entity.neid, count: connectionCount.get(entity.neid) || 0 }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 5)
-            .map((item) => item.neid);
-
-        if (curatedTopAnchors.length > 0) {
-            selectedAnchors.value = curatedTopAnchors;
-            return;
-        }
-
-        // Fallback for new collections: rank document entities by local connectivity,
-        // but keep known noisy/global anchors out of the default selection.
-        const fallbackTopAnchors = documentEntities.value
-            .filter((entity) => !AUTO_SELECT_BLOCKLIST.has(entity.neid))
-            .map((entity) => ({ neid: entity.neid, count: connectionCount.get(entity.neid) || 0 }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 5)
-            .map((item) => item.neid);
-
-        selectedAnchors.value = fallbackTopAnchors;
+    function launchAskYotta(prompt: string) {
+        emit('open-chat', prompt);
     }
+
+    function originLabel(origin: string): string {
+        if (origin === 'document') return 'Document';
+        if (origin === 'enriched') return 'Context';
+        return 'Agent';
+    }
+
+    onBeforeUnmount(() => {
+        stopEnrichmentProgressAnimation();
+    });
 
     const enrichedHeaders = [
         { title: 'Name', key: 'name', sortable: true },
         { title: 'Type', key: 'flavor', sortable: true },
-        { title: 'Origin', key: 'origin', sortable: false },
+        { title: 'Source', key: 'origin', sortable: false },
     ];
 </script>
 
@@ -603,5 +1207,18 @@
 
     .lineage-entity-btn:hover {
         text-decoration: underline;
+    }
+
+    .enrichment-spinner {
+        animation: enrichment-spin 1s linear infinite;
+    }
+
+    @keyframes enrichment-spin {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>

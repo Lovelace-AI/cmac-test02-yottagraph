@@ -49,23 +49,24 @@
             <DealSummaryCard
                 :fields="overview.dealSummaryFields"
                 :status="overview.status"
+                :narrative-paragraphs="narrativeParagraphs"
+                :citation-count="narrativeCitations.length"
+                :is-regenerating="narrativeLoading"
+                @regenerate="loadOverviewLanguage"
                 @run-analysis="handleRunAnalysis"
             />
-            <ExtractionStatsCard
-                :stats="overview.extractionStats"
-                :status="overview.status"
-                @run-analysis="handleRunAnalysis"
-            />
+            <div class="overview-rail">
+                <div class="overview-rail-panels">
+                    <ExtractionStatsCard
+                        :stats="overview.extractionStats"
+                        :status="overview.status"
+                        :stacked="true"
+                        @run-analysis="handleRunAnalysis"
+                    />
+                    <SourceDocumentsCompactCard :documents="overview.documents" />
+                </div>
+            </div>
         </div>
-
-        <AICaseStudyNarrativeCard
-            :narrative-paragraphs="narrativeParagraphs"
-            :citation-count="narrativeCitations.length"
-            :status="overview.status"
-            :is-regenerating="narrativeLoading"
-            @regenerate="loadOverviewLanguage"
-            @run-analysis="handleRunAnalysis"
-        />
 
         <SourceDocumentsTable
             :documents="overview.documents"
@@ -73,8 +74,6 @@
             @entities="handleViewEntities"
             @citations="handleViewCitations"
         />
-
-        <ExploreNextGrid :cards="overview.exploreCards" @open="setTab" />
     </div>
 </template>
 
@@ -82,12 +81,12 @@
     const {
         overviewViewModel,
         meta,
+        entities,
         isReady,
         rebuilding,
         rebuild,
         rebuildSteps,
         setTab,
-        focusDocument,
         addGeminiUsage,
     } = useCollectionWorkspace();
 
@@ -104,19 +103,90 @@
         rebuildSteps.value.reduce((sum, step) => sum + (step.durationMs ?? 0), 0)
     );
 
-    watch(rebuilding, (isRunning) => {
-        if (isRunning) pipelineExpanded.value = true;
+    watch(rebuilding, (isRunning, wasRunning) => {
+        if (isRunning) {
+            pipelineExpanded.value = true;
+            return;
+        }
+        if (!isRunning && wasRunning && isReady.value && overview.value.status !== 'error') {
+            pipelineExpanded.value = false;
+        }
     });
-    const narrativeParagraphs = computed(() => {
-        const narrative =
-            liveNarrative.value ||
-            (overview.value.status === 'pending' || overview.value.status === 'processing'
-                ? ''
-                : `${overview.value.collectionName} includes ${overview.value.documentCount} source documents that have been translated into a connected transaction graph.\n\nElemental identified major parties, agreements, events, and relationships and turned them into a coherent analytical baseline for downstream validation and enrichment.`);
-        return narrative
-            .split(/\n+/)
-            .map((item) => item.trim())
+
+    function normalizeWhitespace(input: string): string {
+        return input.replace(/\s+/g, ' ').trim();
+    }
+
+    function firstSentences(input: string, maxSentences = 3): string[] {
+        const normalized = normalizeWhitespace(input);
+        if (!normalized) return [];
+        const sentences = normalized
+            .split(/(?<=[.!?])\s+/)
+            .map((sentence) => sentence.trim())
             .filter(Boolean);
+        return sentences.slice(0, maxSentences);
+    }
+
+    const MUNICIPAL_BOND_NEID = '8242646876499346416';
+
+    function normalizeNeid(value: string): string {
+        const unpadded = value.replace(/^0+(?=\d)/, '') || '0';
+        return unpadded.padStart(20, '0');
+    }
+
+    function isNeidLike(value: string): boolean {
+        return /^\d{16,24}$/.test(value.trim());
+    }
+
+    function entityDisplayName(entity?: {
+        name?: string;
+        properties?: Record<string, unknown>;
+    }): string {
+        const direct = String(entity?.name ?? '').trim();
+        if (direct && !isNeidLike(direct)) return direct;
+        const props = (entity?.properties ?? {}) as Record<string, unknown>;
+        const candidateKeys = [
+            'matched_name',
+            'canonical_name',
+            'resolved_name',
+            'legal_name',
+            'issuer_name',
+            'name',
+        ];
+        for (const key of candidateKeys) {
+            const raw = props[key];
+            const value =
+                raw && typeof raw === 'object' && !Array.isArray(raw)
+                    ? (raw as Record<string, unknown>).value
+                    : raw;
+            const text = String(value ?? '').trim();
+            if (text && !isNeidLike(text)) return text;
+        }
+        return 'the municipal bond at the center of this transaction';
+    }
+
+    const municipalBondName = computed(() => {
+        const bond = entities.value.find(
+            (entity) => normalizeNeid(entity.neid) === normalizeNeid(MUNICIPAL_BOND_NEID)
+        );
+        return entityDisplayName(bond);
+    });
+
+    const narrativeParagraphs = computed(() => {
+        if (overview.value.status === 'pending' || overview.value.status === 'processing')
+            return [];
+
+        const fallback = [
+            `This corpus combines ${overview.value.documentCount} source documents about one financing transaction and the parties involved in it.`,
+            `The documents center on ${municipalBondName.value}, and describe that bond deal and its surrounding obligations.`,
+            `Together, the files describe the deal structure, legal agreements, and key timeline events around the same transaction narrative.`,
+            `Use this view to understand what the documents are saying before reviewing broader graph context.`,
+        ].join(' ');
+
+        const source = liveNarrative.value || fallback;
+        const bounded = firstSentences(source, 3);
+        if (bounded.length >= 2) return [bounded.join(' ')];
+        return [firstSentences(fallback, 3).join(' ')];
     });
 
     async function loadOverviewLanguage() {
@@ -176,18 +246,16 @@
         setTab('graph');
     }
 
-    function handlePreviewDoc(neid: string) {
-        focusDocument(neid);
-    }
-
-    function handleViewEntities(neid: string) {
-        focusDocument(neid);
+    function handlePreviewDoc(_neid: string) {
         setTab('graph');
     }
 
-    function handleViewCitations(neid: string) {
-        focusDocument(neid);
-        setTab('validation');
+    function handleViewEntities(_neid: string) {
+        setTab('graph');
+    }
+
+    function handleViewCitations(_neid: string) {
+        setTab('insights');
     }
 
     function formatDuration(ms: number): string {
@@ -248,9 +316,26 @@
         gap: 12px;
     }
 
+    .overview-rail {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        align-content: start;
+    }
+
+    .overview-rail-panels {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+
     @media (min-width: 1140px) {
         .overview-strip {
             grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+        }
+
+        .overview-rail-panels {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         }
     }
 </style>

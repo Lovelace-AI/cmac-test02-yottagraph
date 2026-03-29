@@ -51,24 +51,6 @@
                     </template>
                 </div>
             </div>
-            <div class="workspace-header-row d-flex align-center ga-3 mb-2 flex-wrap">
-                <v-select
-                    v-model="selectedDocumentModel"
-                    :items="documentSelectorItems"
-                    item-title="title"
-                    item-value="value"
-                    label="Document scope"
-                    density="compact"
-                    variant="outlined"
-                    hide-details
-                    clearable
-                    class="document-selector"
-                />
-                <v-chip v-if="selectedDocumentTitle" size="small" variant="tonal" color="info">
-                    Scoped: {{ selectedDocumentTitle }}
-                </v-chip>
-                <v-chip v-else size="small" variant="outlined">All documents</v-chip>
-            </div>
         </div>
 
         <!-- Post-rebuild meta bar -->
@@ -127,7 +109,10 @@
                     v-else-if="currentTab === 'agent'"
                     @launch-question="launchStarterQuestion"
                 />
-                <EnrichmentView v-else-if="currentTab === 'enrichment'" />
+                <EnrichmentView
+                    v-else-if="currentTab === 'enrichment'"
+                    @open-chat="launchStarterQuestion"
+                />
             </div>
         </div>
 
@@ -245,7 +230,11 @@
                     >
                         {{ agentResult.generationNote }}
                     </div>
-                    <div v-if="agentResult?.output" class="ask-yotta-output mt-2 text-caption">
+                    <div
+                        v-if="agentResult?.output"
+                        ref="askYottaOutputEl"
+                        class="ask-yotta-output mt-2 text-caption"
+                    >
                         {{ agentResult.output }}
                     </div>
                 </v-card-text>
@@ -342,7 +331,11 @@
                         >
                             {{ agentResult.generationNote }}
                         </div>
-                        <div v-if="agentResult?.output" class="ask-yotta-output mt-2 text-caption">
+                        <div
+                            v-if="agentResult?.output"
+                            ref="askYottaOutputEl"
+                            class="ask-yotta-output mt-2 text-caption"
+                        >
                             {{ agentResult.output }}
                         </div>
                     </v-card-text>
@@ -383,9 +376,6 @@
         runAgentAction,
         agentLoading,
         agentResult,
-        documents,
-        selectedDocumentNeid,
-        focusDocument,
         selectedEntity,
         selectEntity,
     } = useCollectionWorkspace();
@@ -397,6 +387,7 @@
     const { mdAndUp, xs } = useDisplay();
     const chatDrawerOpen = ref(false);
     const askYottaQuestion = ref('');
+    const askYottaOutputEl = ref<HTMLElement | null>(null);
     const askYottaSteps = ref<
         Array<{
             step: number;
@@ -429,34 +420,17 @@
     const tabs: Array<{ value: WorkspaceTab; label: string; icon: string }> = [
         { value: 'overview', label: 'Overview', icon: 'mdi-view-dashboard-outline' },
         { value: 'graph', label: 'Graph & Entities', icon: 'mdi-graph-outline' },
-        { value: 'events', label: 'Events', icon: 'mdi-calendar-outline' },
-        { value: 'insights', label: 'Insights', icon: 'mdi-lightbulb-on-outline' },
         { value: 'agreements', label: 'Legal Agreements', icon: 'mdi-file-document-outline' },
         { value: 'timeline', label: 'Timeline', icon: 'mdi-chart-timeline-variant' },
-        { value: 'validation', label: 'Trust & Coverage', icon: 'mdi-shield-check-outline' },
-        { value: 'agent', label: 'Agents', icon: 'mdi-robot-outline' },
+        { value: 'insights', label: 'Insights', icon: 'mdi-lightbulb-on-outline' },
         { value: 'enrichment', label: 'Enrichment', icon: 'mdi-arrow-expand-all' },
+        { value: 'agent', label: 'Agents', icon: 'mdi-robot-outline' },
     ];
     const tabLabelByValue = Object.fromEntries(tabs.map((tab) => [tab.value, tab.label])) as Record<
         WorkspaceTab,
         string
     >;
     const currentTabLabel = computed(() => tabLabelByValue[currentTab.value] ?? 'Overview');
-    const selectedDocumentModel = computed<string | null>({
-        get: () => selectedDocumentNeid.value,
-        set: (value) => focusDocument(value),
-    });
-    const documentSelectorItems = computed(() =>
-        documents.value.map((doc) => ({
-            title: doc.title,
-            value: doc.neid,
-        }))
-    );
-    const selectedDocumentTitle = computed(() => {
-        if (!selectedDocumentNeid.value) return '';
-        const doc = documents.value.find((item) => item.neid === selectedDocumentNeid.value);
-        return doc?.title ?? '';
-    });
     const entityDrawerOpen = computed<boolean>({
         get: () => Boolean(selectedEntity.value),
         set: (isOpen) => {
@@ -565,6 +539,7 @@
     }
 
     async function runAskYottaPrompt(prompt: string) {
+        if (agentLoading.value) return;
         askYottaQuestion.value = prompt;
         const action = resolveAskAction(prompt);
         if (action === 'summarize_collection') {
@@ -575,7 +550,7 @@
     }
 
     async function runAskYottaQuestion() {
-        if (!askYottaQuestion.value) return;
+        if (!askYottaQuestion.value || agentLoading.value) return;
         const action = resolveAskAction(askYottaQuestion.value);
         if (action === 'summarize_collection') {
             await runAgentAction('summarize_collection');
@@ -593,9 +568,11 @@
         }
     }
 
-    function launchStarterQuestion(prompt: string) {
+    async function launchStarterQuestion(prompt: string) {
         askYottaQuestion.value = prompt;
         if (!chatDrawerOpen.value) chatDrawerOpen.value = true;
+        await nextTick();
+        await runAskYottaPrompt(prompt);
     }
 
     async function handleRebuild() {
@@ -605,6 +582,21 @@
     onMounted(() => {
         bootstrap();
     });
+
+    watch(
+        () => agentResult.value?.output,
+        async (output) => {
+            if (!output) return;
+            await nextTick();
+            if (askYottaOutputEl.value) {
+                askYottaOutputEl.value.scrollTop = 0;
+                askYottaOutputEl.value.scrollIntoView({
+                    block: 'start',
+                    behavior: 'smooth',
+                });
+            }
+        }
+    );
 </script>
 
 <style scoped>
@@ -627,14 +619,6 @@
 
     .workspace-tabs-wrap {
         min-width: 340px;
-    }
-
-    .workspace-header-row {
-        min-height: 40px;
-    }
-
-    .document-selector {
-        width: min(460px, 100%);
     }
 
     .pipeline-inline-chip {

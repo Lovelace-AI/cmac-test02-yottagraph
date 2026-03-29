@@ -439,15 +439,37 @@ async function answerQuestion(
     }
 
     const citations: AgentActionResponse['citations'] = [];
+    const citationKeys = new Set<string>();
+    const pushCitation = (citation: AgentActionResponse['citations'][number]) => {
+        const key = `${citation.type}|${citation.neid}`;
+        if (citationKeys.has(key)) return;
+        citationKeys.add(key);
+        citations.push(citation);
+    };
     for (const e of matchingEntities.slice(0, 3)) {
-        citations.push({ type: 'entity', neid: e.neid, label: e.name });
+        pushCitation({ type: 'entity', neid: e.neid, label: e.name });
         for (const docNeid of e.sourceDocuments.slice(0, 1)) {
             const doc = documents?.find((item) => item.neid === docNeid);
-            if (doc) citations.push({ type: 'document', neid: doc.neid, label: doc.title });
+            if (doc) pushCitation({ type: 'document', neid: doc.neid, label: doc.title });
         }
     }
     for (const e of matchingEvents.slice(0, 3)) {
-        citations.push({ type: 'event', neid: e.neid, label: e.name });
+        pushCitation({ type: 'event', neid: e.neid, label: e.name });
+    }
+
+    // If the literal question text does not directly match names, still provide grounded evidence.
+    if (citations.length === 0) {
+        const topEntities = rankedEntities.slice(0, 3);
+        for (const entry of topEntities) {
+            pushCitation({ type: 'entity', neid: entry.neid, label: entry.name });
+            const entity = entities.find((item) => item.neid === entry.neid);
+            const docNeid = entity?.sourceDocuments?.[0];
+            const doc = documents?.find((item) => item.neid === docNeid);
+            if (doc) pushCitation({ type: 'document', neid: doc.neid, label: doc.title });
+        }
+        for (const eventItem of events.slice(0, 3)) {
+            pushCitation({ type: 'event', neid: eventItem.neid, label: eventItem.name });
+        }
     }
 
     const fallback = parts.join('\n\n');
