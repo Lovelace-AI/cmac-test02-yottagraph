@@ -83,8 +83,8 @@
                         variant="outlined"
                         divided
                     >
-                        <v-btn value="flat" size="small">Flat</v-btn>
-                        <v-btn value="grouped" size="small">Grouped</v-btn>
+                        <v-btn value="cards" size="small">Cards</v-btn>
+                        <v-btn value="list" size="small">List</v-btn>
                     </v-btn-toggle>
                 </template>
             </v-card-item>
@@ -118,7 +118,38 @@
                     No agreements match your current search or party filter.
                 </v-alert>
 
-                <div v-else-if="inventoryMode === 'flat'" class="d-flex flex-column ga-2">
+                <div v-else-if="inventoryMode === 'cards'" class="agreement-card-grid">
+                    <v-card
+                        v-for="agreement in filteredAgreements"
+                        :key="agreement.neid"
+                        variant="outlined"
+                        class="app-click-target agreement-snapshot-card"
+                        @click="openAgreementDetail(agreement.neid)"
+                    >
+                        <v-card-text class="py-3">
+                            <div class="d-flex align-center justify-space-between ga-2 flex-wrap">
+                                <div class="text-body-2 font-weight-medium">
+                                    {{ agreement.name }}
+                                </div>
+                                <v-chip size="x-small" variant="tonal">
+                                    {{ agreementSubtype(agreement) }}
+                                </v-chip>
+                            </div>
+                            <div class="text-caption text-medium-emphasis mt-1">
+                                {{ relatedPartyNeids(agreement.neid).length }} parties ·
+                                {{ agreement.sourceDocuments.length }} source docs
+                            </div>
+                            <div class="text-caption text-medium-emphasis mt-1">
+                                {{ agreementMiniAbstract(agreement) }}
+                            </div>
+                            <div class="text-caption mt-2">
+                                {{ agreementRelationshipSnapshot(agreement) }}
+                            </div>
+                        </v-card-text>
+                    </v-card>
+                </div>
+
+                <div v-else class="d-flex flex-column ga-2">
                     <v-card
                         v-for="agreement in filteredAgreements"
                         :key="agreement.neid"
@@ -142,31 +173,6 @@
                         </v-card-text>
                     </v-card>
                 </div>
-
-                <v-expansion-panels v-else variant="accordion">
-                    <v-expansion-panel
-                        v-for="group in groupedAgreements"
-                        :key="group.subtype"
-                        :title="`${group.subtype} (${group.items.length})`"
-                    >
-                        <v-expansion-panel-text>
-                            <v-list density="compact">
-                                <v-list-item
-                                    v-for="agreement in group.items"
-                                    :key="agreement.neid"
-                                    class="px-0 app-click-target"
-                                    @click="openAgreementDetail(agreement.neid)"
-                                >
-                                    <v-list-item-title>{{ agreement.name }}</v-list-item-title>
-                                    <v-list-item-subtitle>
-                                        {{ relatedPartyNeids(agreement.neid).length }} parties ·
-                                        {{ agreement.sourceDocuments.length }} source docs
-                                    </v-list-item-subtitle>
-                                </v-list-item>
-                            </v-list>
-                        </v-expansion-panel-text>
-                    </v-expansion-panel>
-                </v-expansion-panels>
             </v-card-text>
         </v-card>
 
@@ -180,9 +186,6 @@
                     </template>
                 </v-card-item>
                 <v-card-text>
-                    <div class="text-caption text-medium-emphasis mb-2 font-mono">
-                        {{ selectedAgreement.neid }}
-                    </div>
                     <div class="text-body-2 mb-3">
                         {{ agreementDetailSummary(selectedAgreement.neid) }}
                     </div>
@@ -207,7 +210,7 @@
                             size="small"
                             variant="outlined"
                         >
-                            {{ resolveEntityName(docNeid) }}
+                            {{ resolveDocumentName(docNeid) }}
                         </v-chip>
                     </div>
                 </v-card-text>
@@ -219,11 +222,12 @@
 <script setup lang="ts">
     import type { EntityRecord } from '~/utils/collectionTypes';
 
-    const { agreements, relationships, resolveEntityName, selectEntity } = useCollectionWorkspace();
+    const { agreements, entities, documents, relationships, resolveEntityName, selectEntity } =
+        useCollectionWorkspace();
 
     const searchQuery = ref('');
     const selectedPartyNeid = ref<string | null>(null);
-    const inventoryMode = ref<'flat' | 'grouped'>('flat');
+    const inventoryMode = ref<'cards' | 'list'>('cards');
     const detailOpen = ref(false);
     const selectedAgreementNeid = ref<string | null>(null);
     const structureVersion = ref(0);
@@ -235,6 +239,16 @@
         }
         return docSet.size;
     });
+    const entityByNeid = computed(
+        () => new Map(entities.value.map((entity) => [entity.neid, entity]))
+    );
+    const agreementNeidSet = computed(() => new Set(agreements.value.map((item) => item.neid)));
+    const documentTitleByNeid = computed(
+        () =>
+            new Map(
+                documents.value.map((doc) => [doc.neid, doc.title || doc.documentId || doc.neid])
+            )
+    );
 
     const subtypeCounts = computed(() => {
         const counts = new Map<string, number>();
@@ -263,16 +277,15 @@
     const structureNarrative = computed(() => {
         const dominantSubtype = subtypeCounts.value[0];
         const topParty = topParties.value[0];
-        const versionSuffix = structureVersion.value % 2 === 0 ? 'primary' : 'secondary';
+        void structureVersion.value;
         return [
-            `The collection contains ${agreements.value.length} agreements distributed across ${subtypeCounts.value.length} subtype group(s).`,
+            `${agreements.value.length} agreements are currently mapped across ${subtypeCounts.value.length} contract type${subtypeCounts.value.length === 1 ? '' : 's'}.`,
             dominantSubtype
-                ? `The dominant subtype is ${dominantSubtype.label}, representing ${dominantSubtype.count} agreements.`
-                : 'No subtype pattern is available yet.',
+                ? `Most of the legal package is ${dominantSubtype.label} (${dominantSubtype.count} agreements).`
+                : 'Contract subtype patterns are still being inferred.',
             topParty
-                ? `Most recurring party: ${resolveEntityName(topParty.neid)} (${topParty.count} linked agreements).`
-                : 'No recurring parties identified yet.',
-            `Narrative profile: ${versionSuffix} structural interpretation.`,
+                ? `${resolveEntityName(topParty.neid)} appears most often (${topParty.count} linked agreements).`
+                : 'No recurring counterparties have been identified yet.',
         ].join(' ');
     });
 
@@ -297,19 +310,6 @@
         });
     });
 
-    const groupedAgreements = computed(() => {
-        const groups = new Map<string, EntityRecord[]>();
-        for (const agreement of filteredAgreements.value) {
-            const subtype = agreementSubtype(agreement);
-            const list = groups.get(subtype) ?? [];
-            list.push(agreement);
-            groups.set(subtype, list);
-        }
-        return Array.from(groups.entries())
-            .map(([subtype, items]) => ({ subtype, items }))
-            .sort((a, b) => a.subtype.localeCompare(b.subtype));
-    });
-
     const selectedAgreement = computed(
         () => agreements.value.find((item) => item.neid === selectedAgreementNeid.value) ?? null
     );
@@ -320,7 +320,14 @@
             if (rel.sourceNeid === agreementNeid) related.add(rel.targetNeid);
             if (rel.targetNeid === agreementNeid) related.add(rel.sourceNeid);
         }
-        return Array.from(related);
+        return Array.from(related)
+            .filter((neid) => neid !== agreementNeid && !agreementNeidSet.value.has(neid))
+            .filter((neid) => {
+                const entity = entityByNeid.value.get(neid);
+                if (!entity) return false;
+                return entity.flavor !== 'legal_agreement' && entity.flavor !== 'event';
+            })
+            .sort((a, b) => resolveEntityName(a).localeCompare(resolveEntityName(b)));
     }
 
     function agreementSubtype(agreement: EntityRecord): string {
@@ -330,10 +337,88 @@
         return fromProperties || agreement.flavor.replace(/_/g, ' ');
     }
 
+    function toNaturalList(values: string[]): string {
+        if (!values.length) return '';
+        if (values.length === 1) return values[0];
+        if (values.length === 2) return `${values[0]} and ${values[1]}`;
+        return `${values.slice(0, -1).join(', ')}, and ${values[values.length - 1]}`;
+    }
+
+    function resolveDocumentName(neid: string): string {
+        return documentTitleByNeid.value.get(neid) ?? resolveEntityName(neid);
+    }
+
+    function propertyText(value: unknown): string | null {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed || null;
+        }
+        if (typeof value === 'number' || typeof value === 'boolean') {
+            return String(value);
+        }
+        if (typeof value === 'object' && value && 'value' in (value as Record<string, unknown>)) {
+            const nested = (value as Record<string, unknown>).value;
+            return propertyText(nested);
+        }
+        return null;
+    }
+
+    function agreementDate(agreement: EntityRecord): string | null {
+        const keys = ['date', 'effective_date', 'dated', 'execution_date', 'signed_date'];
+        for (const key of keys) {
+            const maybe = propertyText(
+                (agreement.properties as Record<string, unknown> | undefined)?.[key]
+            );
+            if (maybe) return maybe.slice(0, 10);
+        }
+        return null;
+    }
+
+    function agreementMiniAbstract(agreement: EntityRecord): string {
+        const subtype = agreementSubtype(agreement);
+        const date = agreementDate(agreement);
+        if (date) return `${subtype} dated ${date}.`;
+        return `${subtype}.`;
+    }
+
+    function agreementRelationshipSnapshot(agreement: EntityRecord): string {
+        const partyNames = relatedPartyNeids(agreement.neid).map((neid) => resolveEntityName(neid));
+        const documentNames = agreement.sourceDocuments
+            .map((docNeid) => resolveDocumentName(docNeid))
+            .filter(Boolean);
+        if (!partyNames.length) {
+            return 'Counterparties are not fully extracted yet. Open the agreement to verify parties from the linked source documents.';
+        }
+        const leadParties = partyNames.slice(0, 2);
+        const extraParties = Math.max(0, partyNames.length - leadParties.length);
+        const partyText =
+            extraParties > 0
+                ? `${toNaturalList(leadParties)} and ${extraParties} additional party${extraParties === 1 ? '' : 'ies'}`
+                : toNaturalList(leadParties);
+        const sourceText = documentNames.length
+            ? `Primary evidence: ${documentNames[0]}${documentNames.length > 1 ? ' and related filings' : ''}.`
+            : 'Source-document evidence is still being attached.';
+        return `This agreement ties together ${partyText}. ${sourceText}`;
+    }
+
     function agreementDetailSummary(agreementNeid: string): string {
-        const partyCount = relatedPartyNeids(agreementNeid).length;
-        if (!partyCount) return 'No related parties were extracted for this agreement.';
-        return `This agreement links ${partyCount} party ${partyCount === 1 ? 'entity' : 'entities'} in the current graph and can be used as a legal anchor for cross-tab analysis.`;
+        const agreement = agreements.value.find((item) => item.neid === agreementNeid);
+        if (!agreement) return 'Agreement details are unavailable.';
+        const partyNames = relatedPartyNeids(agreementNeid).map((neid) => resolveEntityName(neid));
+        if (!partyNames.length) {
+            return 'No specific counterparties were extracted for this agreement yet. Use source documents and related entities to verify who is bound by this contract.';
+        }
+        const leadParties = partyNames.slice(0, 4);
+        const extraParties = Math.max(0, partyNames.length - leadParties.length);
+        const partyText =
+            extraParties > 0
+                ? `${toNaturalList(leadParties)} and ${extraParties} more party${extraParties === 1 ? '' : 'ies'}`
+                : toNaturalList(leadParties);
+        return [
+            `This contract sets obligations among ${partyText}.`,
+            'Use it as your legal baseline: follow the same parties in Graph, Events, and Financials to separate contract terms from later operational or financial activity.',
+        ].join(' ');
     }
 
     function regenerateNarrative() {
@@ -356,6 +441,16 @@
 </script>
 
 <style scoped>
+    .agreement-card-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+
+    .agreement-snapshot-card {
+        min-height: 126px;
+    }
+
     .structure-grid {
         display: grid;
         gap: 8px;

@@ -421,7 +421,8 @@
         { value: 'overview', label: 'Overview', icon: 'mdi-view-dashboard-outline' },
         { value: 'graph', label: 'Graph & Entities', icon: 'mdi-graph-outline' },
         { value: 'agreements', label: 'Legal Agreements', icon: 'mdi-file-document-outline' },
-        { value: 'timeline', label: 'Timeline', icon: 'mdi-chart-timeline-variant' },
+        { value: 'events', label: 'Events', icon: 'mdi-calendar-star-outline' },
+        { value: 'timeline', label: 'Financials', icon: 'mdi-chart-timeline-variant' },
         { value: 'insights', label: 'Insights', icon: 'mdi-lightbulb-on-outline' },
         { value: 'enrichment', label: 'Enrichment', icon: 'mdi-arrow-expand-all' },
         { value: 'agent', label: 'Agents', icon: 'mdi-robot-outline' },
@@ -443,7 +444,9 @@
     const chatDialogFullscreen = computed(() => xs.value);
 
     const tabQuickActions = computed(() =>
-        recommendedActions.value.filter((action) => action.tab === currentTab.value)
+        currentTab.value === 'graph'
+            ? []
+            : recommendedActions.value.filter((action) => action.tab === currentTab.value)
     );
 
     const askYottaPromptMap: Record<WorkspaceTab, string[]> = {
@@ -468,8 +471,8 @@
             'Which parties appear across multiple agreements?',
         ],
         timeline: [
-            'How did key entity facts change across documents?',
-            'Which properties show the largest deltas?',
+            'How did key financial properties change across documents?',
+            'Which financial values show the largest deltas?',
         ],
         validation: ['Where are current evidence gaps?', 'What should we verify manually next?'],
         agent: [

@@ -359,6 +359,11 @@
         participant: '#AB47BC',
         'schema::relationship::participant': '#AB47BC',
     };
+    const REL_COLORS_LIGHT: Record<string, string> = {
+        default: '#6B7280',
+        structural: '#374151',
+        context: '#9CA3AF',
+    };
     const BOND_CENTER_NEID = '08242646876499346416';
 
     const {
@@ -435,6 +440,10 @@
             ? 'radial-gradient(120% 100% at 50% 10%, #1C2540 0%, #131A2E 52%, #0C1221 100%)'
             : 'radial-gradient(130% 110% at 50% 0%, #F5F9FF 0%, #EEF4FF 48%, #E6EEFB 100%)'
     );
+    const labelPillBackground = computed(() =>
+        colorMode.value === 'dark' ? 'rgba(7, 12, 24, 0.9)' : 'rgba(17, 24, 39, 0.9)'
+    );
+    const labelTextColor = '#F8FAFC';
     const analysisModes = [
         { label: 'Centrality', value: 'centrality' },
         { label: 'Relationship Type', value: 'relationship' },
@@ -608,6 +617,19 @@
     }
 
     function getRelTypeColor(relType: string): string {
+        if (colorMode.value === 'light') {
+            if (relType.includes('participant') || relType.includes('appears_in')) {
+                return REL_COLORS_LIGHT.context;
+            }
+            if (
+                relType.includes('predecessor') ||
+                relType.includes('successor') ||
+                relType.includes('works_at')
+            ) {
+                return REL_COLORS_LIGHT.structural;
+            }
+            return REL_COLORS_LIGHT.default;
+        }
         return REL_COLORS[relType] ?? '#9E9E9E';
     }
 
@@ -703,7 +725,7 @@
                 size,
                 node_base_size: size,
                 color,
-                labelColor: readableLabelColor(color, colorMode.value),
+                labelColor: readableLabelColor(colorMode.value),
                 entity_type: entity.flavor,
                 eventCount: evtCount,
                 origin: entity.origin,
@@ -741,7 +763,7 @@
                         size: 4.2,
                         node_base_size: 4.2,
                         color: '#AB47BC',
-                        labelColor: readableLabelColor('#AB47BC', colorMode.value),
+                        labelColor: readableLabelColor(colorMode.value),
                         entity_type: 'event',
                         eventCount: 0,
                         origin: 'document',
@@ -757,7 +779,7 @@
                         size: 4.2,
                         node_base_size: 4.2,
                         color: '#AB47BC',
-                        labelColor: readableLabelColor('#AB47BC', colorMode.value),
+                        labelColor: readableLabelColor(colorMode.value),
                         entity_type: 'event',
                         eventCount: 0,
                         origin: 'document',
@@ -773,7 +795,7 @@
                         size: 4.8,
                         node_base_size: 4.8,
                         color: colorMode.value === 'dark' ? '#94A3B8' : '#475569',
-                        labelColor: readableLabelColor('#607D8B', colorMode.value),
+                        labelColor: readableLabelColor(colorMode.value),
                         entity_type: 'document',
                         eventCount: 0,
                         origin: 'document',
@@ -789,7 +811,7 @@
                         size: 4.8,
                         node_base_size: 4.8,
                         color: colorMode.value === 'dark' ? '#94A3B8' : '#475569',
-                        labelColor: readableLabelColor('#607D8B', colorMode.value),
+                        labelColor: readableLabelColor(colorMode.value),
                         entity_type: 'document',
                         eventCount: 0,
                         origin: 'document',
@@ -906,13 +928,15 @@
             labelRenderedSizeThreshold: 7,
             labelDensity: 0.08,
             labelGridCellSize: 100,
+            defaultDrawNodeLabel: drawLabelWithPill,
+            defaultDrawNodeHover: drawHoverWithPill,
             defaultEdgeType: 'arrow',
             defaultEdgeColor: hexAlpha(
-                currentThemeColors.value.border,
-                colorMode.value === 'dark' ? 0.7 : 0.82
+                colorMode.value === 'dark' ? '#9CA3AF' : '#4B5563',
+                colorMode.value === 'dark' ? 0.68 : 0.62
             ),
             zIndex: true,
-        });
+        } as any);
 
         const canvas = graphContainer.value.querySelector('canvas');
         if (canvas) {
@@ -999,24 +1023,74 @@
         return `rgba(${r},${g},${b},${alpha})`;
     }
 
-    function parseColor(color: string): { r: number; g: number; b: number } | null {
-        if (color.startsWith('#') && color.length === 7) {
-            return {
-                r: parseInt(color.slice(1, 3), 16),
-                g: parseInt(color.slice(3, 5), 16),
-                b: parseInt(color.slice(5, 7), 16),
-            };
-        }
-        const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-        if (!match) return null;
-        return { r: Number(match[1]), g: Number(match[2]), b: Number(match[3]) };
+    function readableLabelColor(_mode: 'light' | 'dark'): string {
+        return labelTextColor;
     }
 
-    function readableLabelColor(nodeColor: string, mode: 'light' | 'dark'): string {
-        const rgb = parseColor(nodeColor);
-        if (!rgb) return mode === 'dark' ? '#F8FAFC' : '#111827';
-        const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
-        return luminance > 0.62 ? '#0F172A' : '#F8FAFC';
+    function drawRoundedRect(
+        ctx: CanvasRenderingContext2D,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        radius: number
+    ) {
+        const r = Math.min(radius, width / 2, height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + width - r, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+        ctx.lineTo(x + width, y + height - r);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        ctx.lineTo(x + r, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+    }
+
+    function drawLabelWithPill(ctx: CanvasRenderingContext2D, data: any, settings: any) {
+        const label = typeof data?.label === 'string' ? data.label : '';
+        if (!label) return;
+        const fontSize = Math.max(11, Number(settings?.labelSize ?? 12));
+        const fontFamily = String(settings?.labelFont ?? 'sans-serif');
+        const fontWeight = String(settings?.labelWeight ?? '600');
+        ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+        const textWidth = ctx.measureText(label).width;
+        const paddingX = 6;
+        const paddingY = 3;
+        const pillX = Number(data.x) + Number(data.size ?? 0) + 5;
+        const pillY = Number(data.y) - fontSize / 2 - paddingY;
+        const pillWidth = textWidth + paddingX * 2;
+        const pillHeight = fontSize + paddingY * 2;
+        drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 5);
+        ctx.fillStyle = labelPillBackground.value;
+        ctx.fill();
+        ctx.fillStyle = labelTextColor;
+        ctx.fillText(label, pillX + paddingX, Number(data.y) + fontSize / 3 - 1);
+    }
+
+    function drawHoverWithPill(ctx: CanvasRenderingContext2D, data: any, settings: any) {
+        const label = typeof data?.label === 'string' ? data.label : '';
+        if (!label) return;
+        const fontSize = Math.max(13, Number(settings?.labelSize ?? 12) + 1);
+        const fontFamily = String(settings?.labelFont ?? 'sans-serif');
+        ctx.font = `700 ${fontSize}px ${fontFamily}`;
+        const textWidth = ctx.measureText(label).width;
+        const paddingX = 7;
+        const paddingY = 4;
+        const pillX = Number(data.x) + Number(data.size ?? 0) + 6;
+        const pillY = Number(data.y) - fontSize / 2 - paddingY;
+        const pillWidth = textWidth + paddingX * 2;
+        const pillHeight = fontSize + paddingY * 2;
+        drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 6);
+        ctx.fillStyle = labelPillBackground.value;
+        ctx.fill();
+        ctx.strokeStyle = String(data.color ?? '#94A3B8');
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+        ctx.fillStyle = labelTextColor;
+        ctx.fillText(label, pillX + paddingX, Number(data.y) + fontSize / 3 - 1);
     }
 
     function stabilizeNodePositions(graph: Graph): void {
