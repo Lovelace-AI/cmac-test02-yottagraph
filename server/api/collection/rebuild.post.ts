@@ -113,6 +113,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     const extractedEntityKeys = new Set(
         seed.entities.map((entity) => seedKeyFromNameAndFlavor(entity.name, entity.flavor))
     );
+    const shouldFilterToSeed = extractedEntityKeys.size > 0;
     const entityMap = new Map<string, EntityRecord>();
     const relationships: RelationshipRecord[] = [];
     const relSeen = new Set<string>();
@@ -140,7 +141,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                     const relName = (rel.name as string) || '';
                     const relFlavor = (rel.flavor as string) || flavor;
                     const seedKey = seedKeyFromNameAndFlavor(relName, relFlavor);
-                    if (!extractedEntityKeys.has(seedKey)) continue;
+                    if (shouldFilterToSeed && !extractedEntityKeys.has(seedKey)) continue;
                     const existing = entityMap.get(neid);
                     if (existing) {
                         if (!existing.sourceDocuments.includes(docNeid)) {

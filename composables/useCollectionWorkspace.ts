@@ -1315,6 +1315,7 @@ export function useCollectionWorkspace() {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let streamReportedError = false;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -1327,11 +1328,17 @@ export function useCollectionWorkspace() {
                     if (!line.startsWith('data: ')) continue;
                     try {
                         const msg = JSON.parse(line.slice(6));
+                        if (msg?.type === 'error') streamReportedError = true;
                         handleStreamMessage(msg);
                     } catch {
                         // malformed line — ignore
                     }
                 }
+            }
+
+            if (streamReportedError) {
+                await runFallbackRebuild('stream emitted error event');
+                return;
             }
         } catch (e: any) {
             try {

@@ -209,7 +209,16 @@ export function loadExtractedSeedGraph(): ExtractedSeedGraph {
     if (cached) return cached;
     const canonicalEntityNeids = loadExtractedEntityNeidMap();
     const path = resolve(process.cwd(), 'import/recordeval_graph_extracted.json');
-    const graph = JSON.parse(readFileSync(path, 'utf-8')) as ExtractedGraph;
+    let graph: ExtractedGraph;
+    try {
+        graph = JSON.parse(readFileSync(path, 'utf-8')) as ExtractedGraph;
+    } catch (error: any) {
+        console.warn(
+            `[extractedSeedGraph] Seed graph file unavailable at ${path}; falling back to MCP-only rebuild mode.`
+        );
+        cached = { entities: [], events: [], relationships: [] };
+        return cached;
+    }
 
     const entityByKey = new Map<string, SeedEntityNode>();
     const eventByKey = new Map<string, SeedEventNode>();
