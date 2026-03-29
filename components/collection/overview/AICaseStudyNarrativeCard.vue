@@ -1,32 +1,43 @@
 <template>
     <v-card class="briefing-card h-100" variant="flat">
-        <v-card-item>
-            <v-card-title class="text-body-1">AI Case Study Narrative</v-card-title>
+        <v-card-item class="pb-1">
+            <v-card-title class="section-title">AI Case Study Narrative</v-card-title>
             <template #append>
-                <v-chip size="x-small" variant="tonal" class="narrative-pill"
-                    >Generated summary</v-chip
-                >
+                <span class="narrative-tag">Generated insight</span>
             </template>
         </v-card-item>
-        <v-card-text class="pt-0 narrative-body">
+        <v-card-text class="pt-0 pb-4 narrative-body">
             <template v-if="narrativeParagraphs.length">
                 <p
                     v-for="paragraph in narrativeParagraphs"
                     :key="paragraph"
-                    class="text-body-2 mb-3 narrative-paragraph"
+                    class="text-body-2 mb-2 narrative-paragraph"
                 >
                     {{ paragraph }}
                 </p>
             </template>
-            <div v-else class="text-body-2 text-medium-emphasis">
-                Run initial analysis to generate a coherent business narrative grounded in extracted
-                entities, events, agreements, and citations.
+            <div v-else class="empty-state">
+                <p class="empty-copy">
+                    Run analysis to generate an evidence-linked narrative for this collection.
+                </p>
+                <v-btn
+                    size="x-small"
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="mdi-play-circle-outline"
+                    :disabled="status === 'processing'"
+                    @click="$emit('run-analysis')"
+                >
+                    Run Initial Analysis
+                </v-btn>
             </div>
-            <div class="d-flex ga-2 flex-wrap mt-4">
+            <div v-if="narrativeParagraphs.length" class="d-flex ga-2 flex-wrap mt-2">
                 <v-btn
                     size="x-small"
                     variant="text"
                     class="narrative-action"
+                    :loading="isRegenerating"
+                    :disabled="isRegenerating"
                     @click="$emit('regenerate')"
                 >
                     Regenerate narrative
@@ -46,38 +57,68 @@
 </template>
 
 <script setup lang="ts">
+    import type { OverviewStatus } from '~/utils/overviewBriefing';
+
     defineProps<{
         narrativeParagraphs: string[];
         citationCount: number;
+        status: OverviewStatus;
+        isRegenerating?: boolean;
     }>();
 
     defineEmits<{
         regenerate: [];
+        'run-analysis': [];
     }>();
 </script>
 
 <style scoped>
     .briefing-card {
         border: 1px solid var(--app-divider-strong);
-        background: linear-gradient(
-            158deg,
-            color-mix(in srgb, var(--dynamic-card-background) 86%, var(--dynamic-background) 14%),
-            color-mix(in srgb, var(--dynamic-surface) 88%, var(--dynamic-primary) 12%)
+        background: color-mix(
+            in srgb,
+            var(--dynamic-card-background) 92%,
+            var(--dynamic-background) 8%
         );
-        box-shadow: 0 14px 28px rgba(7, 12, 20, 0.34);
     }
 
     .narrative-body {
-        max-width: 92ch;
+        max-width: 104ch;
+    }
+
+    .section-title {
+        font-size: 0.92rem;
+        font-weight: 600;
+    }
+
+    .narrative-tag {
+        font-size: 0.7rem;
+        color: var(--dynamic-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .narrative-paragraph {
-        line-height: 1.72;
+        line-height: 1.52;
+        font-size: 0.86rem;
         color: color-mix(
             in srgb,
             var(--dynamic-text-primary) 94%,
             var(--dynamic-text-secondary) 6%
         );
+    }
+
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .empty-copy {
+        margin: 0;
+        font-size: 0.84rem;
+        color: var(--dynamic-text-secondary);
     }
 
     .narrative-pill {

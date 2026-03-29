@@ -320,6 +320,8 @@
     const props = defineProps<{
         entitiesOverride?: EntityRecord[];
         relationshipsOverride?: RelationshipRecord[];
+        showEnrichedEntities?: boolean;
+        showEnrichedRelationships?: boolean;
     }>();
 
     const ENTITY_COLORS: Record<string, string> = {
@@ -365,10 +367,10 @@
         () => props.relationshipsOverride ?? workspaceRelationships.value
     );
     const displayedDocumentEntityCount = computed(
-        () => entities.value.filter((entity) => entity.origin === 'document').length
+        () => visibleEntities.value.filter((entity) => entity.origin === 'document').length
     );
     const displayedEnrichedEntityCount = computed(
-        () => entities.value.filter((entity) => entity.origin === 'enriched').length
+        () => visibleEntities.value.filter((entity) => entity.origin === 'enriched').length
     );
 
     const { colorMode, currentThemeColors } = useAppColorMode();
@@ -396,6 +398,8 @@
     let sigmaInstance: Sigma | null = null;
     let graphInstance: Graph | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let suppressResize = false;
 
     interface TooltipState {
         name: string;
@@ -421,6 +425,7 @@
         const q = searchQuery.value.trim().toLowerCase();
         return entities.value.filter((e) => {
             if (hiddenFlavors.value.has(e.flavor)) return false;
+            if (props.showEnrichedEntities === false && e.origin === 'enriched') return false;
             if (!q) return true;
             return e.name.toLowerCase().includes(q);
         });
@@ -431,9 +436,22 @@
     );
 
     const visibleRelationships = computed(() => {
+        const enrichedNeids = new Set(
+            entities.value
+                .filter((entity) => entity.origin === 'enriched')
+                .map((entity) => entity.neid)
+        );
         return relationships.value.filter((rel) => {
             if (relationshipTypeFilter.value && rel.type !== relationshipTypeFilter.value)
                 return false;
+            if (props.showEnrichedRelationships === false && rel.origin === 'enriched')
+                return false;
+            if (
+                props.showEnrichedEntities === false &&
+                (enrichedNeids.has(rel.sourceNeid) || enrichedNeids.has(rel.targetNeid))
+            ) {
+                return false;
+            }
             const hasEvidence =
                 Boolean(rel.sourceDocumentNeid) ||
                 (Array.isArray(rel.citations) && rel.citations.length > 0);
@@ -569,12 +587,6 @@
     function buildGraph(): void {
         if (!graphContainer.value) return;
 
-        // Cleanup
-        if (sigmaInstance) {
-            sigmaInstance.kill();
-            sigmaInstance = null;
-        }
-
         let ents = visibleEntities.value;
         if (analysisMode.value === 'timeline') {
             ents = ents.filter((entity) => timelineLinkedNeids.value.has(entity.neid));
@@ -586,6 +598,11 @@
         const entityNodeSet = new Set(ents.map((entity) => entity.neid));
 
         if (ents.length === 0) return;
+
+        if (sigmaInstance) {
+            sigmaInstance.kill();
+            sigmaInstance = null;
+        }
 
         const g = new Graph({ type: 'mixed', multi: false });
         graphInstance = g;
@@ -797,6 +814,7 @@
         } catch {
             // noop: keep initial positions if layout engine errors
         }
+        stabilizeNodePositions(g);
 
         // Create Sigma instance
         sigmaInstance = new Sigma(g, graphContainer.value, {
@@ -816,6 +834,16 @@
             ),
             zIndex: true,
         });
+
+        const canvas = graphContainer.value.querySelector('canvas');
+        if (canvas) {
+            canvas.addEventListener('webglcontextlost', (e) => {
+                e.preventDefault();
+            });
+            canvas.addEventListener('webglcontextrestored', () => {
+                nextTick(() => buildGraph());
+            });
+        }
 
         // Hover
         sigmaInstance.on('enterNode', ({ node, event }) => {
@@ -850,8 +878,11 @@
             }
         });
 
-        // Click
+        // Click — keep selection handling lightweight to avoid canvas corruption
         sigmaInstance.on('clickNode', ({ node }) => {
+            const kind = g.getNodeAttribute(node, 'node_kind');
+            if (kind !== 'entity') return;
+            tooltip.value = null;
             selectEntity(node);
         });
 
@@ -860,34 +891,26 @@
         });
 
         applySelectedHighlight();
-        focusCameraOnCenterNode();
-        refreshSigma();
-    }
-
-    function ensureBondCenterSelected() {
-        if (!hasBondCenterEntity.value) return;
-        const hasSelectedEntity = Boolean(selectedEntityNeid.value);
-        if (hasSelectedEntity) return;
-        selectEntity(BOND_CENTER_NEID);
+        queueSigmaReflow();
     }
 
     function centerNodeNeid(): string | null {
-        if (selectedEntityNeid.value && graphInstance?.hasNode(selectedEntityNeid.value)) {
-            return selectedEntityNeid.value;
-        }
-        if (graphInstance?.hasNode(BOND_CENTER_NEID)) {
-            return BOND_CENTER_NEID;
-        }
-        return null;
+        return selectedEntityNeid.value && graphInstance?.hasNode(selectedEntityNeid.value)
+            ? selectedEntityNeid.value
+            : null;
     }
 
     function focusCameraOnCenterNode() {
         if (!sigmaInstance || !graphInstance) return;
-        const nodeId = centerNodeNeid();
-        if (!nodeId) return;
-        const x = graphInstance.getNodeAttribute(nodeId, 'x') as number;
-        const y = graphInstance.getNodeAttribute(nodeId, 'y') as number;
-        sigmaInstance.getCamera().animate({ x, y, ratio: 0.6 }, { duration: 280 });
+        try {
+            const nodeId = centerNodeNeid();
+            if (!nodeId) return;
+            const x = graphInstance.getNodeAttribute(nodeId, 'x') as number;
+            const y = graphInstance.getNodeAttribute(nodeId, 'y') as number;
+            sigmaInstance.getCamera().animate({ x, y, ratio: 0.6 }, { duration: 280 });
+        } catch {
+            // guard against sigma state corruption
+        }
     }
 
     function hexAlpha(hex: string, alpha: number): string {
@@ -895,6 +918,56 @@
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
         return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    function stabilizeNodePositions(graph: Graph): void {
+        const nodes = graph.nodes();
+        if (!nodes.length) return;
+
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+
+        for (const node of nodes) {
+            let x = Number(graph.getNodeAttribute(node, 'x'));
+            let y = Number(graph.getNodeAttribute(node, 'y'));
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                x = Math.random() * 2 - 1;
+                y = Math.random() * 2 - 1;
+                graph.setNodeAttribute(node, 'x', x);
+                graph.setNodeAttribute(node, 'y', y);
+            }
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+
+        const spanX = maxX - minX;
+        const spanY = maxY - minY;
+        const maxSpan = Math.max(spanX, spanY);
+
+        if (!Number.isFinite(maxSpan) || maxSpan < 1e-6) {
+            const radius = 80;
+            const count = nodes.length;
+            nodes.forEach((node, index) => {
+                const angle = (index / Math.max(count, 1)) * Math.PI * 2;
+                graph.setNodeAttribute(node, 'x', Math.cos(angle) * radius);
+                graph.setNodeAttribute(node, 'y', Math.sin(angle) * radius);
+            });
+            return;
+        }
+
+        const centerX = minX + spanX / 2;
+        const centerY = minY + spanY / 2;
+        const targetSpan = 220;
+        for (const node of nodes) {
+            const x = Number(graph.getNodeAttribute(node, 'x'));
+            const y = Number(graph.getNodeAttribute(node, 'y'));
+            graph.setNodeAttribute(node, 'x', ((x - centerX) / maxSpan) * targetSpan);
+            graph.setNodeAttribute(node, 'y', ((y - centerY) / maxSpan) * targetSpan);
+        }
     }
 
     watch(
@@ -907,6 +980,8 @@
             highConfidenceOnly,
             includeContextEndpoints,
             searchQuery,
+            () => props.showEnrichedEntities,
+            () => props.showEnrichedRelationships,
         ],
         () => {
             nextTick(() => buildGraph());
@@ -916,22 +991,68 @@
 
     watch(colorMode, () => buildGraph());
     watch(selectedEntityNeid, () => {
-        applySelectedHighlight();
-        focusCameraOnCenterNode();
+        nextTick(() => {
+            applySelectedHighlight();
+            queueSigmaReflow();
+        });
     });
-    watch(
-        entities,
-        () => {
-            ensureBondCenterSelected();
-        },
-        { immediate: true }
-    );
     watch(graphHeight, () => refreshSigma());
+
+    function isContainerValid(): boolean {
+        if (!graphContainer.value) return false;
+        const { clientWidth, clientHeight } = graphContainer.value;
+        return clientWidth >= 10 && clientHeight >= 10;
+    }
 
     function refreshSigma() {
         nextTick(() => {
-            sigmaInstance?.refresh();
+            if (!sigmaInstance || !isContainerValid()) return;
+            try {
+                sigmaInstance.resize();
+                sigmaInstance.refresh();
+            } catch {
+                // sigma state corrupted — schedule recovery
+                scheduleGraphRecovery();
+            }
         });
+    }
+
+    function queueSigmaReflow() {
+        const guardedRefresh = () => {
+            if (!sigmaInstance || !isContainerValid()) return;
+            try {
+                sigmaInstance.resize();
+                sigmaInstance.refresh();
+            } catch {
+                scheduleGraphRecovery();
+            }
+        };
+        requestAnimationFrame(guardedRefresh);
+        setTimeout(guardedRefresh, 90);
+    }
+
+    function isSigmaAlive(): boolean {
+        if (!sigmaInstance || !graphContainer.value) return false;
+        try {
+            const canvas = graphContainer.value.querySelector('canvas');
+            if (!canvas || canvas.width < 10 || canvas.height < 10) return false;
+            const gl =
+                canvas.getContext('webgl2', { failIfMajorPerformanceCaveat: true }) ??
+                canvas.getContext('webgl', { failIfMajorPerformanceCaveat: true });
+            if (gl && gl.isContextLost()) return false;
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    function scheduleGraphRecovery() {
+        setTimeout(() => {
+            if (isSigmaAlive() && isContainerValid()) return;
+            if (entities.value.length > 0 && graphContainer.value) {
+                buildGraph();
+            }
+        }, 600);
     }
 
     function syncViewportHeight() {
@@ -957,15 +1078,19 @@
     }
 
     onMounted(() => {
-        ensureBondCenterSelected();
         syncViewportHeight();
         nextTick(() => buildGraph());
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         window.addEventListener('resize', syncViewportHeight);
         if (graphFrame.value) {
-            resizeObserver = new ResizeObserver(() => refreshSigma());
+            resizeObserver = new ResizeObserver(() => {
+                if (suppressResize) return;
+                if (resizeTimer) clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => refreshSigma(), 60);
+            });
             resizeObserver.observe(graphFrame.value);
         }
+        setTimeout(() => refreshSigma(), 120);
     });
 
     onBeforeUnmount(() => {
@@ -977,19 +1102,29 @@
         window.removeEventListener('resize', syncViewportHeight);
         resizeObserver?.disconnect();
         resizeObserver = null;
+        if (resizeTimer) clearTimeout(resizeTimer);
     });
 
     function applySelectedHighlight() {
         if (!sigmaInstance || !graphInstance) return;
-        const neid = selectedEntityNeid.value;
-        graphInstance.forEachNode((nodeId) => {
-            const isSelected = nodeId === neid;
-            const baseSize = graphInstance!.getNodeAttribute(nodeId, 'node_base_size') as number;
-            graphInstance!.setNodeAttribute(nodeId, 'highlighted', isSelected);
-            graphInstance!.setNodeAttribute(nodeId, 'zIndex', isSelected ? 4 : 1);
-            graphInstance!.setNodeAttribute(nodeId, 'size', isSelected ? baseSize + 1.8 : baseSize);
-        });
-        sigmaInstance.refresh();
+        try {
+            const neid = selectedEntityNeid.value;
+            graphInstance.forEachNode((nodeId) => {
+                const isSelected = nodeId === neid;
+                const baseSize =
+                    (graphInstance!.getNodeAttribute(nodeId, 'node_base_size') as number) ?? 6;
+                graphInstance!.setNodeAttribute(nodeId, 'highlighted', isSelected);
+                graphInstance!.setNodeAttribute(nodeId, 'zIndex', isSelected ? 4 : 1);
+                graphInstance!.setNodeAttribute(
+                    nodeId,
+                    'size',
+                    isSelected ? baseSize + 1.8 : baseSize
+                );
+            });
+            sigmaInstance.refresh();
+        } catch {
+            // guard against sigma state corruption
+        }
     }
 
     function computeShortestPath() {
@@ -1066,6 +1201,9 @@
     .sigma-container {
         width: 100%;
         height: 100%;
+        contain: layout style paint;
+        will-change: transform;
+        isolation: isolate;
     }
 
     .graph-overlay {

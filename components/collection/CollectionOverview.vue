@@ -9,59 +9,104 @@
             :document-count="overview.documentCount"
             :analysis-status="overview.analysisStatusLabel"
             :last-updated="overview.lastUpdated"
+            :primary-action-label="overview.primaryActionLabel"
+            :primary-action-loading="rebuilding"
+            :primary-action-disabled="overview.status === 'processing' || rebuilding"
+            @primary-action="handlePrimaryAction"
         />
 
-        <div class="briefing-grid mt-4">
-            <div class="span-2">
-                <DealSummaryCard v-if="showDealSummary" :fields="overview.dealSummaryFields" />
-                <v-card v-else class="placeholder-card" variant="flat">
-                    <v-card-item>
-                        <v-card-title class="text-body-1 placeholder-title"
-                            >Deal Summary</v-card-title
+        <v-card v-if="showPipelinePanel" class="pipeline-card" variant="flat">
+            <v-card-text class="py-3">
+                <button
+                    type="button"
+                    class="pipeline-toggle w-100 d-flex align-center justify-space-between"
+                    @click="pipelineExpanded = !pipelineExpanded"
+                >
+                    <div
+                        class="text-caption text-medium-emphasis font-weight-medium text-uppercase"
+                    >
+                        Graph Reconstruction Pipeline
+                        <span
+                            v-if="!rebuilding && pipelineTotalDurationMs > 0"
+                            class="ml-2 text-caption text-disabled"
                         >
-                    </v-card-item>
-                    <v-card-text class="pt-0 text-body-2 text-medium-emphasis">
-                        Run initial analysis to synthesize the transaction structure, issuer,
-                        closing profile, and primary parties from uploaded documents.
-                    </v-card-text>
-                </v-card>
-            </div>
-            <ExtractionStatsCard :stats="overview.extractionStats" />
+                            ({{ formatDuration(pipelineTotalDurationMs) }} total)
+                        </span>
+                    </div>
+                    <v-icon size="18" color="medium-emphasis">
+                        {{ pipelineExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
+                    </v-icon>
+                </button>
+                <v-expand-transition>
+                    <div v-if="pipelineExpanded" class="pt-2">
+                        <SummaryAgentSteps :steps="rebuildSteps" />
+                    </div>
+                </v-expand-transition>
+            </v-card-text>
+        </v-card>
+
+        <div class="overview-strip">
+            <DealSummaryCard
+                :fields="overview.dealSummaryFields"
+                :status="overview.status"
+                @run-analysis="handleRunAnalysis"
+            />
+            <ExtractionStatsCard
+                :stats="overview.extractionStats"
+                :status="overview.status"
+                @run-analysis="handleRunAnalysis"
+            />
         </div>
 
-        <div class="briefing-grid mt-4">
-            <div class="span-3">
-                <AICaseStudyNarrativeCard
-                    :narrative-paragraphs="narrativeParagraphs"
-                    :citation-count="narrativeCitations.length"
-                    @regenerate="loadOverviewLanguage"
-                />
-            </div>
-        </div>
+        <AICaseStudyNarrativeCard
+            :narrative-paragraphs="narrativeParagraphs"
+            :citation-count="narrativeCitations.length"
+            :status="overview.status"
+            :is-regenerating="narrativeLoading"
+            @regenerate="loadOverviewLanguage"
+            @run-analysis="handleRunAnalysis"
+        />
 
         <SourceDocumentsTable
-            class="mt-4"
             :documents="overview.documents"
             @preview="handlePreviewDoc"
             @entities="handleViewEntities"
             @citations="handleViewCitations"
         />
 
-        <ExploreNextGrid class="mt-4" :cards="overview.exploreCards" @open="setTab" />
+        <ExploreNextGrid :cards="overview.exploreCards" @open="setTab" />
     </div>
 </template>
 
 <script setup lang="ts">
-    const { overviewViewModel, meta, isReady, setTab, focusDocument, addGeminiUsage } =
-        useCollectionWorkspace();
+    const {
+        overviewViewModel,
+        meta,
+        isReady,
+        rebuilding,
+        rebuild,
+        rebuildSteps,
+        setTab,
+        focusDocument,
+        addGeminiUsage,
+    } = useCollectionWorkspace();
 
     const liveNarrative = ref<string | null>(null);
     const narrativeCitations = ref<Array<{ label: string; neid?: string }>>([]);
+    const narrativeLoading = ref(false);
+    const pipelineExpanded = ref(true);
 
     const overview = computed(() => overviewViewModel.value);
-    const showDealSummary = computed(
-        () => overview.value.status === 'complete' || overview.value.status === 'partial'
+    const showPipelinePanel = computed(
+        () => rebuilding.value || rebuildSteps.value.some((step) => step.status !== 'pending')
     );
+    const pipelineTotalDurationMs = computed(() =>
+        rebuildSteps.value.reduce((sum, step) => sum + (step.durationMs ?? 0), 0)
+    );
+
+    watch(rebuilding, (isRunning) => {
+        if (isRunning) pipelineExpanded.value = true;
+    });
     const narrativeParagraphs = computed(() => {
         const narrative =
             liveNarrative.value ||
@@ -80,6 +125,7 @@
             narrativeCitations.value = [];
             return;
         }
+        narrativeLoading.value = true;
         try {
             const result = await $fetch<{
                 summaryLine: string;
@@ -111,7 +157,23 @@
         } catch {
             liveNarrative.value = null;
             narrativeCitations.value = [];
+        } finally {
+            narrativeLoading.value = false;
         }
+    }
+
+    async function handleRunAnalysis() {
+        if (rebuilding.value) return;
+        await rebuild();
+    }
+
+    async function handlePrimaryAction() {
+        if (overview.value.status === 'pending') {
+            await handleRunAnalysis();
+            return;
+        }
+        if (overview.value.status === 'processing') return;
+        setTab('graph');
     }
 
     function handlePreviewDoc(neid: string) {
@@ -126,6 +188,14 @@
     function handleViewCitations(neid: string) {
         focusDocument(neid);
         setTab('validation');
+    }
+
+    function formatDuration(ms: number): string {
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+        const min = Math.floor(ms / 60_000);
+        const sec = Math.round((ms % 60_000) / 1000);
+        return `${min}m ${sec}s`;
     }
 
     onMounted(() => {
@@ -147,44 +217,40 @@
 
 <style scoped>
     .overview-briefing {
-        max-width: 1420px;
+        max-width: 1400px;
         margin: 0 auto;
-        padding: 12px 8px 24px;
+        padding: 8px 8px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
     }
 
-    .briefing-grid {
-        display: grid;
-        grid-template-columns: repeat(1, minmax(0, 1fr));
-        gap: 18px;
-    }
-
-    .placeholder-card {
-        border: 1px dashed var(--app-divider-strong);
-        border-radius: 16px;
-        background: linear-gradient(
-            155deg,
-            color-mix(in srgb, var(--dynamic-panel-background) 84%, var(--dynamic-background) 16%),
-            color-mix(in srgb, var(--dynamic-surface) 90%, var(--dynamic-background) 10%)
+    .pipeline-card {
+        border: 1px solid var(--app-divider-strong);
+        background: color-mix(
+            in srgb,
+            var(--dynamic-panel-background) 88%,
+            var(--dynamic-background) 12%
         );
-        min-height: 220px;
+        border-radius: 12px;
     }
 
-    .placeholder-title {
-        letter-spacing: 0.01em;
-        font-weight: 600;
+    .pipeline-toggle {
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
     }
 
-    @media (min-width: 1280px) {
-        .briefing-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
+    .overview-strip {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
 
-        .span-2 {
-            grid-column: span 2 / span 2;
-        }
-
-        .span-3 {
-            grid-column: span 3 / span 3;
+    @media (min-width: 1140px) {
+        .overview-strip {
+            grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
         }
     }
 </style>

@@ -74,6 +74,15 @@ function formatDateTime(value?: string): string {
     return date.toLocaleString();
 }
 
+function formatLastUpdated(value: string | undefined, status: OverviewStatus): string {
+    if (value) {
+        return formatDateTime(value);
+    }
+    if (status === 'processing') return 'Updating now';
+    if (status === 'pending') return 'Awaiting first analysis';
+    return 'Timestamp pending';
+}
+
 function formatCount(value: number): string {
     return value.toLocaleString();
 }
@@ -184,7 +193,7 @@ export function mapCollectionToOverviewViewModel(params: {
         statusLabel: statusLabel(status),
         documentCount: state.documents.length,
         analysisStatusLabel: statusLabel(status),
-        lastUpdated: formatDateTime(state.meta.lastRebuilt),
+        lastUpdated: formatLastUpdated(state.meta.lastRebuilt, status),
         primaryActionLabel:
             status === 'pending'
                 ? 'Run Initial Analysis'

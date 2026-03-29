@@ -1,6 +1,10 @@
 import { mcpCallTool, resetMcpSession } from '~/server/utils/collectionConfig';
 import { setCachedCollection } from '~/server/api/collection/bootstrap.get';
 import {
+    loadExtractedSeedGraph,
+    seedKeyFromNameAndFlavor,
+} from '~/server/utils/extractedSeedGraph';
+import {
     BNY_DOCUMENTS,
     BNY_DOCUMENT_NEIDS,
     HOP1_FLAVORS,
@@ -105,6 +109,10 @@ function addRelationship(
 export default defineEventHandler(async (): Promise<CollectionState> => {
     resetMcpSession();
 
+    const seed = loadExtractedSeedGraph();
+    const extractedEntityKeys = new Set(
+        seed.entities.map((entity) => seedKeyFromNameAndFlavor(entity.name, entity.flavor))
+    );
     const entityMap = new Map<string, EntityRecord>();
     const relationships: RelationshipRecord[] = [];
     const relSeen = new Set<string>();
@@ -129,6 +137,10 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                 for (const rel of related) {
                     const neid = rel.neid as string;
                     if (!neid) continue;
+                    const relName = (rel.name as string) || '';
+                    const relFlavor = (rel.flavor as string) || flavor;
+                    const seedKey = seedKeyFromNameAndFlavor(relName, relFlavor);
+                    if (!extractedEntityKeys.has(seedKey)) continue;
                     const existing = entityMap.get(neid);
                     if (existing) {
                         if (!existing.sourceDocuments.includes(docNeid)) {
@@ -137,8 +149,8 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                     } else {
                         entityMap.set(neid, {
                             neid,
-                            name: (rel.name as string) || neid,
-                            flavor: (rel.flavor as string) || flavor,
+                            name: relName || neid,
+                            flavor: relFlavor,
                             sourceDocuments: [docNeid],
                             origin: 'document',
                             properties: rel.properties ?? undefined,

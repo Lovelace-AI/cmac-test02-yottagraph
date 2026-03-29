@@ -1,15 +1,22 @@
 <template>
     <v-card class="briefing-card" variant="flat">
-        <v-card-item>
-            <v-card-title class="text-body-1">Source Documents</v-card-title>
+        <v-card-item class="pb-1">
+            <v-card-title class="section-title">Source Documents</v-card-title>
             <template #append>
                 <span class="text-caption text-medium-emphasis">
                     {{ documents.length }} automatically classified documents
                 </span>
             </template>
         </v-card-item>
-        <v-card-text class="pt-0">
-            <v-table density="comfortable" class="documents-table">
+        <v-card-text class="pt-0 pb-3">
+            <v-table density="compact" class="documents-table">
+                <colgroup>
+                    <col class="col-file" />
+                    <col class="col-type" />
+                    <col class="col-date" />
+                    <col class="col-subject" />
+                    <col class="col-actions" />
+                </colgroup>
                 <thead>
                     <tr>
                         <th>File name</th>
@@ -21,20 +28,21 @@
                 </thead>
                 <tbody>
                     <tr v-for="doc in documents" :key="doc.id">
-                        <td>{{ doc.filename }}</td>
+                        <td class="cell-file">{{ doc.filename }}</td>
                         <td>
                             <v-chip size="x-small" variant="tonal" class="doc-type-pill">{{
                                 doc.detectedType
                             }}</v-chip>
                         </td>
-                        <td>{{ doc.date }}</td>
-                        <td>{{ doc.subject }}</td>
-                        <td>
-                            <div class="d-flex ga-1 flex-wrap">
+                        <td class="cell-date">{{ doc.date }}</td>
+                        <td class="cell-subject">{{ doc.subject }}</td>
+                        <td class="cell-actions">
+                            <div class="actions-cluster">
                                 <v-btn
                                     size="x-small"
                                     variant="text"
                                     class="row-action-pill"
+                                    prepend-icon="mdi-file-eye-outline"
                                     @click="$emit('preview', doc.neid)"
                                 >
                                     Preview
@@ -43,17 +51,19 @@
                                     size="x-small"
                                     variant="text"
                                     class="row-action-pill"
+                                    prepend-icon="mdi-graph-outline"
                                     @click="$emit('entities', doc.neid)"
                                 >
-                                    View entities
+                                    Entities
                                 </v-btn>
                                 <v-btn
                                     size="x-small"
                                     variant="text"
                                     class="row-action-pill"
+                                    prepend-icon="mdi-book-search-outline"
                                     @click="$emit('citations', doc.neid)"
                                 >
-                                    View citations
+                                    Citations
                                 </v-btn>
                             </div>
                         </td>
@@ -81,11 +91,38 @@
 <style scoped>
     .briefing-card {
         border: 1px solid var(--app-divider-strong);
-        background: linear-gradient(
-            160deg,
-            color-mix(in srgb, var(--dynamic-surface) 92%, var(--dynamic-background) 8%),
-            color-mix(in srgb, var(--dynamic-panel-background) 88%, var(--dynamic-background) 12%)
-        );
+        background: color-mix(in srgb, var(--dynamic-surface) 94%, var(--dynamic-background) 6%);
+    }
+
+    .section-title {
+        font-size: 0.92rem;
+        font-weight: 600;
+    }
+
+    .documents-table {
+        border: 1px solid var(--app-divider);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    .col-file {
+        width: 24%;
+    }
+
+    .col-type {
+        width: 12%;
+    }
+
+    .col-date {
+        width: 11%;
+    }
+
+    .col-subject {
+        width: 37%;
+    }
+
+    .col-actions {
+        width: 16%;
     }
 
     .documents-table th {
@@ -100,10 +137,46 @@
             var(--dynamic-panel-background) 84%,
             var(--dynamic-background) 16%
         );
+        padding: 8px 10px !important;
     }
 
     .documents-table :deep(tbody tr td) {
         border-bottom: 1px solid var(--app-divider);
+        padding: 8px 10px !important;
+        font-size: 0.8rem;
+        line-height: 1.3;
+        vertical-align: middle;
+    }
+
+    .documents-table :deep(tbody tr:hover td) {
+        background: color-mix(in srgb, var(--dynamic-primary) 6%, transparent);
+    }
+
+    .cell-file {
+        font-weight: 500;
+    }
+
+    .cell-date {
+        white-space: nowrap;
+    }
+
+    .cell-subject {
+        color: var(--dynamic-text-secondary);
+    }
+
+    .cell-actions {
+        min-width: 220px;
+    }
+
+    .actions-cluster {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 2px;
+        border: 1px solid var(--app-divider);
+        border-radius: 999px;
+        padding: 1px;
+        background: color-mix(in srgb, var(--dynamic-surface) 94%, var(--dynamic-background) 6%);
     }
 
     .doc-type-pill {
@@ -116,6 +189,7 @@
         text-transform: none;
         letter-spacing: 0;
         color: var(--dynamic-text-secondary);
+        min-width: auto;
     }
 
     .row-action-pill:hover {

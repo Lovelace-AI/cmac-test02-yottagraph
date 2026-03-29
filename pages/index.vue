@@ -18,19 +18,37 @@
                     </v-tabs>
                 </div>
                 <div class="d-flex align-center ga-2 flex-shrink-0">
-                    <v-chip size="small" :color="isReady ? 'success' : 'default'" variant="tonal">
-                        {{ isReady ? 'Analysis complete' : 'Analysis pending' }}
-                    </v-chip>
-                    <v-btn
+                    <v-chip
+                        v-if="rebuilding && currentTab !== 'overview'"
                         size="small"
+                        color="info"
                         variant="tonal"
-                        prepend-icon="mdi-refresh"
-                        :loading="rebuilding"
-                        :disabled="rebuilding"
-                        @click="handleRebuild"
+                        class="pipeline-inline-chip"
                     >
-                        {{ isReady ? 'Re-run Extraction' : 'Run Initial Analysis' }}
-                    </v-btn>
+                        <v-icon start size="12" class="pipeline-inline-chip__spinner">
+                            mdi-loading
+                        </v-icon>
+                        Pipeline running
+                    </v-chip>
+                    <template v-if="currentTab !== 'overview'">
+                        <v-chip
+                            size="small"
+                            :color="isReady ? 'success' : 'default'"
+                            variant="tonal"
+                        >
+                            {{ isReady ? 'Analysis complete' : 'Analysis pending' }}
+                        </v-chip>
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            prepend-icon="mdi-refresh"
+                            :loading="rebuilding"
+                            :disabled="rebuilding"
+                            @click="handleRebuild"
+                        >
+                            {{ isReady ? 'Re-run Extraction' : 'Run Initial Analysis' }}
+                        </v-btn>
+                    </template>
                 </div>
             </div>
             <div class="workspace-header-row d-flex align-center ga-3 mb-2 flex-wrap">
@@ -50,37 +68,6 @@
                     Scoped: {{ selectedDocumentTitle }}
                 </v-chip>
                 <v-chip v-else size="small" variant="outlined">All documents</v-chip>
-            </div>
-        </div>
-
-        <!-- Rebuild pipeline progress panel -->
-        <div v-if="showPipelinePanel" class="pipeline-panel flex-shrink-0 px-4 py-2">
-            <div class="workspace-content-shell">
-                <button
-                    type="button"
-                    class="pipeline-toggle w-100 d-flex align-center justify-space-between py-1"
-                    @click="pipelineExpanded = !pipelineExpanded"
-                >
-                    <div
-                        class="text-caption text-medium-emphasis font-weight-medium text-uppercase"
-                    >
-                        Graph Reconstruction Pipeline
-                        <span
-                            v-if="!rebuilding && pipelineTotalDurationMs > 0"
-                            class="ml-2 text-caption text-disabled"
-                        >
-                            ({{ formatDuration(pipelineTotalDurationMs) }} total)
-                        </span>
-                    </div>
-                    <v-icon size="18" color="medium-emphasis">
-                        {{ pipelineExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
-                    </v-icon>
-                </button>
-                <v-expand-transition>
-                    <div v-if="pipelineExpanded" class="pt-2">
-                        <SummaryAgentSteps :steps="rebuildSteps" />
-                    </div>
-                </v-expand-transition>
             </div>
         </div>
 
@@ -105,12 +92,7 @@
             class="flex-grow-1 overflow-y-auto px-4"
             :class="currentTab === 'overview' ? 'py-2' : 'py-4'"
         >
-            <div
-                :class="[
-                    'workspace-content-shell',
-                    { 'workspace-content-shell--overview': currentTab === 'overview' },
-                ]"
-            >
+            <div class="workspace-content-shell">
                 <v-alert v-if="collection.error" type="error" variant="tonal" class="mb-4" closable>
                     {{ collection.error }}
                 </v-alert>
@@ -150,16 +132,32 @@
         </div>
 
         <v-navigation-drawer
+            v-if="showEntityAsDrawer"
             v-model="entityDrawerOpen"
             location="right"
             width="480"
             temporary
+            :scrim="false"
             class="pa-2 entity-drawer"
         >
             <EntityDetailPanel />
         </v-navigation-drawer>
 
+        <v-dialog
+            v-else
+            v-model="entityDrawerOpen"
+            :fullscreen="entityDialogFullscreen"
+            max-width="760"
+            scrollable
+            class="entity-dialog"
+        >
+            <div class="entity-dialog-shell">
+                <EntityDetailPanel />
+            </div>
+        </v-dialog>
+
         <v-navigation-drawer
+            v-if="showChatAsDrawer"
             v-model="chatDrawerOpen"
             location="right"
             width="430"
@@ -254,6 +252,104 @@
             </v-card>
         </v-navigation-drawer>
 
+        <v-dialog
+            v-else
+            v-model="chatDrawerOpen"
+            :fullscreen="chatDialogFullscreen"
+            max-width="720"
+            scrollable
+            class="chat-dialog"
+        >
+            <div class="chat-dialog-shell">
+                <v-card class="chat-drawer-card" elevation="0">
+                    <v-card-item>
+                        <v-card-title class="text-body-2 d-flex align-center ga-2">
+                            <v-icon size="16" color="warning">mdi-robot</v-icon>
+                            Ask Yotta
+                            <v-chip size="x-small" variant="tonal">{{ currentTabLabel }}</v-chip>
+                        </v-card-title>
+                        <v-card-subtitle
+                            >Evidence-backed chat scoped to this collection.</v-card-subtitle
+                        >
+                    </v-card-item>
+                    <v-card-text class="pt-0">
+                        <div v-if="agentLoading" class="mb-2">
+                            <SummaryAgentSteps :steps="askYottaSteps" />
+                        </div>
+                        <div class="text-caption text-medium-emphasis mb-2">Starter questions</div>
+                        <div class="d-flex flex-wrap ga-1 mb-2">
+                            <v-btn
+                                v-for="prompt in askYottaPrompts"
+                                :key="prompt"
+                                size="x-small"
+                                variant="outlined"
+                                :disabled="!isReady || agentLoading"
+                                @click="runAskYottaPrompt(prompt)"
+                            >
+                                {{ prompt }}
+                            </v-btn>
+                        </div>
+                        <div class="d-flex ga-1">
+                            <v-text-field
+                                v-model="askYottaQuestion"
+                                density="compact"
+                                variant="outlined"
+                                hide-details
+                                label="Ask grounded question"
+                                :disabled="!isReady || agentLoading"
+                                @keydown.enter="runAskYottaQuestion"
+                            />
+                            <v-btn
+                                size="small"
+                                color="primary"
+                                :loading="agentLoading"
+                                :disabled="!isReady || !askYottaQuestion"
+                                @click="runAskYottaQuestion"
+                            >
+                                Ask
+                            </v-btn>
+                        </div>
+                        <div
+                            v-if="agentResult?.generationSource || lastAskUsage"
+                            class="d-flex align-center ga-1 flex-wrap mt-2"
+                        >
+                            <v-chip size="x-small" variant="tonal" color="deep-purple">
+                                {{ lastAskUsage?.model || 'model unavailable' }}
+                            </v-chip>
+                            <v-chip
+                                v-if="lastAskUsage"
+                                size="x-small"
+                                variant="tonal"
+                                color="blue-grey"
+                            >
+                                {{ lastAskUsage.totalTokens.toLocaleString() }} tokens
+                            </v-chip>
+                            <v-chip
+                                v-if="agentResult?.generationSource === 'fallback'"
+                                size="x-small"
+                                variant="tonal"
+                                color="error"
+                            >
+                                Gemini fallback
+                            </v-chip>
+                        </div>
+                        <div
+                            v-if="
+                                agentResult?.generationSource === 'fallback' &&
+                                agentResult?.generationNote
+                            "
+                            class="text-caption text-error mt-1"
+                        >
+                            {{ agentResult.generationNote }}
+                        </div>
+                        <div v-if="agentResult?.output" class="ask-yotta-output mt-2 text-caption">
+                            {{ agentResult.output }}
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </div>
+        </v-dialog>
+
         <v-btn
             color="warning"
             class="ask-yotta-btn"
@@ -266,6 +362,7 @@
 </template>
 
 <script setup lang="ts">
+    import { useDisplay } from 'vuetify';
     import type { WorkspaceTab } from '~/utils/collectionTypes';
 
     const {
@@ -297,7 +394,7 @@
         get: () => activeTab.value,
         set: (tab) => setTab(tab),
     });
-    const pipelineExpanded = ref(true);
+    const { mdAndUp, xs } = useDisplay();
     const chatDrawerOpen = ref(false);
     const askYottaQuestion = ref('');
     const askYottaSteps = ref<
@@ -328,10 +425,6 @@
             detail: 'Generating answer with Gemini...',
         },
     ]);
-
-    watch(rebuilding, (isRunning) => {
-        if (isRunning) pipelineExpanded.value = true;
-    });
 
     const tabs: Array<{ value: WorkspaceTab; label: string; icon: string }> = [
         { value: 'overview', label: 'Overview', icon: 'mdi-view-dashboard-outline' },
@@ -370,6 +463,10 @@
             if (!isOpen) selectEntity(null);
         },
     });
+    const showEntityAsDrawer = computed(() => mdAndUp.value);
+    const entityDialogFullscreen = computed(() => xs.value);
+    const showChatAsDrawer = computed(() => mdAndUp.value);
+    const chatDialogFullscreen = computed(() => xs.value);
 
     const tabQuickActions = computed(() =>
         recommendedActions.value.filter((action) => action.tab === currentTab.value)
@@ -501,21 +598,6 @@
         if (!chatDrawerOpen.value) chatDrawerOpen.value = true;
     }
 
-    const showPipelinePanel = computed(
-        () => rebuilding.value || rebuildSteps.value.some((step) => step.status !== 'pending')
-    );
-    const pipelineTotalDurationMs = computed(() =>
-        rebuildSteps.value.reduce((sum, step) => sum + (step.durationMs ?? 0), 0)
-    );
-
-    function formatDuration(ms: number): string {
-        if (ms < 1000) return `${ms}ms`;
-        if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-        const min = Math.floor(ms / 60_000);
-        const sec = Math.round((ms % 60_000) / 1000);
-        return `${min}m ${sec}s`;
-    }
-
     async function handleRebuild() {
         await rebuild();
     }
@@ -555,20 +637,18 @@
         width: min(460px, 100%);
     }
 
-    .pipeline-panel {
-        background: linear-gradient(
-            180deg,
-            color-mix(in srgb, var(--dynamic-panel-background) 88%, var(--dynamic-background) 12%),
-            color-mix(in srgb, var(--dynamic-surface) 84%, var(--dynamic-background) 16%)
-        );
-        border-bottom: 1px solid var(--app-divider);
+    .pipeline-inline-chip {
+        font-weight: 600;
     }
 
-    .pipeline-toggle {
-        border: 0;
-        background: transparent;
-        text-align: left;
-        cursor: pointer;
+    .pipeline-inline-chip__spinner {
+        animation: pipeline-inline-spin 1s linear infinite;
+    }
+
+    @keyframes pipeline-inline-spin {
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     .meta-bar {
@@ -584,10 +664,6 @@
         width: 100%;
         max-width: 1420px;
         margin: 0 auto;
-    }
-
-    .workspace-content-shell--overview {
-        max-width: none;
     }
 
     .mcp-payload {
@@ -637,5 +713,40 @@
 
     :deep(.entity-drawer.v-navigation-drawer) {
         width: min(480px, 94vw) !important;
+    }
+
+    .entity-dialog-shell {
+        width: min(760px, 96vw);
+        max-height: min(92vh, 960px);
+        margin: 0 auto;
+    }
+
+    :deep(.entity-dialog .v-overlay__content) {
+        width: min(760px, 96vw);
+        margin: 24px auto;
+    }
+
+    :deep(.entity-dialog .v-overlay__content > .entity-dialog-shell) {
+        width: 100%;
+    }
+
+    :deep(.entity-dialog .v-overlay__content .entity-panel) {
+        max-height: min(92vh, 960px);
+        overflow: hidden;
+    }
+
+    .chat-dialog-shell {
+        width: min(720px, 96vw);
+        max-height: min(92vh, 960px);
+        margin: 0 auto;
+    }
+
+    :deep(.chat-dialog .v-overlay__content) {
+        width: min(720px, 96vw);
+        margin: 24px auto;
+    }
+
+    :deep(.chat-dialog .v-overlay__content > .chat-dialog-shell) {
+        width: 100%;
     }
 </style>

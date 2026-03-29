@@ -1,5 +1,4 @@
 export type DataOrigin = 'document' | 'enriched' | 'agent';
-export type EnrichmentGraphMode = 'document' | 'expanded';
 
 export interface DocumentRecord {
     neid: string;

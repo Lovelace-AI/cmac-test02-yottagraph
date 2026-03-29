@@ -1,8 +1,8 @@
 import { ref, computed } from 'vue';
 import type {
     CollectionState,
-    EnrichmentGraphMode,
     EntityRecord,
+    EventRecord,
     RelationshipRecord,
     PropertySeriesRecord,
     WorkspaceTab,
@@ -126,8 +126,13 @@ const rebuildSteps = ref<RebuildStep[]>(INITIAL_STEPS.map((s) => ({ ...s })));
 const enriching = ref(false);
 const enrichmentAnchorNeids = ref<string[]>([]);
 const enrichmentHops = ref<1 | 2>(1);
-const enrichmentGraphMode = ref<EnrichmentGraphMode>('document');
-const enrichmentLastRun = ref<{ anchorNeids: string[]; hops: 1 | 2; ranAt: string } | null>(null);
+const enrichmentIncludeEvents = ref(true);
+const enrichmentLastRun = ref<{
+    anchorNeids: string[];
+    hops: 1 | 2;
+    includeEvents: boolean;
+    ranAt: string;
+} | null>(null);
 const agentLoading = ref(false);
 const agentResult = ref<{
     output: string;
@@ -218,6 +223,11 @@ export function useCollectionWorkspace() {
     const enrichmentExpandedGraphRelationshipsCollapsed = computed(
         () => collapsedExpandedProjection.value.relationships
     );
+    const enrichmentSupersetGraphEntities = computed(() => enrichmentExpandedGraphEntities.value);
+    const enrichmentSupersetGraphRelationships = computed(
+        () => enrichmentExpandedGraphRelationshipsCollapsed.value
+    );
+    const hasEnrichmentRun = computed(() => Boolean(enrichmentLastRun.value));
     const agreements = computed(() =>
         collection.value.entities.filter((e) => e.flavor === 'legal_agreement')
     );
@@ -612,18 +622,20 @@ export function useCollectionWorkspace() {
         geminiLog.value.push({ id: ++_geminiIdCounter, ...entry });
     }
 
-    async function enrich(anchorNeids: string[], hops = 1): Promise<void> {
+    async function enrich(anchorNeids: string[], hops = 1, includeEvents = true): Promise<void> {
         enriching.value = true;
         try {
             const boundedHops: 1 | 2 = hops >= 2 ? 2 : 1;
             enrichmentAnchorNeids.value = [...anchorNeids];
             enrichmentHops.value = boundedHops;
+            enrichmentIncludeEvents.value = includeEvents;
             const result = await $fetch<{
                 entities: EntityRecord[];
                 relationships: RelationshipRecord[];
+                events: EventRecord[];
             }>('/api/collection/enrich', {
                 method: 'POST',
-                body: { anchorNeids, hops: boundedHops },
+                body: { anchorNeids, hops: boundedHops, includeEvents },
             });
 
             const existingNeids = new Set(collection.value.entities.map((e) => e.neid));
@@ -640,15 +652,25 @@ export function useCollectionWorkspace() {
                 existingRelationshipKeys.add(key);
                 collection.value.relationships.push(relationship);
             }
+            const existingEventNeids = new Set(
+                collection.value.events.map((eventItem) => eventItem.neid)
+            );
+            const newEvents = (result.events ?? []).filter((eventItem) => {
+                if (existingEventNeids.has(eventItem.neid)) return false;
+                existingEventNeids.add(eventItem.neid);
+                return true;
+            });
+            collection.value.events.push(...newEvents);
 
             collection.value.meta.entityCount = collection.value.entities.length;
             collection.value.meta.relationshipCount = collection.value.relationships.length;
+            collection.value.meta.eventCount = collection.value.events.length;
             enrichmentLastRun.value = {
                 anchorNeids: [...anchorNeids],
                 hops: boundedHops,
+                includeEvents,
                 ranAt: new Date().toISOString(),
             };
-            enrichmentGraphMode.value = 'expanded';
         } catch (e: any) {
             console.error('Enrichment failed:', e.message);
         } finally {
@@ -747,8 +769,8 @@ export function useCollectionWorkspace() {
         enrichmentHops.value = hops;
     }
 
-    function setEnrichmentGraphMode(mode: EnrichmentGraphMode): void {
-        enrichmentGraphMode.value = mode;
+    function setEnrichmentIncludeEvents(includeEvents: boolean): void {
+        enrichmentIncludeEvents.value = includeEvents;
     }
 
     function resolveEntityName(neid: string): string {
@@ -793,10 +815,13 @@ export function useCollectionWorkspace() {
         enrichedRelationships,
         enrichmentAnchorNeids: computed(() => enrichmentAnchorNeids.value),
         enrichmentHops: computed(() => enrichmentHops.value),
-        enrichmentGraphMode: computed(() => enrichmentGraphMode.value),
+        enrichmentIncludeEvents: computed(() => enrichmentIncludeEvents.value),
         enrichmentLastRun: computed(() => enrichmentLastRun.value),
+        hasEnrichmentRun,
         enrichmentDocumentGraphEntities,
         enrichmentDocumentGraphRelationships,
+        enrichmentSupersetGraphEntities,
+        enrichmentSupersetGraphRelationships,
         enrichmentExpandedGraphEntities,
         enrichmentExpandedGraphRelationships: enrichmentExpandedGraphRelationshipsCollapsed,
         enrichmentCollapsedOrganizationCount,
@@ -827,7 +852,7 @@ export function useCollectionWorkspace() {
         setTab,
         setEnrichmentAnchors,
         setEnrichmentHops,
-        setEnrichmentGraphMode,
+        setEnrichmentIncludeEvents,
         resolveEntityName,
     };
 }

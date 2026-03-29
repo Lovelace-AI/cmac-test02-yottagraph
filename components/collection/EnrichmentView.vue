@@ -16,24 +16,36 @@
                 <v-card class="mb-3">
                     <v-card-text class="d-flex align-center justify-space-between flex-wrap ga-2">
                         <div class="d-flex align-center ga-2 flex-wrap">
-                            <v-btn-toggle
-                                :model-value="enrichmentGraphMode"
-                                mandatory
-                                density="compact"
-                                @update:model-value="updateGraphMode"
-                            >
-                                <v-btn value="document" size="small">Document Graph</v-btn>
-                                <v-btn value="expanded" size="small">Expanded Graph</v-btn>
-                            </v-btn-toggle>
+                            <template v-if="hasEnrichmentRun">
+                                <v-switch
+                                    v-model="showEnrichedEntities"
+                                    hide-details
+                                    density="compact"
+                                    color="info"
+                                    label="Show enriched entities"
+                                    class="mr-1"
+                                />
+                                <v-switch
+                                    v-model="showEnrichedRelationships"
+                                    hide-details
+                                    density="compact"
+                                    color="info"
+                                    label="Show enriched edges"
+                                />
+                            </template>
+                            <v-chip v-else size="small" variant="tonal" color="primary">
+                                Document graph only
+                            </v-chip>
                             <v-chip size="small" variant="tonal" color="success">
-                                {{ activeGraphEntities.length }} nodes
+                                {{ visibleGraphEntityCount }} nodes
                             </v-chip>
                             <v-chip size="small" variant="tonal" color="primary">
-                                {{ activeGraphRelationships.length }} links
+                                {{ visibleGraphRelationshipCount }} links
                             </v-chip>
                             <v-chip
                                 v-if="
-                                    enrichmentGraphMode === 'expanded' &&
+                                    hasEnrichmentRun &&
+                                    showEnrichedEntities &&
                                     enrichmentCollapsedOrganizationCount > 0
                                 "
                                 size="small"
@@ -51,20 +63,23 @@
 
                 <v-alert
                     v-if="
-                        enrichmentGraphMode === 'expanded' &&
+                        hasEnrichmentRun &&
+                        showEnrichedEntities &&
                         enrichmentCollapsedOrganizationCount > 0
                     "
                     type="info"
                     variant="tonal"
                     class="mb-3"
                 >
-                    Expanded mode traverses the full organization lineage but collapses
-                    acquired-bank chains into surviving organizations by default.
+                    Expanded mode adds broader Yottagraph context while merging acquired banks into
+                    surviving parent organizations to keep the view readable.
                 </v-alert>
 
                 <v-card
                     v-if="
-                        enrichmentGraphMode === 'expanded' && collapsedOrganizationMappings.length
+                        hasEnrichmentRun &&
+                        showEnrichedEntities &&
+                        collapsedOrganizationMappings.length
                     "
                     class="mb-3"
                 >
@@ -76,8 +91,8 @@
                             </v-chip>
                         </v-card-title>
                         <v-card-subtitle>
-                            Each row shows acquired organizations collapsed into a surviving bank
-                            node.
+                            Each row lists acquired organizations that are merged into one surviving
+                            parent node.
                         </v-card-subtitle>
                     </v-card-item>
                     <v-card-text class="pt-0">
@@ -117,10 +132,21 @@
                 <GraphWorkspace
                     :entities-override="activeGraphEntities"
                     :relationships-override="activeGraphRelationships"
+                    :show-enriched-entities="showEnrichedEntities"
+                    :show-enriched-relationships="showEnrichedRelationships"
                 />
             </v-window-item>
 
             <v-window-item value="setup">
+                <v-alert v-if="!enrichmentLastRun" type="info" variant="tonal" class="mb-3">
+                    <div class="text-body-2 font-weight-medium mb-1">Quick start</div>
+                    <ol class="pl-5 mb-1">
+                        <li>Select 3-5 anchor entities from the document graph.</li>
+                        <li>Start with 1-hop expansion for a focused first pass.</li>
+                        <li>Run Expand Context, then review the result in Graph.</li>
+                    </ol>
+                </v-alert>
+
                 <v-row class="mb-4">
                     <v-col cols="12" md="8">
                         <v-card>
@@ -183,11 +209,29 @@
                                 <div class="text-body-2 mb-2">
                                     Selected anchors: {{ selectedAnchors.length }}
                                 </div>
+                                <div
+                                    v-if="selectedAnchors.length === 0"
+                                    class="text-caption text-medium-emphasis mb-2"
+                                >
+                                    Select at least one anchor to run enrichment.
+                                </div>
 
                                 <v-radio-group v-model="hopsModel" inline hide-details class="mb-3">
                                     <v-radio label="1-hop" :value="1" />
                                     <v-radio label="2-hop" :value="2" />
                                 </v-radio-group>
+                                <v-switch
+                                    v-model="includeEventsModel"
+                                    color="primary"
+                                    hide-details
+                                    density="comfortable"
+                                    label="Include related events in enrichment"
+                                    class="mb-2"
+                                />
+                                <div class="text-caption text-medium-emphasis mb-3">
+                                    Recommendation: start with 1-hop, then use 2-hop with a narrow
+                                    anchor set.
+                                </div>
 
                                 <v-btn
                                     color="primary"
@@ -209,6 +253,9 @@
                                 >
                                     Auto-select highest-impact anchors
                                 </v-btn>
+                                <div class="text-caption text-medium-emphasis mt-1">
+                                    Highest-impact anchors are ranked by current graph connectivity.
+                                </div>
 
                                 <div
                                     v-if="enrichmentLastRun"
@@ -217,6 +264,9 @@
                                     Last run: {{ enrichmentLastRun.anchorNeids.length }} anchors,
                                     hop
                                     {{ enrichmentLastRun.hops }}
+                                    <span v-if="enrichmentLastRun.includeEvents">
+                                        , with related events
+                                    </span>
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -238,6 +288,18 @@
                                         {{ enrichedEntities.length }}
                                     </span>
                                 </div>
+                                <div class="d-flex justify-space-between py-1">
+                                    <span class="text-body-2">Document-derived links</span>
+                                    <span class="text-body-2 font-weight-medium text-green">
+                                        {{ documentRelationshipCount }}
+                                    </span>
+                                </div>
+                                <div class="d-flex justify-space-between py-1">
+                                    <span class="text-body-2">New context links</span>
+                                    <span class="text-body-2 font-weight-medium text-blue">
+                                        {{ enrichedRelationshipCount }}
+                                    </span>
+                                </div>
                                 <v-divider class="my-2" />
                                 <div class="d-flex justify-space-between py-1">
                                     <span class="text-body-2 font-weight-medium"
@@ -245,6 +307,14 @@
                                     >
                                     <span class="text-body-2 font-weight-medium">
                                         {{ documentEntities.length + enrichedEntities.length }}
+                                    </span>
+                                </div>
+                                <div class="d-flex justify-space-between py-1">
+                                    <span class="text-body-2 font-weight-medium"
+                                        >Combined links</span
+                                    >
+                                    <span class="text-body-2 font-weight-medium">
+                                        {{ documentRelationshipCount + enrichedRelationshipCount }}
                                     </span>
                                 </div>
                             </v-card-text>
@@ -284,6 +354,30 @@
 </template>
 
 <script setup lang="ts">
+    const AUTO_SELECT_ALLOWLIST = new Set<string>([
+        // High-signal enrichable anchors from Docs/enrichment-analysis.md
+        '06157989400122873900', // HSBC Bank USA, National Association
+        '05477621199116204617', // Orrick, Herrington & Sutcliffe, LLP
+        '02080889041561724035', // Orrick
+        '07683517764755523583', // Willdan Financial Services
+        '06967031221082229818', // UNITED JERSEY BANK/CENTRAL,
+        '06471256961308361850', // New Jersey Housing and Mortgage Finance Agency
+        '04104505588419472813', // NC HOUSING ASSOCIATES #200 CO.
+        '04008955034518895738', // ARTHUR KLEIN
+        '07942829951042429385', // 97-77 QUEENS BLVD. REGO PARK, N.Y. 11374
+    ]);
+    const AUTO_SELECT_BLOCKLIST = new Set<string>([
+        // Broad/global anchors that tend to produce noisy expansions
+        '08749664511655725314', // The Hongkong and Shanghai Banking Corporation Limited, Singapore Branch
+        '08883522583676895375', // United States Department of the Treasury
+        '07404718453994080710', // The Treasury
+        '08378183269956851171', // United States
+        '05384086983174826493', // Bank of New York Mellon Corporation (BNY Mellon)
+        '04648605347073135218', // New York
+        '05716789654794197421', // Dallas
+        '01054548445358605934', // Trenton, New Jersey
+    ]);
+
     const {
         documentEntities,
         enrichedEntities,
@@ -294,21 +388,24 @@
         relationships,
         enrichmentAnchorNeids,
         enrichmentHops,
-        enrichmentGraphMode,
+        enrichmentIncludeEvents,
+        hasEnrichmentRun,
         enrichmentLastRun,
         enrichmentDocumentGraphEntities,
         enrichmentDocumentGraphRelationships,
-        enrichmentExpandedGraphEntities,
-        enrichmentExpandedGraphRelationships,
+        enrichmentSupersetGraphEntities,
+        enrichmentSupersetGraphRelationships,
         enrichmentCollapsedOrganizationCount,
         enrichmentCollapsedRepresentativeByNeid,
         setEnrichmentAnchors,
         setEnrichmentHops,
-        setEnrichmentGraphMode,
+        setEnrichmentIncludeEvents,
     } = useCollectionWorkspace();
 
-    const activeSubtab = ref<'graph' | 'setup'>('graph');
+    const activeSubtab = ref<'graph' | 'setup'>(enrichmentLastRun.value ? 'graph' : 'setup');
     const anchorSearch = ref('');
+    const showEnrichedEntities = ref(true);
+    const showEnrichedRelationships = ref(true);
 
     const selectedAnchors = computed<string[]>({
         get: () => enrichmentAnchorNeids.value,
@@ -319,21 +416,65 @@
         get: () => enrichmentHops.value,
         set: (hops) => setEnrichmentHops(hops),
     });
+    const includeEventsModel = computed({
+        get: () => enrichmentIncludeEvents.value,
+        set: (includeEvents: boolean) => setEnrichmentIncludeEvents(includeEvents),
+    });
 
     const activeGraphEntities = computed(() =>
-        enrichmentGraphMode.value === 'document'
-            ? enrichmentDocumentGraphEntities.value
-            : enrichmentExpandedGraphEntities.value
+        hasEnrichmentRun.value
+            ? enrichmentSupersetGraphEntities.value
+            : enrichmentDocumentGraphEntities.value
     );
     const activeGraphRelationships = computed(() =>
-        enrichmentGraphMode.value === 'document'
-            ? enrichmentDocumentGraphRelationships.value
-            : enrichmentExpandedGraphRelationships.value
+        hasEnrichmentRun.value
+            ? enrichmentSupersetGraphRelationships.value
+            : enrichmentDocumentGraphRelationships.value
     );
-    const graphModeDescription = computed(() =>
-        enrichmentGraphMode.value === 'document'
-            ? 'Document graph shows only source-derived entities and links.'
-            : 'Expanded graph overlays Yottagraph context with collapsed acquisition lineage.'
+    const enrichedEntityNeidSet = computed(
+        () => new Set(enrichedEntities.value.map((e) => e.neid))
+    );
+    const visibleGraphEntityCount = computed(() =>
+        showEnrichedEntities.value
+            ? activeGraphEntities.value.length
+            : activeGraphEntities.value.filter((entity) => entity.origin !== 'enriched').length
+    );
+    const visibleGraphRelationshipCount = computed(() => {
+        let list = activeGraphRelationships.value;
+        if (!showEnrichedRelationships.value) {
+            list = list.filter((relationship) => relationship.origin !== 'enriched');
+        }
+        if (!showEnrichedEntities.value) {
+            list = list.filter(
+                (relationship) =>
+                    !enrichedEntityNeidSet.value.has(relationship.sourceNeid) &&
+                    !enrichedEntityNeidSet.value.has(relationship.targetNeid)
+            );
+        }
+        return list.length;
+    });
+    const graphModeDescription = computed(() => {
+        if (!hasEnrichmentRun.value) {
+            return 'Showing source-derived document graph. Run Expand Context to reveal broader graph context.';
+        }
+        if (!showEnrichedEntities.value && !showEnrichedRelationships.value) {
+            return 'Expanded graph loaded; enriched layer is hidden.';
+        }
+        if (!showEnrichedEntities.value) {
+            return 'Showing document entities with selected enriched edges hidden.';
+        }
+        if (!showEnrichedRelationships.value) {
+            return 'Showing enriched entities while hiding enriched edges.';
+        }
+        return 'Expanded graph overlays Yottagraph context on top of document-derived structure.';
+    });
+    const documentRelationshipCount = computed(
+        () =>
+            relationships.value.filter((relationship) => relationship.origin === 'document').length
+    );
+    const enrichedRelationshipCount = computed(
+        () =>
+            relationships.value.filter((relationship) => relationship.origin === 'enriched').length
     );
     const entityNameByNeid = computed(() => {
         const byNeid = new Map<string, string>();
@@ -395,8 +536,9 @@
     }
 
     async function runEnrichment() {
-        await enrich(selectedAnchors.value, hopsModel.value);
-        setEnrichmentGraphMode('expanded');
+        await enrich(selectedAnchors.value, hopsModel.value, includeEventsModel.value);
+        showEnrichedEntities.value = true;
+        showEnrichedRelationships.value = true;
         activeSubtab.value = 'graph';
     }
 
@@ -413,13 +555,32 @@
             );
         }
 
-        const topAnchors = documentEntities.value
+        const curatedTopAnchors = documentEntities.value
+            .filter(
+                (entity) =>
+                    AUTO_SELECT_ALLOWLIST.has(entity.neid) &&
+                    !AUTO_SELECT_BLOCKLIST.has(entity.neid)
+            )
             .map((entity) => ({ neid: entity.neid, count: connectionCount.get(entity.neid) || 0 }))
             .sort((a, b) => b.count - a.count)
             .slice(0, 5)
             .map((item) => item.neid);
 
-        selectedAnchors.value = topAnchors;
+        if (curatedTopAnchors.length > 0) {
+            selectedAnchors.value = curatedTopAnchors;
+            return;
+        }
+
+        // Fallback for new collections: rank document entities by local connectivity,
+        // but keep known noisy/global anchors out of the default selection.
+        const fallbackTopAnchors = documentEntities.value
+            .filter((entity) => !AUTO_SELECT_BLOCKLIST.has(entity.neid))
+            .map((entity) => ({ neid: entity.neid, count: connectionCount.get(entity.neid) || 0 }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5)
+            .map((item) => item.neid);
+
+        selectedAnchors.value = fallbackTopAnchors;
     }
 
     const enrichedHeaders = [
@@ -427,12 +588,6 @@
         { title: 'Type', key: 'flavor', sortable: true },
         { title: 'Origin', key: 'origin', sortable: false },
     ];
-
-    function updateGraphMode(mode: unknown) {
-        if (mode === 'document' || mode === 'expanded') {
-            setEnrichmentGraphMode(mode);
-        }
-    }
 </script>
 
 <style scoped>
