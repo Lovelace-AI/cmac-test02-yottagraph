@@ -1286,7 +1286,14 @@ export function useCollectionWorkspace() {
         try {
             const response = await fetch('/api/collection/rebuild-stream');
             if (!response.ok || !response.body) {
-                throw new Error(`Stream failed: ${response.status}`);
+                let detail = '';
+                try {
+                    detail = (await response.text()).trim();
+                } catch {
+                    detail = '';
+                }
+                const suffix = detail ? ` — ${detail.slice(0, 220)}` : '';
+                throw new Error(`Stream failed: ${response.status}${suffix}`);
             }
 
             const reader = response.body.getReader();

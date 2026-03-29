@@ -215,21 +215,25 @@ export default defineEventHandler(async (event) => {
 
     resetMcpSession();
 
-    const seed = loadExtractedSeedGraph();
+    let seed: ReturnType<typeof loadExtractedSeedGraph>;
+    let baselineExtractedPropertyCount = 0;
+    let baselineExtractedPropertyRecordCount = 0;
     const entityByKey = new Map<string, EntityRecord>();
     const eventByKey = new Map<string, EventRecord>();
     const seedEntityDocsByKey = new Map<string, Set<string>>();
     const seedEventDocsByKey = new Map<string, Set<string>>();
     const relationshipMap = new Map<string, RelationshipRecord>();
-    const baselineExtractedPropertyCount =
-        seed.entities.reduce((sum, entity) => sum + countRecordProperties(entity), 0) +
-        seed.events.reduce((sum, eventItem) => sum + countRecordProperties(eventItem), 0);
-    const baselineExtractedPropertyRecordCount =
-        seed.entities.filter((entity) => countRecordProperties(entity) > 0).length +
-        seed.events.filter((eventItem) => countRecordProperties(eventItem) > 0).length;
     let t0 = Date.now();
 
     try {
+        seed = loadExtractedSeedGraph();
+        baselineExtractedPropertyCount =
+            seed.entities.reduce((sum, entity) => sum + countRecordProperties(entity), 0) +
+            seed.events.reduce((sum, eventItem) => sum + countRecordProperties(eventItem), 0);
+        baselineExtractedPropertyRecordCount =
+            seed.entities.filter((entity) => countRecordProperties(entity) > 0).length +
+            seed.events.filter((eventItem) => countRecordProperties(eventItem) > 0).length;
+
         // ─── Phase 1: Load extracted JSON baseline ────────────────────
         t0 = Date.now();
         sendStep(
