@@ -67,13 +67,6 @@
                 </div>
             </div>
         </div>
-
-        <SourceDocumentsTable
-            :documents="overview.documents"
-            @preview="handlePreviewDoc"
-            @entities="handleViewEntities"
-            @citations="handleViewCitations"
-        />
     </div>
 </template>
 

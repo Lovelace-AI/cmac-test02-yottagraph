@@ -112,9 +112,25 @@ function formatDateRangeLabel(values: Iterable<string>): string {
         .filter(Boolean) as string[];
     if (!normalized.length) return 'Not available';
     const sorted = [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
-    const earliest = formatDate(sorted[0]);
-    const latest = formatDate(sorted[sorted.length - 1]);
-    return earliest === latest ? earliest : `${earliest} -> ${latest}`;
+    const earliestYear = sorted[0].slice(0, 4);
+    const latestYear = sorted[sorted.length - 1].slice(0, 4);
+    return earliestYear === latestYear ? earliestYear : `${earliestYear} -> ${latestYear}`;
+}
+
+function sortDocumentsOldestToNewest(documents: DocumentRecord[]): DocumentRecord[] {
+    return [...documents].sort((a, b) => {
+        const aDate = normalizeDateOnly(a.date);
+        const bDate = normalizeDateOnly(b.date);
+        if (aDate && bDate) {
+            const dateCompare = aDate.localeCompare(bDate);
+            if (dateCompare !== 0) return dateCompare;
+        } else if (aDate && !bDate) {
+            return -1;
+        } else if (!aDate && bDate) {
+            return 1;
+        }
+        return a.title.localeCompare(b.title);
+    });
 }
 
 function isNeidLike(value: string): boolean {
@@ -335,6 +351,11 @@ export function mapCollectionToOverviewViewModel(params: {
         ],
         extractionStats: [
             { key: 'docs', label: 'Documents', value: formatCount(state.documents.length) },
+            {
+                key: 'date_range',
+                label: 'Date range',
+                value: formatDateRangeLabel(dateValues),
+            },
             { key: 'entities', label: 'Entities', value: formatCount(state.meta.entityCount) },
             {
                 key: 'relationships',
@@ -347,14 +368,9 @@ export function mapCollectionToOverviewViewModel(params: {
                 label: 'Agreements',
                 value: formatCount(state.meta.agreementCount),
             },
-            {
-                key: 'date_range',
-                label: 'Date range',
-                value: formatDateRangeLabel(dateValues),
-            },
             { key: 'locations', label: 'Locations', value: formatCount(locationCount) },
         ],
-        documents: state.documents.map((doc) => ({
+        documents: sortDocumentsOldestToNewest(state.documents).map((doc) => ({
             id: doc.documentId,
             filename: doc.title,
             detectedType: doc.kind || 'Document type pending',

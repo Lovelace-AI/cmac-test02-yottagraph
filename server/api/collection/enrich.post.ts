@@ -182,6 +182,8 @@ export default defineEventHandler(async (event): Promise<EnrichResult> => {
             sourceNeid: normalizedSourceNeid,
             targetNeid: normalizedTargetNeid,
             type: relationshipType,
+            recordedAt:
+                (row?.timestamp as string | undefined) ?? (row?.recorded_at as string | undefined),
             origin: 'enriched',
             properties: row?.properties ?? {},
             citations: Array.isArray(row?.citations) ? row.citations : [],

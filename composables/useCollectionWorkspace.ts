@@ -111,6 +111,7 @@ export interface EnrichmentInsightCard {
     participantCount?: number;
     counterpartyCount?: number;
     dateRangeLabel?: string | null;
+    relationshipDateLabel?: string | null;
 }
 
 interface EnrichmentLanguageCard {
@@ -294,7 +295,9 @@ export function useCollectionWorkspace() {
     ]);
     const LINEAGE_PRIORITY = new Map<string, number>([
         ['04824620677155774613', 100], // REPUBLIC NATIONAL BANK OF NEW YORK
+        ['06967031221082229818', 98], // UNITED JERSEY BANK/CENTRAL,
         ['06157989400122873900', 95], // HSBC Bank USA, National Association
+        ['05384086983174826493', 92], // Bank of New York Mellon Corporation (BNY Mellon)
     ]);
     const RELATED_DEAL_PRIORITY = new Map<string, number>([
         ['05384086983174826493', 110], // Bank of New York Mellon Corporation (BNY Mellon)
@@ -336,6 +339,14 @@ export function useCollectionWorkspace() {
                 collection.value.events.map((eventItem) => [eventItem.neid, eventItem] as const)
             )
     );
+    const documentTitleByNeid = computed(
+        () =>
+            new Map(
+                collection.value.documents.map(
+                    (document) => [document.neid, document.title] as const
+                )
+            )
+    );
     const relationshipNeidPairs = computed(() =>
         enrichmentExpandedGraphRelationships.value.map((relationship) => ({
             ...relationship,
@@ -360,6 +371,28 @@ export function useCollectionWorkspace() {
         'partner_of',
     ]);
     const isNeidLike = (value: string): boolean => /^\d{16,24}$/.test(value.trim());
+    const normalizeEntityLabel = (value: string): string =>
+        value
+            .trim()
+            .toLowerCase()
+            .replace(/&/g, ' and ')
+            .replace(/[^a-z0-9]+/g, ' ')
+            .replace(
+                /\b(the|inc|llc|ltd|corp|corporation|co|company|na|assoc|association|national)\b/g,
+                ' '
+            )
+            .replace(/\s+/g, ' ')
+            .trim();
+    const EVENT_LINEAGE_ALIAS_TO_NEID = new Map<string, string>([
+        ['united jersey bank', '06967031221082229818'],
+        ['united jersey bank central', '06967031221082229818'],
+        ['bank of new york', '05384086983174826493'],
+        ['the bank of new york', '05384086983174826493'],
+        ['bny', '05384086983174826493'],
+        ['hsbc bank usa', '06157989400122873900'],
+        ['hsbc bank usa national', '06157989400122873900'],
+        ['republic national bank of new york', '04824620677155774613'],
+    ]);
     const propertyScalarText = (value: unknown): string => {
         if (value && typeof value === 'object' && !Array.isArray(value)) {
             const scalar = (value as Record<string, unknown>).value;
@@ -385,6 +418,48 @@ export function useCollectionWorkspace() {
             if (text && !isNeidLike(text)) return text;
         }
         return direct || entity.neid;
+    };
+    const entityByNormalizedName = computed(() => {
+        const byName = new Map<string, EntityRecord>();
+        for (const entity of collection.value.entities) {
+            for (const candidate of [entity.name, entityDisplayName(entity)]) {
+                const normalized = normalizeEntityLabel(String(candidate ?? ''));
+                if (!normalized || byName.has(normalized)) continue;
+                byName.set(normalized, entity);
+            }
+        }
+        return byName;
+    });
+    const syntheticOrganizationEntity = (
+        label: string,
+        canonicalNeid: string,
+        sourceDocuments: string[] = []
+    ): EntityRecord => ({
+        neid: canonicalNeid,
+        name: label.trim(),
+        flavor: 'organization',
+        sourceDocuments: [...new Set(sourceDocuments)],
+        origin: 'document',
+        extractedSeed: true,
+        properties: {
+            canonical_name: { value: label.trim() },
+            resolved_name: { value: label.trim() },
+        },
+    });
+    const resolveOrganizationEntity = (
+        label: string,
+        sourceDocuments: string[] = []
+    ): EntityRecord | undefined => {
+        const normalized = normalizeEntityLabel(label);
+        if (!normalized) return undefined;
+        const canonicalNeid = EVENT_LINEAGE_ALIAS_TO_NEID.get(normalized);
+        if (canonicalNeid) {
+            const canonical = entityByNeid.value.get(canonicalNeid);
+            if (canonical?.flavor === 'organization') return canonical;
+            return syntheticOrganizationEntity(label, canonicalNeid, sourceDocuments);
+        }
+        const direct = entityByNormalizedName.value.get(normalized);
+        return direct?.flavor === 'organization' ? direct : undefined;
     };
     const relationshipLabel = (type: string): string => type.replace(/_/g, ' ');
     const pluralize = (count: number, singular: string, plural = `${singular}s`): string =>
@@ -430,6 +505,113 @@ export function useCollectionWorkspace() {
         if (location) details.push(`location: ${location}`);
         return details.length > 0 ? `${eventItem.name} (${details.join(' | ')})` : eventItem.name;
     };
+    const entityDocumentGrounding = (entityNeids: string[]): string => {
+        const titles = Array.from(
+            new Set(
+                entityNeids.flatMap((neid) => entityByNeid.value.get(neid)?.sourceDocuments ?? [])
+            )
+        )
+            .map((docNeid) => documentTitleByNeid.value.get(docNeid) ?? docNeid)
+            .filter(Boolean)
+            .slice(0, 2);
+        if (!titles.length)
+            return 'This relationship is grounded in the extracted collection context.';
+        if (titles.length === 1) return `Grounded in ${titles[0]}.`;
+        return `Grounded in ${titles[0]} and ${titles[1]}.`;
+    };
+    const documentGroundingFromDocs = (documentNeids: string[]): string => {
+        const titles = Array.from(
+            new Set(
+                documentNeids.map((docNeid) => documentTitleByNeid.value.get(docNeid) ?? docNeid)
+            )
+        )
+            .filter(Boolean)
+            .slice(0, 2);
+        if (!titles.length) return 'Grounded in the extracted collection context.';
+        if (titles.length === 1) return `Grounded in ${titles[0]}.`;
+        return `Grounded in ${titles[0]} and ${titles[1]}.`;
+    };
+    const eventDescriptionSnippet = (eventItem: EventRecord): string | null => {
+        const text = String(eventItem.description ?? '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (!text) return null;
+        return text.length > 220 ? `${text.slice(0, 217).trimEnd()}...` : text;
+    };
+    const parseEventLineageSignal = (
+        eventItem: EventRecord
+    ): {
+        predecessor: EntityRecord;
+        successor: EntityRecord;
+        mode: 'bank_succession' | 'beneficiary_change';
+    } | null => {
+        const description = String(eventItem.description ?? '').trim();
+        if (!description) return null;
+        const successionMatch = description.match(
+            /all references to (.+?) now mean (.+?)(?:[.;]|$)/i
+        );
+        if (successionMatch) {
+            const predecessor = resolveOrganizationEntity(
+                successionMatch[1],
+                eventItem.sourceDocuments
+            );
+            const successor = resolveOrganizationEntity(
+                successionMatch[2],
+                eventItem.sourceDocuments
+            );
+            if (
+                predecessor &&
+                successor &&
+                predecessor.neid !== successor.neid &&
+                predecessor.flavor === 'organization' &&
+                successor.flavor === 'organization'
+            ) {
+                return { predecessor, successor, mode: 'bank_succession' };
+            }
+        }
+        const beneficiaryMatch = description.match(
+            /changed the beneficiary from (.+?) to (.+?)(?:[.;]|$)/i
+        );
+        if (beneficiaryMatch) {
+            const predecessor = resolveOrganizationEntity(
+                beneficiaryMatch[1],
+                eventItem.sourceDocuments
+            );
+            const successor = resolveOrganizationEntity(
+                beneficiaryMatch[2],
+                eventItem.sourceDocuments
+            );
+            if (
+                predecessor &&
+                successor &&
+                predecessor.neid !== successor.neid &&
+                predecessor.flavor === 'organization' &&
+                successor.flavor === 'organization'
+            ) {
+                return { predecessor, successor, mode: 'beneficiary_change' };
+            }
+        }
+        return null;
+    };
+    const broaderActivityTheme = (items: EventRecord[]): string | null => {
+        const names = items.map((item) => item.name);
+        const locAmendmentCount = names.filter((name) => /LOC Amendment/i.test(name)).length;
+        if (locAmendmentCount >= Math.min(3, names.length)) {
+            return 'Most of these examples are later letter-of-credit amendments tied to the same financing relationships, not missing facts from the uploaded document set.';
+        }
+        const buyoutCount = names.filter((name) => /buyout|acquisition|merger/i.test(name)).length;
+        if (buyoutCount >= Math.min(2, names.length)) {
+            return 'These examples look like later corporate transactions involving the same participant, not new evidence about the original financing documents.';
+        }
+        return null;
+    };
+    const takeawaySentence = (value: string | null | undefined): string | null => {
+        if (!value) return null;
+        const normalized = value.replace(/\s+/g, ' ').trim();
+        if (!normalized) return null;
+        const match = normalized.match(/^(.+?[.!?])(?:\s|$)/);
+        return (match?.[1] ?? normalized).replace(/\s+/g, ' ').trim();
+    };
     const eventDateRangeLabel = (items: EventRecord[]): string | null => {
         const years = items
             .map(eventYear)
@@ -440,6 +622,24 @@ export function useCollectionWorkspace() {
         const maxYear = years[years.length - 1];
         if (minYear === maxYear) return String(minYear);
         return `${minYear} - ${maxYear}`;
+    };
+    const relationshipDateLabel = (relationship: RelationshipRecord): string | null => {
+        const direct = relationship.recordedAt;
+        if (direct) return String(direct).slice(0, 10);
+        const props = (relationship.properties ?? {}) as Record<string, unknown>;
+        const candidateKeys = [
+            'timestamp',
+            'date',
+            'event_date',
+            'effective_date',
+            'recorded_at',
+            'acquisition_date',
+        ];
+        for (const key of candidateKeys) {
+            const value = propertyScalarText(props[key]);
+            if (value) return value.slice(0, 10);
+        }
+        return null;
     };
     const amountKeyPattern =
         /(amount|size|notional|par|principal|purchase_price|transaction_value|deal_value|valuation|gross_earnings|proceeds)/i;
@@ -577,6 +777,7 @@ export function useCollectionWorkspace() {
             const language = insightLanguage(cardId);
             const predecessorName = entityDisplayName(predecessor);
             const successorName = entityDisplayName(successor);
+            const successionDateLabel = relationshipDateLabel(relationship);
             const relatedEventNeids = collection.value.events
                 .filter((eventItem) =>
                     eventItem.participantNeids.some(
@@ -586,20 +787,24 @@ export function useCollectionWorkspace() {
                     )
                 )
                 .map((eventItem) => eventItem.neid);
+            const anchorNeid = documentEntityNeids.value.has(predecessor.neid)
+                ? predecessor.neid
+                : documentEntityNeids.value.has(successor.neid)
+                  ? successor.neid
+                  : undefined;
             cards.push({
                 id: cardId,
                 kind: 'corporate_lineage',
                 title: `${predecessorName} -> ${successorName}`,
                 subtitle: 'Broader organization lineage context',
-                anchorNeid: predecessor.neid,
+                anchorNeid,
                 anchorName: predecessorName,
-                documentContext: `${predecessorName} appears in your document set, but the documents do not spell out who took over later.`,
-                kgContext:
-                    language?.plainSummary ||
-                    `${predecessorName} is linked to ${successorName} through successor/predecessor history in the broader graph.`,
+                documentContext: `${predecessorName} is part of the document collection context, and later collection-related events show ${successorName} in the successor role.`,
+                kgContext: `${predecessorName} is linked to ${successorName} through successor/predecessor history in the broader graph.`,
                 evidence: [
                     `${predecessorName} ${relationshipLabel(relationship.normalizedType)} ${successorName}`,
-                    `Lineage edge surfaced from second-hop context`,
+                    ...(successionDateLabel ? [`Succession date: ${successionDateLabel}`] : []),
+                    entityDocumentGrounding([predecessor.neid, successor.neid]),
                 ],
                 askPrompt: `Explain how ${predecessorName} and ${successorName} are connected in corporate lineage, and whether that lineage changes interpretation of this collection.`,
                 relatedEntityNeids: [predecessor.neid, successor.neid],
@@ -623,17 +828,95 @@ export function useCollectionWorkspace() {
                     language?.sizeLabel ??
                     dealSizeLabelFromContext(relatedEventNeids, [predecessor.neid, successor.neid]),
                 totalEventCount: relatedEventNeids.length,
+                relationshipDateLabel: successionDateLabel,
+                rankScore,
+            });
+        }
+        for (const eventItem of collection.value.events) {
+            const signal = parseEventLineageSignal(eventItem);
+            if (!signal) continue;
+            const { predecessor, successor, mode } = signal;
+            if (
+                INSIGHT_NOISE_ANCHORS.has(predecessor.neid) ||
+                INSIGHT_NOISE_ANCHORS.has(successor.neid)
+            ) {
+                continue;
+            }
+            const cardKey = `${predecessor.neid}|${successor.neid}`;
+            if (seen.has(cardKey)) continue;
+            seen.add(cardKey);
+            if (
+                !documentEntityNeids.value.has(predecessor.neid) &&
+                !documentEntityNeids.value.has(successor.neid)
+            ) {
+                continue;
+            }
+
+            const predecessorName = entityDisplayName(predecessor);
+            const successorName = entityDisplayName(successor);
+            const successionDateLabel = eventDateLabel(eventItem);
+            const descriptionSnippet = eventDescriptionSnippet(eventItem);
+            const cardId = `lineage:${cardKey}:event:${eventItem.neid}`;
+            const language = insightLanguage(cardId);
+            const roleLabel =
+                mode === 'beneficiary_change' ? 'beneficiary role transition' : 'bank succession';
+            const rankScore =
+                priorityScore(LINEAGE_PRIORITY, predecessor.neid) * 10 +
+                priorityScore(LINEAGE_PRIORITY, successor.neid) * 10 +
+                (documentEntityNeids.value.has(predecessor.neid) ? 35 : 0) +
+                (documentEntityNeids.value.has(successor.neid) ? 30 : 0) +
+                (mode === 'beneficiary_change' ? 18 : 12);
+
+            cards.push({
+                id: cardId,
+                kind: 'corporate_lineage',
+                title: `${predecessorName} -> ${successorName}`,
+                subtitle:
+                    mode === 'beneficiary_change'
+                        ? 'Collection-documented beneficiary transition'
+                        : 'Collection-documented bank succession',
+                anchorNeid: predecessor.neid,
+                anchorName: predecessorName,
+                documentContext:
+                    mode === 'beneficiary_change'
+                        ? `${eventItem.name} records that the beneficiary role shifted from ${predecessorName} to ${successorName} within this financing structure.`
+                        : `${eventItem.name} records that references to ${predecessorName} shifted to ${successorName} in the collection documents.`,
+                kgContext:
+                    mode === 'beneficiary_change'
+                        ? `${predecessorName} and ${successorName} appear in a source-backed beneficiary change event, so this should be read as a role transition in the deal rather than generic outside enrichment.`
+                        : `${predecessorName} and ${successorName} appear together in a source-backed bank succession event, even if a normalized lineage edge is missing from the broader graph.`,
+                evidence: [
+                    eventEvidenceLine(eventItem),
+                    ...(descriptionSnippet ? [`Event description: ${descriptionSnippet}`] : []),
+                    entityDocumentGrounding([predecessor.neid, successor.neid]) !==
+                    'This relationship is grounded in the extracted collection context.'
+                        ? entityDocumentGrounding([predecessor.neid, successor.neid])
+                        : documentGroundingFromDocs(eventItem.sourceDocuments),
+                ],
+                askPrompt: `Explain the ${roleLabel} from ${predecessorName} to ${successorName}, and what it changes about how this collection should be interpreted.`,
+                relatedEntityNeids: [predecessor.neid, successor.neid],
+                relatedEventNeids: [eventItem.neid],
+                plainSummary:
+                    language?.plainSummary ||
+                    (mode === 'beneficiary_change'
+                        ? `${predecessorName}'s beneficiary role later shifted to ${successorName} in a source-backed amendment event from this collection.`
+                        : `${predecessorName} was later referenced as ${successorName} in a source-backed bank succession event from this collection.`),
+                relevanceLabel: language?.relevanceLabel ?? 'same_deal',
+                sizeLabel:
+                    language?.sizeLabel ??
+                    dealSizeLabelFromContext([eventItem.neid], [predecessor.neid, successor.neid]),
+                totalEventCount: 1,
+                relationshipDateLabel: successionDateLabel,
                 rankScore,
             });
         }
         return cards
             .sort((a, b) => b.rankScore - a.rankScore)
-            .slice(0, 2)
             .map(({ rankScore: _, ...card }) => card);
     });
 
     const broaderActivityInsights = computed<EnrichmentInsightCard[]>(() => {
-        const cards: Array<EnrichmentInsightCard & { rankScore: number }> = [];
+        const cards: Array<EnrichmentInsightCard & { rankScore: number; dedupeKey: string }> = [];
         const priorityAnchors = [
             '05477621199116204617', // Orrick, Herrington & Sutcliffe, LLP
             '02080889041561724035', // Orrick
@@ -671,30 +954,52 @@ export function useCollectionWorkspace() {
                     eventRows.map((eventItem) => eventItem.neid),
                     [anchorNeid]
                 );
+            const themeSummary = broaderActivityTheme(eventRows);
             const eventVolumeScore = Math.min(anchorEvents.length, 12);
+            const breadthPenalty =
+                anchorEvents.length > 200 ? 180 : anchorEvents.length > 80 ? 90 : 0;
+            const title = themeSummary?.includes('letter-of-credit amendments')
+                ? `${anchorName}: later financing amendments`
+                : themeSummary?.includes('later corporate transactions')
+                  ? `${anchorName}: later corporate activity`
+                  : `${anchorName}: broader participant activity`;
+            const subtitle = themeSummary?.includes('letter-of-credit amendments')
+                ? 'Later amendments surfaced around the same financing relationships'
+                : themeSummary?.includes('later corporate transactions')
+                  ? 'Later corporate activity connected to this participant'
+                  : 'Outside activity connected to this participant';
             const rankScore =
                 priorityScore(RELATED_DEAL_PRIORITY, anchorNeid) * 10 +
                 eventVolumeScore * 3 +
                 Math.min(counterpartyCount, 6) +
-                (documentEntityNeids.value.has(anchorNeid) ? 15 : 0);
+                (documentEntityNeids.value.has(anchorNeid) ? 15 : 0) -
+                breadthPenalty;
+            const eventSignature = eventRows
+                .map((eventItem) => `${eventItem.name}|${eventDateLabel(eventItem) ?? ''}`)
+                .sort((a, b) => a.localeCompare(b))
+                .join('||');
+            const followOnActivityContext = themeSummary?.includes('letter-of-credit amendments')
+                ? `${anchorName} appears in the uploaded documents, but these examples are dated later and look like follow-on amendments to the same financing structure rather than extraction misses from the original corpus.`
+                : `${anchorName} appears in your document set, so this card asks whether later platform events around the same participant look like follow-on deal activity or unrelated outside work.`;
             cards.push({
                 id: cardId,
                 kind: 'broader_activity',
-                title: `${anchorName}: broader participant activity`,
-                subtitle: 'Outside activity connected to this participant',
+                title,
+                subtitle,
                 anchorNeid,
                 anchorName,
-                documentContext: `${anchorName} appears in your document set. The items below are additional events linked to the same participant in the wider graph.`,
+                documentContext: followOnActivityContext,
                 kgContext:
-                    anchorEvents.length > eventRows.length
-                        ? language?.plainSummary ||
-                          `${anchorName} is linked to ${pluralize(anchorEvents.length, 'outside event')}. This card shows ${pluralize(eventRows.length, 'example')} so you can decide whether they are truly related to your transaction.`
-                        : language?.plainSummary ||
-                          `${anchorName} is linked to ${pluralize(anchorEvents.length, 'outside event')} and ${pluralize(counterpartyCount, 'counterparty')} in broader platform data.`,
+                    themeSummary ??
+                    (anchorEvents.length > eventRows.length
+                        ? `${anchorName} is linked to ${pluralize(anchorEvents.length, 'outside event')}. This card shows ${pluralize(eventRows.length, 'example')} so you can judge whether they look like later amendments, servicing activity, or unrelated transactions.`
+                        : `${anchorName} is linked to ${pluralize(anchorEvents.length, 'outside event')} and ${pluralize(counterpartyCount, 'counterparty')} in broader platform data.`),
                 evidence: [
-                    ...eventRows.map((eventItem) => eventEvidenceLine(eventItem, anchorNeid)),
+                    ...eventRows
+                        .slice(0, 4)
+                        .map((eventItem) => eventEvidenceLine(eventItem, anchorNeid)),
                     ...(Array.from(counterparties)
-                        .slice(0, 3)
+                        .slice(0, 2)
                         .map((counterparty) => `Counterparty: ${counterparty}`) ?? []),
                 ],
                 askPrompt: `Summarize the broader participant activity connected to ${anchorName}, then distinguish what looks transaction-related versus general external context.`,
@@ -702,7 +1007,8 @@ export function useCollectionWorkspace() {
                 relatedEventNeids: eventRows.map((eventItem) => eventItem.neid),
                 plainSummary:
                     language?.plainSummary ||
-                    `${anchorName} has ${anchorEvents.length} outside events in second-hop context. These are participant-linked events and may or may not be part of the same core deal.`,
+                    themeSummary ||
+                    `${anchorName} is linked to ${anchorEvents.length} outside events in broader graph context. These examples may reflect later amendments, servicing actions, or unrelated external activity rather than the same core deal.`,
                 relevanceLabel: language?.relevanceLabel ?? 'broader',
                 sizeLabel,
                 totalEventCount: anchorEvents.length,
@@ -711,12 +1017,18 @@ export function useCollectionWorkspace() {
                 participantCount,
                 dateRangeLabel,
                 rankScore,
+                dedupeKey: `${themeSummary ?? 'activity'}|${counterpartyCount}|${eventSignature}`,
             });
         }
+        const seen = new Set<string>();
         return cards
             .sort((a, b) => b.rankScore - a.rankScore)
-            .slice(0, 2)
-            .map(({ rankScore: _, ...card }) => card);
+            .filter((card) => {
+                if (seen.has(card.dedupeKey)) return false;
+                seen.add(card.dedupeKey);
+                return true;
+            })
+            .map(({ rankScore: _, dedupeKey: __, ...card }) => card);
     });
 
     const eventTimelineInsights = computed<EnrichmentInsightCard[]>(() => {
@@ -741,6 +1053,7 @@ export function useCollectionWorkspace() {
             const extractedLinkedEvents = linkedEvents.filter(
                 (eventItem) => eventItem.extractedSeed
             );
+            if (outsideLinkedEvents.length === 0) continue;
             const orderedEvents = [...linkedEvents]
                 .sort((a, b) => eventYear(a) - eventYear(b))
                 .slice(0, 6);
@@ -765,10 +1078,8 @@ export function useCollectionWorkspace() {
                 documentContext: `${anchorName} appears in your documents, but the document set captures only part of the timeline around this participant.`,
                 kgContext:
                     outsideLinkedEvents.length > 0
-                        ? language?.plainSummary ||
-                          `${anchorName} shows ${pluralize(extractedLinkedEvents.length, 'collection event')} plus ${pluralize(outsideLinkedEvents.length, 'outside event')}, which helps separate same-deal context from broader activity.`
-                        : language?.plainSummary ||
-                          `${anchorName} has ${pluralize(extractedLinkedEvents.length, 'collection event')} and limited outside activity in this run.`,
+                        ? `${anchorName} shows ${pluralize(extractedLinkedEvents.length, 'collection event')} plus ${pluralize(outsideLinkedEvents.length, 'outside event')}, which helps separate same-deal context from broader activity.`
+                        : `${anchorName} has ${pluralize(extractedLinkedEvents.length, 'collection event')} and limited outside activity in this run.`,
                 evidence: orderedEvents.map((eventItem) => {
                     const scope = eventItem.extractedSeed
                         ? 'same-deal document context'
@@ -800,7 +1111,6 @@ export function useCollectionWorkspace() {
         }
         return cards
             .sort((a, b) => b.rankScore - a.rankScore)
-            .slice(0, 2)
             .map(({ rankScore: _, ...card }) => card);
     });
 
@@ -849,9 +1159,7 @@ export function useCollectionWorkspace() {
                 anchorNeid: person.neid,
                 anchorName: personName,
                 documentContext: `${personName} is present in extraction, but this specific affiliation to ${organizationName} is not explicitly represented in the document-only graph.`,
-                kgContext:
-                    language?.plainSummary ||
-                    `Yottagraph contributes external affiliation context: ${personName} ${relationshipLabel(relationship.normalizedType)} ${organizationName}.`,
+                kgContext: `Yottagraph contributes external affiliation context: ${personName} ${relationshipLabel(relationship.normalizedType)} ${organizationName}.`,
                 evidence: [
                     `${personName} ${relationshipLabel(relationship.normalizedType)} ${organizationName}`,
                 ],
@@ -867,7 +1175,6 @@ export function useCollectionWorkspace() {
         }
         return cards
             .sort((a, b) => b.rankScore - a.rankScore)
-            .slice(0, 2)
             .map(({ rankScore: _, ...card }) => card);
     });
 
@@ -883,16 +1190,21 @@ export function useCollectionWorkspace() {
         const topActivity = broaderActivityInsights.value[0];
         const topTimeline = eventTimelineInsights.value[0];
         if (topLineage) {
-            bullets.push(`Corporate lineage context: ${topLineage.title}.`);
+            bullets.push(
+                takeawaySentence(topLineage.plainSummary) ??
+                    `${topLineage.title} adds later corporate lineage context around a collection participant.`
+            );
         }
         if (topActivity) {
             bullets.push(
-                `Broader participant activity surfaced around ${topActivity.anchorName ?? topActivity.title}.`
+                takeawaySentence(topActivity.plainSummary) ??
+                    `${topActivity.anchorName ?? topActivity.title} adds later participant activity that helps distinguish follow-on financing actions from unrelated external work.`
             );
         }
         if (topTimeline) {
             bullets.push(
-                `Timeline context expanded for ${topTimeline.anchorName ?? topTimeline.title}.`
+                takeawaySentence(topTimeline.plainSummary) ??
+                    `${topTimeline.anchorName ?? topTimeline.title} adds outside timeline context beyond the uploaded documents.`
             );
         }
         if (bullets.length === 0) {
@@ -912,26 +1224,29 @@ export function useCollectionWorkspace() {
         takeawayBullets: enrichmentTakeawayBullets.value,
     }));
     const enrichmentLanguageCards = computed(() =>
-        [...lineageInsights.value, ...broaderActivityInsights.value, ...eventTimelineInsights.value]
-            .slice(0, 8)
-            .map((insight) => ({
-                id: insight.id,
-                kind: insight.kind,
-                title: insight.title,
-                subtitle: insight.subtitle,
-                documentContext: insight.documentContext,
-                kgContext: insight.kgContext,
-                evidence: insight.evidence.slice(0, 6),
-                metrics: {
-                    totalEventCount: insight.totalEventCount ?? 0,
-                    outsideEventCount: insight.outsideEventCount ?? 0,
-                    sameDealEventCount: insight.sameDealEventCount ?? 0,
-                    participantCount: insight.participantCount ?? 0,
-                    counterpartyCount: insight.counterpartyCount ?? 0,
-                    dateRangeLabel: insight.dateRangeLabel ?? null,
-                    sizeLabel: insight.sizeLabel ?? null,
-                },
-            }))
+        [
+            ...lineageInsights.value,
+            ...broaderActivityInsights.value,
+            ...eventTimelineInsights.value,
+            ...peopleAffiliationInsights.value,
+        ].map((insight) => ({
+            id: insight.id,
+            kind: insight.kind,
+            title: insight.title,
+            subtitle: insight.subtitle,
+            documentContext: insight.documentContext,
+            kgContext: insight.kgContext,
+            evidence: insight.evidence.slice(0, 4),
+            metrics: {
+                totalEventCount: insight.totalEventCount ?? 0,
+                outsideEventCount: insight.outsideEventCount ?? 0,
+                sameDealEventCount: insight.sameDealEventCount ?? 0,
+                participantCount: insight.participantCount ?? 0,
+                counterpartyCount: insight.counterpartyCount ?? 0,
+                dateRangeLabel: insight.dateRangeLabel ?? null,
+                sizeLabel: insight.sizeLabel ?? null,
+            },
+        }))
     );
     const agreements = computed(() =>
         collection.value.entities.filter((e) => e.flavor === 'legal_agreement')

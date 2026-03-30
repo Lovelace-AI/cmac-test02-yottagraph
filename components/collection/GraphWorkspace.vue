@@ -360,9 +360,9 @@
         'schema::relationship::participant': '#AB47BC',
     };
     const REL_COLORS_LIGHT: Record<string, string> = {
-        default: '#6B7280',
-        structural: '#374151',
-        context: '#9CA3AF',
+        default: '#374151',
+        structural: '#1F2937',
+        context: '#4B5563',
     };
     const BOND_CENTER_NEID = '08242646876499346416';
 
@@ -384,6 +384,9 @@
     );
     const displayedEnrichedEntityCount = computed(
         () => visibleEntities.value.filter((entity) => entity.origin === 'enriched').length
+    );
+    const entityByNeid = computed(
+        () => new Map(entities.value.map((entity) => [entity.neid, entity]))
     );
 
     const { colorMode, currentThemeColors } = useAppColorMode();
@@ -438,7 +441,7 @@
     const graphCanvasBackground = computed(() =>
         colorMode.value === 'dark'
             ? 'radial-gradient(120% 100% at 50% 10%, #1C2540 0%, #131A2E 52%, #0C1221 100%)'
-            : 'radial-gradient(130% 110% at 50% 0%, #F5F9FF 0%, #EEF4FF 48%, #E6EEFB 100%)'
+            : 'radial-gradient(130% 110% at 50% 0%, #EAF0F8 0%, #E2EAF5 50%, #D9E3F2 100%)'
     );
     const labelPillBackground = computed(() =>
         colorMode.value === 'dark' ? 'rgba(7, 12, 24, 0.9)' : 'rgba(17, 24, 39, 0.9)'
@@ -634,9 +637,55 @@
     }
 
     function edgeAlpha(origin: string, hasEvidence: boolean): number {
-        if (origin === 'enriched') return colorMode.value === 'dark' ? 0.26 : 0.14;
-        if (hasEvidence) return colorMode.value === 'dark' ? 0.74 : 0.46;
-        return colorMode.value === 'dark' ? 0.46 : 0.24;
+        if (origin === 'enriched') return colorMode.value === 'dark' ? 0.26 : 0.32;
+        if (hasEvidence) return colorMode.value === 'dark' ? 0.74 : 0.72;
+        return colorMode.value === 'dark' ? 0.46 : 0.5;
+    }
+
+    function parseHexColor(color: string): { r: number; g: number; b: number } | null {
+        const normalized = color.trim();
+        const match = normalized.match(/^#([0-9a-fA-F]{6})$/);
+        if (!match) return null;
+        return {
+            r: parseInt(match[1].slice(0, 2), 16),
+            g: parseInt(match[1].slice(2, 4), 16),
+            b: parseInt(match[1].slice(4, 6), 16),
+        };
+    }
+
+    function rgbToHex(r: number, g: number, b: number): string {
+        const toHex = (value: number) =>
+            Math.max(0, Math.min(255, Math.round(value)))
+                .toString(16)
+                .padStart(2, '0');
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
+    function mixHex(base: string, mixWith: string, ratio: number): string {
+        const a = parseHexColor(base);
+        const b = parseHexColor(mixWith);
+        if (!a || !b) return base;
+        const t = Math.max(0, Math.min(1, ratio));
+        return rgbToHex(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t);
+    }
+
+    function edgeBaseColor(neid: string): string {
+        const entity = entityByNeid.value.get(neid);
+        if (entity) return ENTITY_COLORS.value[entity.flavor] ?? '#475569';
+        if (eventNeidSet.value.has(neid)) return '#7C3AED';
+        if (documentNeidSet.value.has(neid))
+            return colorMode.value === 'dark' ? '#94A3B8' : '#334155';
+        return '#475569';
+    }
+
+    function edgeColorFromNode(sourceNeid: string, targetNeid: string): string {
+        const base = edgeBaseColor(sourceNeid);
+        const other = edgeBaseColor(targetNeid);
+        const blended = mixHex(base, other, 0.24);
+        // In light mode, use a lighter shade of node-derived color as requested.
+        return colorMode.value === 'dark'
+            ? mixHex(blended, '#ffffff', 0.12)
+            : mixHex(blended, '#ffffff', 0.32);
     }
 
     function sourceModeColor(sourceCount: number): string {
@@ -707,7 +756,7 @@
             const baseColor = ENTITY_COLORS.value[entity.flavor] ?? '#9E9E9E';
             let color =
                 entity.origin === 'enriched'
-                    ? hexAlpha(baseColor, colorMode.value === 'dark' ? 0.32 : 0.2)
+                    ? hexAlpha(baseColor, colorMode.value === 'dark' ? 0.32 : 0.62)
                     : baseColor;
 
             if (analysisMode.value === 'source') {
@@ -715,7 +764,7 @@
                 color = sourceModeColor(sourceCount);
             }
             if (analysisMode.value === 'timeline' && evtCount === 0) {
-                color = hexAlpha(color, colorMode.value === 'dark' ? 0.26 : 0.18);
+                color = hexAlpha(color, colorMode.value === 'dark' ? 0.26 : 0.42);
             }
 
             g.addNode(entity.neid, {
@@ -830,8 +879,11 @@
                     (Array.isArray(rel.citations) && rel.citations.length > 0);
                 g.addEdgeWithKey(edgeKey, rel.sourceNeid, rel.targetNeid, {
                     label: rel.type.replace(/schema::relationship::/, '').replace(/_/g, ' '),
-                    color: hexAlpha(getRelTypeColor(rel.type), edgeAlpha(rel.origin, hasEvidence)),
-                    size: hasEvidence ? 1.9 : 1.25,
+                    color: hexAlpha(
+                        edgeColorFromNode(rel.sourceNeid, rel.targetNeid),
+                        edgeAlpha(rel.origin, hasEvidence)
+                    ),
+                    size: hasEvidence ? 2.1 : 1.45,
                     type: 'arrow',
                 });
             } catch {
@@ -848,23 +900,39 @@
         ) {
             try {
                 const communities = louvain(g);
-                const communityColors = [
-                    '#e6194B',
-                    '#3cb44b',
-                    '#ffe119',
-                    '#4363d8',
-                    '#f58231',
-                    '#911eb4',
-                    '#42d4f4',
-                    '#f032e6',
-                    '#bfef45',
-                    '#469990',
-                    '#dcbeff',
-                    '#9A6324',
-                    '#800000',
-                    '#aaffc3',
-                    '#808000',
-                ];
+                const communityColors =
+                    colorMode.value === 'dark'
+                        ? [
+                              '#e6194B',
+                              '#3cb44b',
+                              '#ffe119',
+                              '#4363d8',
+                              '#f58231',
+                              '#911eb4',
+                              '#42d4f4',
+                              '#f032e6',
+                              '#bfef45',
+                              '#469990',
+                              '#dcbeff',
+                              '#9A6324',
+                              '#800000',
+                              '#aaffc3',
+                              '#808000',
+                          ]
+                        : [
+                              '#1D4ED8',
+                              '#0F766E',
+                              '#B91C1C',
+                              '#7C3AED',
+                              '#C2410C',
+                              '#0E7490',
+                              '#4D7C0F',
+                              '#9D174D',
+                              '#1E3A8A',
+                              '#7F1D1D',
+                              '#14532D',
+                              '#312E81',
+                          ];
                 g.forEachNode((node) => {
                     const c = communities[node] ?? 0;
                     const clusterColor = communityColors[c % communityColors.length];
@@ -932,8 +1000,8 @@
             defaultDrawNodeHover: drawHoverWithPill,
             defaultEdgeType: 'arrow',
             defaultEdgeColor: hexAlpha(
-                colorMode.value === 'dark' ? '#9CA3AF' : '#4B5563',
-                colorMode.value === 'dark' ? 0.68 : 0.62
+                colorMode.value === 'dark' ? '#9CA3AF' : '#334155',
+                colorMode.value === 'dark' ? 0.68 : 0.78
             ),
             zIndex: true,
         } as any);

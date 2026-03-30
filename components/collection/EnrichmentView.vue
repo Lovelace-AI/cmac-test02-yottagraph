@@ -1,5 +1,5 @@
 <template>
-    <div class="d-flex flex-column ga-3">
+    <div class="enrichment-layout d-flex flex-column ga-3">
         <v-tabs v-model="activeSubtab" density="compact" color="primary" class="mb-1">
             <v-tab value="summary">
                 <v-icon start size="small">mdi-star-four-points-outline</v-icon>
@@ -101,15 +101,16 @@
                         <v-card-item>
                             <v-card-title class="text-body-1">Top Takeaways</v-card-title>
                             <v-card-subtitle>
-                                High-signal stories surfaced from expanded graph context.
+                                The clearest additions from 2-hop context, rewritten for a business
+                                audience.
                             </v-card-subtitle>
                         </v-card-item>
                         <v-card-text>
-                            <ul class="pl-5 mb-0">
+                            <ul class="takeaway-list mb-0">
                                 <li
                                     v-for="(bullet, idx) in enrichmentTakeawayBullets"
                                     :key="`takeaway:${idx}`"
-                                    class="text-body-2 mb-1"
+                                    class="takeaway-list__item text-body-2"
                                 >
                                     {{ bullet }}
                                 </li>
@@ -125,41 +126,28 @@
                     extracted entities.
                 </v-alert>
                 <template v-else>
-                    <v-alert type="info" variant="tonal" class="mb-3">
-                        Findings below include both collection-linked context and broader
-                        participant activity from the platform graph. Broader activity is not
-                        automatically the same deal.
-                    </v-alert>
-                    <v-alert
-                        v-if="enrichmentLanguageLoading"
-                        type="info"
-                        variant="tonal"
-                        class="mb-3"
+                    <div
+                        v-if="enrichmentInsights.length > 0"
+                        class="proof-toolbar d-flex align-start justify-space-between flex-wrap ga-3 mb-1"
                     >
-                        Rewriting enrichment stories into plain-English summaries...
-                    </v-alert>
-                    <v-alert
-                        v-else-if="enrichmentLanguageError"
-                        type="warning"
-                        variant="tonal"
-                        class="mb-3"
-                    >
-                        {{ enrichmentLanguageError }}
-                    </v-alert>
-                    <v-alert v-if="enrichmentInsights.length === 0" type="info" variant="tonal">
-                        No enrichment stories were derived from this run. Try 2-hop expansion or
-                        include related events.
-                    </v-alert>
-                    <v-alert
-                        v-else-if="enrichmentInsights.length > 0"
-                        type="info"
-                        variant="tonal"
-                        class="mb-3"
-                    >
-                        <div class="d-flex align-center justify-space-between flex-wrap ga-2">
-                            <span class="text-body-2">
-                                Need synthesized themes across these stories?
-                            </span>
+                        <div>
+                            <div class="text-body-2 font-weight-medium">
+                                {{ enrichmentInsights.length }} evidence-backed stories
+                            </div>
+                            <div class="text-caption text-medium-emphasis">
+                                Later activity is shown only when it adds context beyond the
+                                uploaded documents.
+                            </div>
+                        </div>
+                        <div class="d-flex align-center ga-2 flex-wrap">
+                            <v-chip
+                                v-if="enrichmentLanguageLoading"
+                                size="small"
+                                variant="tonal"
+                                color="info"
+                            >
+                                Rewriting summaries...
+                            </v-chip>
                             <v-btn
                                 size="small"
                                 variant="tonal"
@@ -174,6 +162,10 @@
                                 Ask Yotta for themes
                             </v-btn>
                         </div>
+                    </div>
+                    <v-alert v-if="enrichmentInsights.length === 0" type="info" variant="tonal">
+                        No enrichment stories were derived from this run. Try 2-hop expansion or
+                        include related events.
                     </v-alert>
 
                     <div v-if="enrichmentInsights.length > 0" class="d-flex flex-column ga-3">
@@ -198,10 +190,10 @@
                                         <v-card-subtitle>{{ insight.subtitle }}</v-card-subtitle>
                                     </v-card-item>
                                     <v-card-text>
-                                        <div class="text-body-2 font-weight-medium mb-2">
+                                        <div class="insight-summary mb-2">
                                             {{ insight.plainSummary }}
                                         </div>
-                                        <div class="d-flex flex-wrap ga-1 mb-3">
+                                        <div class="d-flex flex-wrap ga-1 mb-2">
                                             <v-chip
                                                 v-if="insight.relevanceLabel"
                                                 size="x-small"
@@ -220,6 +212,14 @@
                                                 {{ insight.totalEventCount }} linked events
                                             </v-chip>
                                             <v-chip
+                                                v-if="insight.relationshipDateLabel"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="success"
+                                            >
+                                                {{ insight.relationshipDateLabel }}
+                                            </v-chip>
+                                            <v-chip
                                                 v-if="insight.sizeLabel"
                                                 size="x-small"
                                                 variant="tonal"
@@ -228,31 +228,42 @@
                                                 {{ insight.sizeLabel }}
                                             </v-chip>
                                         </div>
-                                        <div class="text-caption text-medium-emphasis mb-1">
-                                            Document context
+                                        <div class="insight-section-label mb-1">
+                                            In your documents
                                         </div>
-                                        <div class="text-body-2 mb-3">
+                                        <div class="insight-context-text mb-2">
                                             {{ insight.documentContext }}
                                         </div>
-                                        <div class="text-caption text-medium-emphasis mb-1">
-                                            What platform context adds
+                                        <div class="insight-section-label mb-1">
+                                            What broader graph adds
                                         </div>
-                                        <div class="text-body-2 mb-3">{{ insight.kgContext }}</div>
-                                        <div class="text-caption text-medium-emphasis mb-1">
-                                            Evidence
+                                        <div class="insight-context-text mb-2">
+                                            {{ insight.kgContext }}
                                         </div>
-                                        <div class="d-flex flex-wrap ga-1 mb-3">
-                                            <v-chip
-                                                v-for="line in insight.evidence"
+                                        <div class="insight-section-label mb-1">
+                                            Example evidence
+                                        </div>
+                                        <ul class="pl-5 mb-2">
+                                            <li
+                                                v-for="line in insight.evidence.slice(0, 3)"
                                                 :key="`${insight.id}:${line}`"
-                                                size="x-small"
-                                                variant="tonal"
-                                                color="info"
+                                                class="text-body-2"
                                             >
                                                 {{ line }}
-                                            </v-chip>
+                                            </li>
+                                        </ul>
+                                        <div class="d-flex align-center ga-2 flex-wrap">
+                                            <v-btn
+                                                v-if="insight.evidence.length > 3"
+                                                size="x-small"
+                                                variant="text"
+                                                disabled
+                                            >
+                                                +{{ insight.evidence.length - 3 }} more evidence
+                                                line(s)
+                                            </v-btn>
                                         </div>
-                                        <div class="d-flex align-center ga-2">
+                                        <div class="d-flex align-center ga-2 mt-1">
                                             <v-btn
                                                 size="small"
                                                 variant="tonal"
@@ -298,10 +309,10 @@
                                         }}</v-card-title>
                                     </v-card-item>
                                     <v-card-text>
-                                        <div class="text-body-2 font-weight-medium mb-2">
+                                        <div class="insight-summary mb-2">
                                             {{ insight.plainSummary }}
                                         </div>
-                                        <div class="d-flex flex-wrap ga-1 mb-3">
+                                        <div class="d-flex flex-wrap ga-1 mb-2">
                                             <v-chip
                                                 v-if="insight.relevanceLabel"
                                                 size="x-small"
@@ -344,31 +355,49 @@
                                                 {{ insight.sizeLabel }}
                                             </v-chip>
                                         </div>
-                                        <div class="text-body-2 mb-2">
+                                        <div class="insight-section-label mb-1">
+                                            In your documents
+                                        </div>
+                                        <div class="insight-context-text mb-2">
                                             {{ insight.documentContext }}
                                         </div>
-                                        <div class="text-body-2 mb-3">{{ insight.kgContext }}</div>
-                                        <div class="text-caption text-medium-emphasis mb-1">
-                                            Notable outside events (examples)
+                                        <div class="insight-section-label mb-1">
+                                            What broader graph adds
                                         </div>
-                                        <ul class="pl-5 mb-3">
+                                        <div class="insight-context-text mb-2">
+                                            {{ insight.kgContext }}
+                                        </div>
+                                        <div class="insight-section-label mb-1">
+                                            Example evidence
+                                        </div>
+                                        <ul class="pl-5 mb-2">
                                             <li
-                                                v-for="line in insight.evidence"
+                                                v-for="line in insight.evidence.slice(0, 4)"
                                                 :key="`${insight.id}:${line}`"
                                                 class="text-body-2"
                                             >
                                                 {{ line }}
                                             </li>
                                         </ul>
-                                        <v-btn
-                                            size="small"
-                                            variant="tonal"
-                                            color="primary"
-                                            prepend-icon="mdi-chat-question-outline"
-                                            @click="launchAskYotta(insight.askPrompt)"
-                                        >
-                                            Ask Yotta
-                                        </v-btn>
+                                        <div class="d-flex align-center ga-2 mt-1">
+                                            <v-btn
+                                                size="small"
+                                                variant="tonal"
+                                                color="primary"
+                                                prepend-icon="mdi-chat-question-outline"
+                                                @click="launchAskYotta(insight.askPrompt)"
+                                            >
+                                                Ask Yotta
+                                            </v-btn>
+                                            <v-btn
+                                                v-if="insight.anchorNeid"
+                                                size="small"
+                                                variant="text"
+                                                @click="selectEntity(insight.anchorNeid)"
+                                            >
+                                                Open anchor
+                                            </v-btn>
+                                        </div>
                                     </v-card-text>
                                 </v-card>
                             </v-card-text>
@@ -396,10 +425,10 @@
                                         }}</v-card-title>
                                     </v-card-item>
                                     <v-card-text>
-                                        <div class="text-body-2 font-weight-medium mb-2">
+                                        <div class="insight-summary mb-2">
                                             {{ insight.plainSummary }}
                                         </div>
-                                        <div class="d-flex flex-wrap ga-1 mb-3">
+                                        <div class="d-flex flex-wrap ga-1 mb-2">
                                             <v-chip
                                                 v-if="insight.totalEventCount !== undefined"
                                                 size="x-small"
@@ -441,16 +470,24 @@
                                                 {{ insight.sizeLabel }}
                                             </v-chip>
                                         </div>
-                                        <div class="text-body-2 mb-2">
+                                        <div class="insight-section-label mb-1">
+                                            In your documents
+                                        </div>
+                                        <div class="insight-context-text mb-2">
                                             {{ insight.documentContext }}
                                         </div>
-                                        <div class="text-body-2 mb-3">{{ insight.kgContext }}</div>
-                                        <div class="text-caption text-medium-emphasis mb-1">
+                                        <div class="insight-section-label mb-1">
+                                            What broader graph adds
+                                        </div>
+                                        <div class="insight-context-text mb-2">
+                                            {{ insight.kgContext }}
+                                        </div>
+                                        <div class="insight-section-label mb-1">
                                             Timeline points
                                         </div>
-                                        <ul class="pl-5 mb-3">
+                                        <ul class="pl-5 mb-2">
                                             <li
-                                                v-for="line in insight.evidence"
+                                                v-for="line in insight.evidence.slice(0, 5)"
                                                 :key="`${insight.id}:${line}`"
                                                 class="text-body-2"
                                             >
@@ -492,24 +529,33 @@
                                         }}</v-card-title>
                                     </v-card-item>
                                     <v-card-text>
-                                        <div class="text-body-2 font-weight-medium mb-2">
+                                        <div class="insight-summary mb-2">
                                             {{ insight.plainSummary }}
                                         </div>
-                                        <div class="text-body-2 mb-2">
+                                        <div class="insight-section-label mb-1">
+                                            In your documents
+                                        </div>
+                                        <div class="insight-context-text mb-2">
                                             {{ insight.documentContext }}
                                         </div>
-                                        <div class="text-body-2 mb-3">{{ insight.kgContext }}</div>
-                                        <div class="d-flex flex-wrap ga-1 mb-3">
-                                            <v-chip
-                                                v-for="line in insight.evidence"
+                                        <div class="insight-section-label mb-1">
+                                            What broader graph adds
+                                        </div>
+                                        <div class="insight-context-text mb-2">
+                                            {{ insight.kgContext }}
+                                        </div>
+                                        <div class="insight-section-label mb-1">
+                                            Example evidence
+                                        </div>
+                                        <ul class="pl-5 mb-2">
+                                            <li
+                                                v-for="line in insight.evidence.slice(0, 3)"
                                                 :key="`${insight.id}:${line}`"
-                                                size="x-small"
-                                                variant="tonal"
-                                                color="info"
+                                                class="text-body-2"
                                             >
                                                 {{ line }}
-                                            </v-chip>
-                                        </div>
+                                            </li>
+                                        </ul>
                                         <v-btn
                                             size="small"
                                             variant="tonal"
@@ -936,13 +982,12 @@
         eventTimelineInsights,
         peopleAffiliationInsights,
         enrichmentLanguageLoading,
-        enrichmentLanguageError,
         setEnrichmentHops,
         setEnrichmentIncludeEvents,
     } = useCollectionWorkspace();
 
     const activeSubtab = ref<'summary' | 'proof' | 'graph' | 'setup'>(
-        enrichmentLastRun.value ? 'summary' : 'setup'
+        enrichmentLastRun.value || enriching.value ? 'summary' : 'setup'
     );
     const showEnrichedEntities = ref(true);
     const showEnrichedRelationships = ref(true);
@@ -1187,6 +1232,21 @@
         stopEnrichmentProgressAnimation();
     });
 
+    watch(
+        () => enrichmentLastRun.value?.ranAt,
+        (ranAt) => {
+            if (!ranAt) return;
+            activeSubtab.value = 'summary';
+        }
+    );
+    watch(
+        () => enriching.value,
+        (isRunning) => {
+            if (!isRunning || enrichmentLastRun.value) return;
+            activeSubtab.value = 'summary';
+        }
+    );
+
     const enrichedHeaders = [
         { title: 'Name', key: 'name', sortable: true },
         { title: 'Type', key: 'flavor', sortable: true },
@@ -1195,6 +1255,59 @@
 </script>
 
 <style scoped>
+    .enrichment-layout {
+        width: min(1180px, 100%);
+        margin: 0 auto;
+    }
+
+    .proof-toolbar {
+        padding: 2px 2px 6px;
+    }
+
+    .takeaway-list {
+        padding-left: 0;
+        list-style: none;
+        display: grid;
+        gap: 10px;
+    }
+
+    .takeaway-list__item {
+        position: relative;
+        padding-left: 16px;
+        line-height: 1.45;
+    }
+
+    .takeaway-list__item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0.58rem;
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--v-theme-primary) 78%, white 22%);
+    }
+
+    .insight-summary {
+        font-size: 0.9rem;
+        line-height: 1.35;
+        font-weight: 600;
+    }
+
+    .insight-section-label {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--dynamic-text-muted);
+        font-weight: 600;
+    }
+
+    .insight-context-text {
+        font-size: 0.86rem;
+        line-height: 1.35;
+        color: var(--dynamic-text-secondary);
+    }
+
     .lineage-entity-btn {
         border: 0;
         background: transparent;

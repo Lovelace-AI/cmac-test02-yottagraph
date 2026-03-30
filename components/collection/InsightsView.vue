@@ -19,39 +19,6 @@
                     >
                         Reset
                     </v-btn>
-
-                    <v-menu location="bottom">
-                        <template #activator="{ props: menuProps }">
-                            <v-btn
-                                v-bind="menuProps"
-                                variant="tonal"
-                                prepend-icon="mdi-export-variant"
-                                :loading="exporting"
-                            >
-                                Export Analysis
-                            </v-btn>
-                        </template>
-                        <v-list density="compact">
-                            <v-list-item @click="runExport('markdown')">
-                                <v-list-item-title>Export Markdown</v-list-item-title>
-                            </v-list-item>
-                            <v-list-item @click="runExport('html')">
-                                <v-list-item-title>Export HTML</v-list-item-title>
-                            </v-list-item>
-                            <v-list-item @click="runExport('pdf')">
-                                <v-list-item-title>Export PDF</v-list-item-title>
-                            </v-list-item>
-                        </v-list>
-                    </v-menu>
-
-                    <v-btn
-                        variant="outlined"
-                        prepend-icon="mdi-file-pdf-box"
-                        :loading="exporting"
-                        @click="runExport('pdf')"
-                    >
-                        Export PDF
-                    </v-btn>
                     <v-btn
                         variant="text"
                         prepend-icon="mdi-chat-outline"
@@ -93,17 +60,6 @@
                 </div>
             </v-card-text>
         </v-card>
-
-        <v-alert
-            v-if="exportMessage"
-            class="mt-3"
-            :type="exportMessage.type"
-            variant="tonal"
-            closable
-            @click:close="exportMessage = null"
-        >
-            {{ exportMessage.text }}
-        </v-alert>
 
         <v-card variant="flat" class="mt-3 insights-section">
             <v-card-item>
@@ -350,41 +306,10 @@
                 </v-card-text>
             </v-card>
         </div>
-
-        <v-dialog v-model="exportProgressOpen" max-width="560">
-            <v-card>
-                <v-card-title class="text-body-1">Export Analysis</v-card-title>
-                <v-card-subtitle class="pt-1"
-                    >Assembling your case-study artifact...</v-card-subtitle
-                >
-                <v-card-text class="pt-4">
-                    <v-list density="compact" class="pa-0 bg-transparent">
-                        <v-list-item v-for="(step, idx) in exportSteps" :key="step" class="px-0">
-                            <template #prepend>
-                                <v-icon
-                                    size="16"
-                                    class="mr-2"
-                                    :color="idx <= exportStepIndex ? 'primary' : ''"
-                                >
-                                    {{
-                                        idx < exportStepIndex
-                                            ? 'mdi-check-circle'
-                                            : 'mdi-progress-clock'
-                                    }}
-                                </v-icon>
-                            </template>
-                            <v-list-item-title class="text-body-2">{{ step }}</v-list-item-title>
-                        </v-list-item>
-                    </v-list>
-                </v-card-text>
-            </v-card>
-        </v-dialog>
     </div>
 </template>
 
 <script setup lang="ts">
-    type ExportFormat = 'markdown' | 'html' | 'pdf';
-
     const emit = defineEmits<{
         'open-chat': [prompt?: string];
     }>();
@@ -413,19 +338,6 @@
         () =>
             'Run the curated question set to generate evidence-backed findings, then review supporting citations and export a polished analytical deliverable.'
     );
-    const exportProgressOpen = ref(false);
-    const exporting = ref(false);
-    const exportStepIndex = ref(-1);
-    const exportMessage = ref<null | { type: 'success' | 'warning' | 'error'; text: string }>(null);
-    const exportSteps = [
-        'Graph visualization capture',
-        'Case study overview generation',
-        'Summary narrative generation',
-        'Agreements overview generation',
-        'Timeline analysis generation',
-        'Agent methodology narrative generation',
-        'Final assembly',
-    ];
 
     function normalizeAnswer(answer: string): string[] {
         return answer
@@ -477,103 +389,6 @@
             return;
         }
         setTab('events');
-    }
-
-    function buildExportPayload() {
-        return {
-            collectionName: collectionMeta.value.name,
-            generatedAt: new Date().toISOString(),
-            overview: insightNarrative.value || fallbackNarrative.value,
-            answers: categoriesWithStatus.value.flatMap((category) =>
-                category.questions
-                    .filter((question) => answerFor(question.id).status === 'answered')
-                    .map((question) => ({
-                        category: category.title,
-                        question: question.text,
-                        answer: answerFor(question.id).answer,
-                        citations: answerFor(question.id).citations,
-                    }))
-            ),
-        };
-    }
-
-    function decodeBase64(base64: string): Uint8Array {
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) {
-            bytes[i] = binary.charCodeAt(i);
-        }
-        return bytes;
-    }
-
-    function triggerDownload(
-        filename: string,
-        mimeType: string,
-        content: string,
-        encoding: 'utf8' | 'base64' = 'utf8'
-    ): void {
-        const blob =
-            encoding === 'base64'
-                ? new Blob([decodeBase64(content)], { type: mimeType })
-                : new Blob([content], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-    }
-
-    async function runExport(format: ExportFormat): Promise<void> {
-        if (!hasAnswers.value) {
-            exportMessage.value = {
-                type: 'warning',
-                text: 'Answer at least one question before exporting analysis.',
-            };
-            return;
-        }
-        exporting.value = true;
-        exportProgressOpen.value = true;
-        exportStepIndex.value = -1;
-        for (let idx = 0; idx < exportSteps.length; idx += 1) {
-            exportStepIndex.value = idx;
-            await new Promise((resolve) => setTimeout(resolve, 150));
-        }
-        try {
-            const result = await $fetch<{
-                format: ExportFormat;
-                filename: string;
-                mimeType: string;
-                content: string;
-                encoding?: 'utf8' | 'base64';
-            }>('/api/collection/insights-export', {
-                method: 'POST',
-                body: {
-                    format,
-                    ...buildExportPayload(),
-                },
-            });
-            triggerDownload(
-                result.filename,
-                result.mimeType,
-                result.content,
-                result.encoding || 'utf8'
-            );
-            exportMessage.value = {
-                type: 'success',
-                text: `Exported ${result.format.toUpperCase()} analysis successfully.`,
-            };
-        } catch (error: any) {
-            exportMessage.value = {
-                type: 'error',
-                text: error?.data?.statusMessage || error?.message || 'Failed to export analysis.',
-            };
-        } finally {
-            exportProgressOpen.value = false;
-            exporting.value = false;
-        }
     }
 
     onMounted(async () => {

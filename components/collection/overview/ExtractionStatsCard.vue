@@ -9,7 +9,17 @@
                 :class="{ 'stats-grid--muted': !hasMetrics, 'stats-grid--single': stacked }"
             >
                 <div v-for="item in stats" :key="item.key" class="stat-tile">
-                    <div class="stat-value">{{ item.value }}</div>
+                    <div v-if="item.key === 'date_range'" class="stat-value stat-value--range">
+                        <template v-if="dateRangeParts(item.value)">
+                            <span>{{ dateRangeParts(item.value)![0] }}</span>
+                            <v-icon size="16" class="mx-1">mdi-arrow-right</v-icon>
+                            <span>{{ dateRangeParts(item.value)![1] }}</span>
+                        </template>
+                        <template v-else>
+                            {{ item.value }}
+                        </template>
+                    </div>
+                    <div v-else class="stat-value">{{ item.value }}</div>
                     <div class="stat-label">{{ item.label }}</div>
                 </div>
             </div>
@@ -17,15 +27,6 @@
                 <span class="text-caption text-medium-emphasis">
                     Metrics update after extraction completes.
                 </span>
-                <v-btn
-                    size="x-small"
-                    variant="text"
-                    color="primary"
-                    :disabled="status === 'processing'"
-                    @click="$emit('run-analysis')"
-                >
-                    Run analysis
-                </v-btn>
             </div>
         </v-card-text>
     </v-card>
@@ -49,6 +50,13 @@
         const relationships = props.stats.find((item) => item.key === 'relationships');
         return entities?.value !== '0' || relationships?.value !== '0';
     });
+
+    function dateRangeParts(value: string): [string, string] | null {
+        const parts = value.split(' -> ').map((part) => part.trim());
+        return parts.length === 2 && parts[0] && parts[1]
+            ? ([parts[0], parts[1]] as [string, string])
+            : null;
+    }
 </script>
 
 <style scoped>
@@ -91,6 +99,12 @@
         font-size: 1.05rem;
         line-height: 1.2;
         font-weight: 700;
+    }
+
+    .stat-value--range {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
     }
 
     .stat-label {
