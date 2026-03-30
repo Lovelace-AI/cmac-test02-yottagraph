@@ -1,0 +1,268 @@
+Time,SourceName,SourceNindex,PropertyName,Pid,PropertyType,Value,DestNindex
+2015-10-16 0:00,legal_agreement|Schedule F - Liquidity I Account|Schedule F - Liquidity I Account,6422763341505446459,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,schema::flavor::event|Prior Arbitrage Rebate Report Issuance|2008-12-17,4407948040923244881,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule D1 - Reserve II Account Remaining Balance Analyses|Schedule D1 - Reserve II Account Remaining Balance Analyses,2990484481727744339,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,schema::flavor::event|Issuance of Interim Arbitrage Rebate Analysis Report (2015)|2015-11-11,7174252727178416608,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Prior Rebate Liability|Prior Rebate Liability — Schedule A - Summary of Rebate Analysis,2277784462984661168,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule E1 - Prior Rebate Liability Future Value Calculation|Schedule E1 - Prior Rebate Liability Future Value Calculation,7716519703989279091,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,organization|Bank of New York Mellon Corp|Bank of New York Mellon Corp increased its position in Texas Capital Bancshares by,5384086983174826493,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,schema::flavor::event|Prior Arbitrage Rebate Computation (2008)|2008-10-16,6066214711165460283,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,schema::flavor::event|Interim Arbitrage Rebate Computation (2015)|2015-10-16,5955161371232721897,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Reserve I Account|Schedule C - Reserve I Account,9112734796193071548,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Certificate as to Arbitrage|Section 21 of the Certificate as to Arbitrage,9073217463430168172,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,schema::flavor::event|Refunding of 1985 Series F and G Bonds|1991-10-17,4470736076228468470,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,"legal_agreement|Report|This report (the ""Report"")",8879090567778783678,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Escrow Fund|Escrow Fund,3499104088028066083,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Construction Account|Construction Account,226686358700946423,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Reserve II Account|Schedule D - Reserve II Account,2877916378535664072,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Temporary Treasury Regulations Section 1.148-4T(e)(2)|Temporary Treasury Regulations Section 1.148-4T(e)(2),996175972460951893,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule C1 - Reserve I Account Remaining Balance Analyses|Schedule C1 - Reserve I Account Remaining Balance Analyses,206579677833234805,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule D2 - Reserve II Account Net Nonpurpose Investments Cash Flow|Schedule D2 - Reserve II Account Net Nonpurpose Investments Cash Flow,2576017519828814741,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,"organization|US Treasury Department|Chevron, Valero, Exxon and Conoco and the US Treasury Department did not immediately reply to requests for comment.",8883522583676895375,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,location|Presidential Plaza|(Presidential Plaza at Newport Project-FHA Insured Mortgages),3029826579187567535,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,"location|51 WEST 52ND STREET, NEW YORK, NY 10019|51 WEST 52ND STREET NEW YORK, NY 10019",8961398183215909633,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Totals:|Totals: — Schedule A - Summary of Rebate Analysis,8623770550156948762,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,"location|2711 N. Haskell Avenue, Lockbox 35, Suite 2600 SW, Dallas, TX 75204|2711 N. Haskell Avenue Lockbox 35, Suite 2600 SW Dallas, TX 75204",2947201247694098125,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule G2 - Liquidity II Account Net Nonpurpose Investments Cash Flow|Schedule G2 - Liquidity II Account Net Nonpurpose Investments Cash Flow,6533606881395055487,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule B - Sources & Uses of Funds|Schedule B - Sources & Uses of Funds,4662206365284782208,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule C - Reserve I Account|Schedule C - Reserve I Account,7565798991068528206,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,schema::flavor::event|Fund Valuation (2015)|2015-10-16,7144607400902443391,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Debt Service Reserve Account|Debt Service Reserve Account,374030580716664244,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,organization|BLX Group LLC|BLX Group LLC,1470965072054453101,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,client_matter_number|42182-2748,8242646876499346416,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|INTERIM ARBITRAGE REBATE ANALYSIS|INTERIM ARBITRAGE REBATE ANALYSIS,5651499468729638165,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,location|Newport Project|(Presidential Plaza at Newport Project-FHA Insured Mortgages),5244065165148542602,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Prior Report|,3844814106996110754,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule D - Reserve II Account|Schedule D - Reserve II Account,8647261206502899303,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule G - Liquidity II Account|Schedule G - Liquidity II Account,4194651737123043185,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Liquidity I Account|Schedule F - Liquidity I Account,7476737946181823597,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Transmittal Letter|Transmittal Letter,5121003150070824032,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,schema::flavor::event|Issuance of 1991 Series 1 Bonds|1991-10-17,8506574259702576298,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,"organization|New Jersey Housing and Mortgage Finance Agency|New Jersey Housing and Mortgage Finance Agency The NJHMFA DPA provides up to $15,000 for",6471256961308361850,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Notes and Assumptions|Notes and Assumptions,9013206385896288509,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule F1 - Liquidity I Account Remaining Balance Analyses|Schedule F1 - Liquidity I Account Remaining Balance Analyses,6635759182396356344,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Revenue Account|Revenue Account,1477039329975055923,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,"organization|Orrick, Herrington, & Sutcliffe LLP|Sunraycer was advised by Orrick, Herrington, & Sutcliffe LLP as legal counsel.",5477621199116204617,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule F2 - Liquidity I Account Net Nonpurpose Investments Cash Flow|Schedule F2 - Liquidity I Account Net Nonpurpose Investments Cash Flow,42598379929581788,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,organization|Willdan Financial Services|submission period on Monday and directed staff and Willdan Financial Services to begin counting the votes.,7683517764755523583,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule C2 - Reserve I Account Net Nonpurpose Investments Cash Flow|Schedule C2 - Reserve I Account Net Nonpurpose Investments Cash Flow,8917349301390975997,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule G1 - Liquidity II Account Remaining Balance Analyses|Schedule G1 - Liquidity II Account Remaining Balance Analyses,2562486007957623103,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,schema::flavor::event|Rebate Payment Determination (2016)|2016-10-16,4474412548779491134,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,fund_account|Liquidity II Account|Schedule G - Liquidity II Account,6638852300639391265,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,"location|637 South Clinton Avenue, P.O. Box 18550, Trenton, NJ 08650-2085|637 South Clinton Avenue P.O. Box 18550 Trenton, NJ 08650-2085",1490141290870989388,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,financial_instrument|Federated MM|Federated MM,7669844269534725615,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,financial_instrument|Morgan IA|Morgan IA,7160664882440639509,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule A - Summary of Rebate Analysis|Schedule A - Summary of Rebate Analysis,3190929743969324823,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2015-10-16 0:00,legal_agreement|Schedule E - Prior Rebate Liability|Schedule E - Prior Rebate Liability,3896407521264998095,appears_in,113,relational,bny_document_id|7438596,2051052947608524725
+2024-10-16 0:00,legal_agreement|engagement letter|pursuant to our engagement letter,8129196958194220174,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Reserve I Account Valuation|2024-10-16,1489231668767221387,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Interim Arbitrage Rebate Analysis Report Issuance|2024-12-06,2646938138906315919,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,"legal_agreement|Report|This report (the ""Report"")",8879090567778783678,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Interim Arbitrage Rebate Analysis Computation Period|2024-10-16,4110827024273399802,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,organization|Willdan Financial Services|submission period on Monday and directed staff and Willdan Financial Services to begin counting the votes.,7683517764755523583,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,legal_agreement|Transmittal Letter|Transmittal Letter,5121003150070824032,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Reserve I Account|Schedule C - Reserve I Account,9112734796193071548,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Cumulative Rebate Liability Determination|2024-10-16,3405251110540993306,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Prior Arbitrage Rebate Report Issuance|2008-12-17,4407948040923244881,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Prior Rebate Liability|Prior Rebate Liability — Schedule A - Summary of Rebate Analysis,2277784462984661168,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Refunding of Prior Bonds|1991-10-17,7642128242694169818,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Liquidity I Account|Schedule F - Liquidity I Account,7476737946181823597,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,"location|Dallas, TX 75206|Dallas, TX 75206",5885379055126329646,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,legal_agreement|Notes and Assumptions|Notes and Assumptions,9013206385896288509,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Debt Service Reserve Account|Debt Service Reserve Account,374030580716664244,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,financial_instrument|Morgan IA|Morgan IA,7160664882440639509,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Reserve II Account Valuation|2024-10-16,8960891596258412083,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,"organization|US Treasury Department|Chevron, Valero, Exxon and Conoco and the US Treasury Department did not immediately reply to requests for comment.",8883522583676895375,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Reserve II Account|Schedule D - Reserve II Account,2877916378535664072,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,legal_agreement|INTERIM ARBITRAGE REBATE ANALYSIS|INTERIM ARBITRAGE REBATE ANALYSIS,5651499468729638165,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,"organization|Orrick, Herrington, & Sutcliffe LLP|Sunraycer was advised by Orrick, Herrington, & Sutcliffe LLP as legal counsel.",5477621199116204617,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Liquidity II Account|Schedule G - Liquidity II Account,6638852300639391265,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Liquidity I Account Valuation|2024-10-16,6827380041821210935,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,"organization|New Jersey Housing and Mortgage Finance Agency|New Jersey Housing and Mortgage Finance Agency The NJHMFA DPA provides up to $15,000 for",6471256961308361850,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,financial_instrument|Federated MM|Federated MM,7669844269534725615,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Escrow Fund|Escrow Fund,3499104088028066083,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Construction Account|Construction Account,226686358700946423,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,"location|Trenton, NJ 08650-2085|Trenton, NJ 08650-2085",7706441574885243436,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,fund_account|Revenue Account|Revenue Account,1477039329975055923,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Liquidity II Account Valuation|2024-10-16,8432869064523413071,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,legal_agreement|Prior Rebate Liability|Schedule E - Prior Rebate Liability,2258511055208974139,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,organization|BLX Group LLC|BLX Group LLC,1470965072054453101,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,legal_agreement|Certificate as to Arbitrage|Section 21 of the Certificate as to Arbitrage,9073217463430168172,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,organization|Bank of New York Mellon Corp|Bank of New York Mellon Corp increased its position in Texas Capital Bancshares by,5384086983174826493,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,"location|New York, NY 10019-6142|New York, NY 10019-6142",6662360422077407907,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,client_matter_number|42182-2748,8242646876499346416,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Issuance of Multifamily Housing Revenue Refunding Bonds|1991-10-17,1918313467271094197,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,location|Presidential Plaza at Newport Project|(Presidential Plaza at Newport Project-FHA Insured Mortgages),7995807768282066926,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2024-10-16 0:00,schema::flavor::event|Prior Rebate Liability Future Value Calculation|2024-10-16,2909237326458944713,appears_in,113,relational,bny_document_id|26889358,7447437794117404020
+2026-03-25 20:26,"financial_instrument|U.S. $1,307,116.07|U.S. $1,307,116.07",5989291099094186035,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,fund_account|COLLATERAL SUBACCOUNT|COLLATERAL SUBACCOUNT,2352505202908928335,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 002 (1995)|1995-09-06,2019316181255681060,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 007 (2003) and Beneficiary Change|2003-11-28,1138243181301719477,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|SECTION 5.6|SECTION 5.6,8753339908811957357,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 005.00 (2003)|2003-08-21,1081495739296720139,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 014 )|AMENDMENT (NO. 014 ),6353477035103929731,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|BLICBANK NEW YORK|BLICBANK NEW YORK,3220685979272488431,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 004 (1997)|1997-08-12,1572244364870424889,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 008 )|AMENDMENT (NO. 008 ),8819374516737857756,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 002.00 )|AMENDMENT (NO. 002.00 ),2381187644982522013,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,fund_account|931806|931806,2504986505545931558,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|Telex: 234967 (RCA)|Telex: 234967 (RCA),2006969212955648599,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|NEW JERSEY HOUSING AND MORTGAGE FINANCE AGENCY|NEW JERSEY HOUSING AND MORTGAGE FINANCE AGENCY,5109415780850342446,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 014 (2008)|2008-09-29,2949906491079876708,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"organization|HSBC Bank USA, National Association|nationality: us - address: Mclean, VA",6157989400122873900,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|HSBC Bank USA Trade Services|HSBC Bank USA Trade Services,2625373596646965640,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,person|JULIANNE MEDICI|JULIANNE MEDICI,8227710946729421751,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 013 )|AMENDMENT (NO. 013 ),2068854522204650134,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|EXHIBIT C|EXHIBIT C,32845926869761085,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 013 (2008)|2008-08-19,4144469687544279701,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|BLICUS 33|BLICUS 33,3382116686024656995,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|EXHIBIT A|EXHIBIT A,1428311937107269689,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 001 (1994)|1994-08-05,5787489496220607090,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 009 (2005)|2005-07-11,4471184853194552187,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 009 )|AMENDMENT (NO. 009 ),3204175304077932961,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"legal_agreement|TRUST INDENTURE (THE INDENTURE) DATED AS OF OCTOBER 17, 1991|TRUST INDENTURE (THE INDENTURE) DATED AS OF OCTOBER 17, 1991",2374661523630693574,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,fund_account|7699940|ways : 7699940,1896489344536128430,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 011 )|AMENDMENT (NO. 011 ),8674044714312252700,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Issuance 5094714|1993-10-07,6539357891135938309,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,fund_account|Newport 91 Col 11|Newport 91 Col 11,1066437395655026795,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,fund_account|1851170072|Atc#-1851170072,8665168153677074200,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|EXHIBIT D|EXHIBIT D,7010305909201796213,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"location|385 RIFLE CAMP ROAD WEST PATERSON, NJ 07424|385 RIFLE CAMP ROAD WEST PATERSON, NJ 07424",451436081482840009,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 010 (2006)|2006-07-19,8904347884379286770,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|SECTION 10.3|SECTION 10.3,8149435077860669278,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"location|452 Fifth Avenue, New York, N.Y. 10018|452 Fifth Avenue, New York, N.Y. 10018",1788201509360398999,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|EXHIBIT B|EXHIBIT B,4378959058990797753,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|UNIFORM CUSTOMS AND PRACTICE FOR DOCUMENTARY CREDITS (1983 REVISION)|UNIFORM CUSTOMS AND PRACTICE FOR DOCUMENTARY CREDITS (1983 REVISION),3127771656435772906,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 011 (2007)|2007-08-01,3072579777938019654,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|A NEW JERSEY GENERAL PARTNERSHIP|A NEW JERSEY GENERAL PARTNERSHIP,324145471253932450,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"location|210 MAIN STREET HACKENSACK, NEW JERSEY 07602|210 MAIN STREET HACKENSACK, NEW JERSEY 07602",9028891369789562917,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|INTERNATIONAL CHAMBER OF COMMERCE PUBLICATION NO. 400|INTERNATIONAL CHAMBER OF COMMERCE PUBLICATION NO. 400,7134683315725495957,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"organization|HSBC|Finally, HSBC upgraded AbbVie from a “hold” rating to a",8749664511655725314,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|NC HOUSING ASSOCIATES #200 CO.|NC HOUSING ASSOCIATES #200 CO.,4104505588419472813,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 005 (1998)|1998-08-13,2195608124423819795,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 003.02)|AMENDMENT (NO. 003.02),2513431628796693811,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 003.02 (2002)|2002-08-02,8875825215778696750,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,person|ARTHUR KLEIN|ARTHUR KLEIN,4008955034518895738,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"financial_instrument|Telex: 620274 (MCI), 7607367 (CCI)|Telex: 620274 (MCI), 7607367 (CCI)",5895679362876652650,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 006 (1999)|1999-10-13,8925775974109071112,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|UNIFORM CUSTOMS|UNIFORM CUSTOMS,6208785035719167709,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|REPUBLIC NATIONAL BANK OF NEW YORK|REPUBLIC NATIONAL BANK OF NEW YORK,4824620677155774613,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,person|JOSEPH E. LUDES|JOSEPH E. LUDES,8382407775580926155,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,client_matter_number|42182-2748,8242646876499346416,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,fund_account|ACS D52671BNY|ACS D52671BNY,4520257385239843487,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,location|New York City|a publicly traded patent licensing company based in New York City.,4648605347073135218,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 010 )|AMENDMENT (NO. 010 ),5823406524061590731,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|CORPORATE TRUST DIVISION|CORPORATE TRUST DIVISION,541401425133389525,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|BNY Rebate Analysis: 4124255.pdf|BNY Rebate Analysis: 4124255.pdf,4899275328142043346,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 003 (1996)|1996-08-12,1787850693356836623,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 007 (2000) and Bank Succession|2000-09-27,8744748145772939211,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"organization|UNITED JERSEY BANK/CENTRAL,|UNITED JERSEY BANK/CENTRAL, | WEST WINDSOR TOW, NJ",6967031221082229818,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 005.00 )|AMENDMENT (NO. 005.00 ),1154936381389658373,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,legal_agreement|IRREVOCABLE LETTER OF CREDIT|IRREVOCABLE LETTER OF CREDIT,9170860967536978667,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|SDCMTN094714|SDCMTN094714,7005109958829846067,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 008 (2004)|2004-07-29,5762878740920075353,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,financial_instrument|AMENDMENT (NO. 007 )|AMENDMENT (NO. 007 ),3918206870515019731,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,schema::flavor::event|LOC Amendment 002.00 (2001)|2001-07-16,75022521282902980,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|Bank of New York Mellon Corp|Bank of New York Mellon Corp increased its position in Texas Capital Bancshares by,5384086983174826493,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,fund_account|DEBT SERVICE RESERVE ACCOUNT|DEBT SERVICE RESERVE ACCOUNT,6483867964489030036,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,"location|97-77 QUEENS BLVD. REGO PARK, N.Y. 11374|97-77 QUEENS BLVD. REGO PARK, N.Y. 11374",7942829951042429385,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2026-03-25 20:26,organization|LEFRAK ORGANIZATION INC.|LEFRAK ORGANIZATION INC.,7059425056973183461,appears_in,113,relational,bny_document_id|4124255,7526709763959495568
+2012-10-16 0:00,schema::flavor::event|Reserve I Account Valuation|2012-10-16,776751846661763111,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Liquidity I Account|Schedule F - Liquidity I Account,7476737946181823597,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Schedule D - Reserve II Account|Schedule D - Reserve II Account,4931428261163025225,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,"location|Trenton|Horne, a lifelong resident, said she was concerned about a proposed water rate increase and how it would impact low-income seniors in Trenton.",1054548445358605934,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,client_matter_number|42182-2748,8242646876499346416,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,location|Presidential Plaza at Newport Project|(Presidential Plaza at Newport Project-FHA Insured Mortgages),7995807768282066926,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Liquidity I Account Valuation|2012-10-16,4654524095107257635,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Debt Service Reserve Account|Debt Service Reserve Account,374030580716664244,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,location|637 South Clinton Avenue|637 South Clinton Avenue,4798439779264810981,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Bonds Dated Date|1991-09-15,8565099947243983842,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Liquidity II Account Valuation|2012-10-16,5741932115563849633,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Issuance of 1991 Series 1 Bonds|1991-10-17,8506574259702576298,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,location|P.O. Box 18550|P.O. Box 18550,1867702731957289564,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Interim Arbitrage Rebate Analysis Computation|2012-10-16,6239695588840415577,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Schedule A - Summary of Rebate Analysis|Schedule A - Summary of Rebate Analysis,8523712635205527373,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Refunding of Prior Bonds|1991-10-17,7642128242694169818,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Reserve I Account|Schedule C - Reserve I Account,9112734796193071548,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,financial_instrument|Federated MM|Federated MM,7669844269534725615,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Escrow Fund|Escrow Fund,3499104088028066083,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|BLX Group LLC Interim Arbitrage Rebate Analysis Report Issuance|2012-11-05,2718761691036058788,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Construction Account|Construction Account,226686358700946423,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Liquidity I|Liquidity I,212533258381375355,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Reserve II Account Valuation|2012-10-16,4125160574423129877,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Reserve I|Reserve I,5312626425379185141,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,"organization|Orrick, Herrington, & Sutcliffe LLP|Sunraycer was advised by Orrick, Herrington, & Sutcliffe LLP as legal counsel.",5477621199116204617,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Liquidity II Account|Schedule G - Liquidity II Account,6638852300639391265,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Schedule E - Prior Rebate Liability|Schedule E - Prior Rebate Liability,7699163145713422733,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,location|2711 N. Haskell Avenue|2711 N. Haskell Avenue,4541494875554604248,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,"schema::flavor::event|Orrick, Herrington & Sutcliffe LLP Opinion Issuance|2012-11-05",1273746902535634747,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,"location|Lockbox 35, Suite 2600 SW|Lockbox 35, Suite 2600 SW",2310895720670755529,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Schedule B - Sources & Uses of Funds|Schedule B - Sources & Uses of Funds,4190633011426224500,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Revenue Account|Revenue Account,1477039329975055923,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,organization|Bank of New York Mellon Corp|Bank of New York Mellon Corp increased its position in Texas Capital Bancshares by,5384086983174826493,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,organization|BLX Group LLC|BLX Group LLC,1470965072054453101,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Reserve II|Reserve II,5766542102150149251,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Schedule C - Reserve I Account|Schedule C - Reserve I Account,7684968567575696080,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,legal_agreement|Prior Report|,3844814106996110754,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,organization|U.S.|The U.S. military operation,8378183269956851171,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,organization|Willdan Financial Services|submission period on Monday and directed staff and Willdan Financial Services to begin counting the votes.,7683517764755523583,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Reserve II Account|Schedule D - Reserve II Account,2877916378535664072,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Schedule F - Liquidity I Account|Schedule F - Liquidity I Account,1667998524201661399,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,"organization|New Jersey Housing and Mortgage Finance Agency|New Jersey Housing and Mortgage Finance Agency The NJHMFA DPA provides up to $15,000 for",6471256961308361850,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,"location|Dallas, Texas|was founded in 1992 and is headquartered in Dallas, Texas.",5716789654794197421,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Rebate Payment Determination (2016)|2016-10-16,4474412548779491134,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Prior Rebate Liability|Prior Rebate Liability — Schedule A - Summary of Rebate Analysis,2277784462984661168,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,financial_instrument|Morgan IA|Morgan IA,7160664882440639509,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,fund_account|Schedule G - Liquidity II Account|Schedule G - Liquidity II Account,6887584236230756927,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,schema::flavor::event|Prior Arbitrage Rebate Report Issuance|2008-12-17,4407948040923244881,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2012-10-16 0:00,"organization|US Treasury Department|Chevron, Valero, Exxon and Conoco and the US Treasury Department did not immediately reply to requests for comment.",8883522583676895375,appears_in,113,relational,bny_document_id|5816087,7780293260382878366
+2021-10-16 0:00,company_cik|0000890541,6441935222764684550,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Construction Account|Construction Account,226686358700946423,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Liquidity I Account Valuation (2021)|2021-10-16,825671305674191121,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,legal_agreement|Schedule A - Summary of Rebate Analysis|Schedule A - Summary of Rebate Analysis,3190929743969324823,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,"location|Trenton|Horne, a lifelong resident, said she was concerned about a proposed water rate increase and how it would impact low-income seniors in Trenton.",1054548445358605934,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,client_matter_number|42182-2748,8242646876499346416,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,legal_agreement|Internal Revenue Service Form 8038-T|Internal Revenue Service Form 8038-T,3439765214018713853,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Prior Rebate Liability|Prior Rebate Liability — Schedule A - Summary of Rebate Analysis,2277784462984661168,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,organization|Willdan Financial Services|submission period on Monday and directed staff and Willdan Financial Services to begin counting the votes.,7683517764755523583,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Reserve II Account|Schedule D - Reserve II Account,2877916378535664072,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,organization|Orrick|Greenberg Traurig provided legal advice to the Company. Orrick provided legal advice to True Wind and Aldaron.,2080889041561724035,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Prior Arbitrage Rebate Report Issuance|2008-12-17,4407948040923244881,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,financial_instrument|Federated MM|Federated MM,7669844269534725615,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Reserve I Account Valuation (2008)|2008-10-16,5890059083311343535,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Refunding of Prior Bonds|1991-10-17,7642128242694169818,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,organization|Bank of New York Mellon Corp|Bank of New York Mellon Corp increased its position in Texas Capital Bancshares by,5384086983174826493,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Liquidity I Account|Schedule F - Liquidity I Account,7476737946181823597,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,legal_agreement|INTERIM ARBITRAGE REBATE ANALYSIS|INTERIM ARBITRAGE REBATE ANALYSIS,5651499468729638165,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Reserve II Account Valuation (2021)|2021-10-16,8219936286222944588,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,location|New York City|a publicly traded patent licensing company based in New York City.,4648605347073135218,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Issuance of Interim Arbitrage Rebate Analysis Report|2021-11-15,5541066249384893038,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Schedule D - Reserve II Account|Schedule D - Reserve II Account,4931428261163025225,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Liquidity II Account Valuation (2008)|2008-10-16,3791687575467746738,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Schedule G - Liquidity II Account|Schedule G - Liquidity II Account,6887584236230756927,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Issuance of 1991 Series 1 Bonds|1991-10-17,8506574259702576298,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Schedule C - Reserve I Account|Schedule C - Reserve I Account,7684968567575696080,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Prior Arbitrage Rebate Computation (2008)|2008-10-16,6066214711165460283,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Schedule E - Prior Rebate Liability|Schedule E - Prior Rebate Liability,7699163145713422733,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Liquidity I Account Valuation (2008)|2008-10-16,2148437331998553539,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,"location|Dallas, Texas|was founded in 1992 and is headquartered in Dallas, Texas.",5716789654794197421,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Next Rebate Installment Payment Due|2026-12-15,7320563947125422385,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Liquidity II Account Valuation (2021)|2021-10-16,5997887145037014720,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,financial_instrument|Morgan IA|Morgan IA,7160664882440639509,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Escrow Fund|Escrow Fund,3499104088028066083,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,legal_agreement|Temporary Treasury Regulations Section 1.148-4T(e)(2)|Temporary Treasury Regulations Section 1.148-4T(e)(2),996175972460951893,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Schedule F - Liquidity I Account|Schedule F - Liquidity I Account,1667998524201661399,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,organization|BLX Group LLC|BLX Group LLC,1470965072054453101,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,organization|Treasury|Rachel Reeves said the Treasury is considering “different scenarios” to help “those who,7404718453994080710,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Reserve II Account Valuation (2008)|2008-10-16,4722741527453915134,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Rebate Payment Due Determination (2021)|2021-10-16,8429830080010611935,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,"organization|Orrick, Herrington, & Sutcliffe LLP|Sunraycer was advised by Orrick, Herrington, & Sutcliffe LLP as legal counsel.",5477621199116204617,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Reserve I Account|Schedule C - Reserve I Account,9112734796193071548,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,"organization|New Jersey Housing and Mortgage Finance Agency|New Jersey Housing and Mortgage Finance Agency The NJHMFA DPA provides up to $15,000 for",6471256961308361850,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Debt Service Reserve Account|Debt Service Reserve Account,374030580716664244,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,organization|U.S.|The U.S. military operation,8378183269956851171,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Revenue Account|Revenue Account,1477039329975055923,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,fund_account|Liquidity II Account|Schedule G - Liquidity II Account,6638852300639391265,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Reserve I Account Valuation (2021)|2021-10-16,2278649202655105485,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,legal_agreement|Schedule B - Sources & Uses of Funds|Schedule B - Sources & Uses of Funds,4662206365284782208,appears_in,113,relational,bny_document_id|9587055,8759058315171884540
+2021-10-16 0:00,schema::flavor::event|Interim Arbitrage Rebate Computation|2021-10-16,2714238907301044362,appears_in,113,relational,bny_document_id|9587055,8759058315171884540

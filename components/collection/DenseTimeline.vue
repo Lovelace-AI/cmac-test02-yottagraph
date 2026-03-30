@@ -83,7 +83,7 @@
                     <!-- Events in this lane -->
                     <g v-for="evt in lane.events" :key="evt.neid">
                         <circle
-                            :cx="dateToX(evt.date)"
+                            :cx="dateToX(resolveEventDate(evt))"
                             :cy="laneY(laneIdx) + laneHeight / 2"
                             :r="hoveredNeid === evt.neid ? 7 : 5"
                             :fill="categoryColor(lane.category)"
@@ -105,8 +105,8 @@
             :style="{ left: tooltipX + 'px', top: tooltipY + 'px' }"
         >
             <div class="text-caption font-weight-bold">{{ hoverEvt.name }}</div>
-            <div v-if="hoverEvt.date" class="text-caption text-medium-emphasis">
-                {{ hoverEvt.date.slice(0, 10) }}
+            <div v-if="resolveEventDate(hoverEvt)" class="text-caption text-medium-emphasis">
+                {{ resolveEventDate(hoverEvt)?.slice(0, 10) }}
             </div>
             <div v-if="hoverEvt.category" class="text-caption text-medium-emphasis">
                 {{ hoverEvt.category }}
@@ -141,7 +141,7 @@
     });
 
     const filteredEvents = computed(() => {
-        let evts = props.events.filter((e) => e.date);
+        let evts = props.events.filter((e) => Boolean(resolveEventDate(e)));
         if (selectedCategories.value.length > 0) {
             evts = evts.filter((e) => selectedCategories.value.includes(e.category ?? ''));
         }
@@ -165,7 +165,9 @@
     const svgWidth = computed(() => Math.max(800, window?.innerWidth ?? 800));
 
     const dateRange = computed(() => {
-        const dates = filteredEvents.value.map((e) => new Date(e.date!).getTime()).filter(isFinite);
+        const dates = filteredEvents.value
+            .map((e) => new Date(resolveEventDate(e)!).getTime())
+            .filter(isFinite);
         if (!dates.length) return { min: Date.now() - 1e10, max: Date.now() };
         return { min: Math.min(...dates), max: Math.max(...dates) };
     });
@@ -202,11 +204,32 @@
     const eventPointOpacity = computed(() => (colorMode.value === 'light' ? 0.92 : 0.75));
 
     function dateToX(dateStr?: string): number {
-        if (!dateStr) return marginLeft;
-        const t = new Date(dateStr).getTime();
+        const resolved = dateStr ? dateStr : undefined;
+        if (!resolved) return marginLeft;
+        const t = new Date(resolved).getTime();
         const { min, max } = dateRange.value;
         const range = max - min || 1;
         return marginLeft + ((t - min) / range) * (svgWidth.value - marginLeft - marginRight);
+    }
+
+    function resolveEventDate(evt: EventRecord): string | undefined {
+        if (evt.date) return evt.date;
+        const props = (evt.properties ?? {}) as Record<string, unknown>;
+        const candidateKeys = [
+            'event_date',
+            'date',
+            'schema::property::event_date',
+            'schema::property::date',
+        ];
+        for (const key of candidateKeys) {
+            if (!(key in props)) continue;
+            const value = props[key] as any;
+            const scalar =
+                value && typeof value === 'object' && !Array.isArray(value) ? value.value : value;
+            const text = String(scalar ?? '').trim();
+            if (text) return text;
+        }
+        return undefined;
     }
 
     function laneY(idx: number): number {

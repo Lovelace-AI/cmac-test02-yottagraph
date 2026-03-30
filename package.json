@@ -11,6 +11,7 @@
         "build": "NODE_ENV=production NODE_OPTIONS='--max-old-space-size=8192' nuxt build",
         "generate": "nuxt generate",
         "preview": "nuxt preview",
+        "audit:seeds": "node scripts/audit-seeds.mjs",
         "format": "prettier --write \"**/*.{js,ts,vue,json,md}\" --ignore-path .gitignore --ignore-path .prettierignore",
         "format:check": "prettier --check \"**/*.{js,ts,vue,json,md}\" --ignore-path .gitignore --ignore-path .prettierignore",
         "postinstall": "npx nuxi prepare",

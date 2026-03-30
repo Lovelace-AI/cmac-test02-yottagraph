@@ -219,7 +219,7 @@
                             {{ flavor.replace(/_/g, ' ') }}
                         </span>
                         <span class="text-caption text-medium-emphasis">
-                            {{ flavorCounts.get(flavor) ?? 0 }}
+                            {{ localFlavorCounts.get(flavor) ?? 0 }}
                         </span>
                     </button>
 
@@ -367,13 +367,12 @@
     const BOND_CENTER_NEID = '08242646876499346416';
 
     const {
-        entities: workspaceEntities,
+        documentEntities: workspaceEntities,
         documents,
-        relationships: workspaceRelationships,
-        events,
+        documentRelationships: workspaceRelationships,
+        documentEvents: events,
         selectedEntityNeid,
         selectEntity,
-        flavorCounts,
     } = useCollectionWorkspace();
     const entities = computed(() => props.entitiesOverride ?? workspaceEntities.value);
     const relationships = computed(
@@ -388,6 +387,13 @@
     const entityByNeid = computed(
         () => new Map(entities.value.map((entity) => [entity.neid, entity]))
     );
+    const localFlavorCounts = computed(() => {
+        const counts = new Map<string, number>();
+        for (const entity of entities.value) {
+            counts.set(entity.flavor, (counts.get(entity.flavor) ?? 0) + 1);
+        }
+        return counts;
+    });
 
     const { colorMode, currentThemeColors } = useAppColorMode();
 

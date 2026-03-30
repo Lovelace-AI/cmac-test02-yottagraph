@@ -1,15 +1,16 @@
 import { mcpCallTool, resetMcpSession } from '~/server/utils/collectionConfig';
 import { setCachedCollection } from '~/server/api/collection/bootstrap.get';
+import { runEnrichmentExpansion } from '~/server/utils/enrichmentExpand';
 import {
     loadExtractedSeedGraph,
+    loadSeedGraphHints,
+    seedIdForKey,
     seedKeyFromNameAndFlavor,
+    citationToDocumentNeid,
 } from '~/server/utils/extractedSeedGraph';
 import {
     BNY_DOCUMENTS,
-    BNY_DOCUMENT_NEIDS,
     HOP1_FLAVORS,
-    PROPERTY_BEARING_NEIDS,
-    EVENT_HUB_NEIDS,
     type EntityRecord,
     type RelationshipRecord,
     type EventRecord,
@@ -95,6 +96,16 @@ const RELATIONSHIP_PROBES: Array<{
     { sourceFlav: 'person', relType: 'works_at', targetFlav: 'organization', maxSources: 5 },
 ];
 
+const EVENT_TIME_WINDOWS: Array<{ time_range?: { after?: string; before?: string } }> = [
+    { time_range: { after: '2018-01-01', before: '2026-12-31' } },
+    { time_range: { before: '2018-01-01' } },
+];
+
+function normalizeNeid(neid: string): string {
+    const unpadded = neid.replace(/^0+(?=\d)/, '') || '0';
+    return unpadded.padStart(20, '0');
+}
+
 function addRelationship(
     relationships: RelationshipRecord[],
     seen: Set<string>,
@@ -106,10 +117,53 @@ function addRelationship(
     relationships.push(rel);
 }
 
+function mergeEntities(base: EntityRecord[], enrichment: EntityRecord[]): EntityRecord[] {
+    const byNeid = new Map(base.map((entity) => [entity.neid, entity]));
+    for (const entity of enrichment) {
+        if (byNeid.has(entity.neid)) continue;
+        byNeid.set(entity.neid, entity);
+    }
+    return Array.from(byNeid.values());
+}
+
+function mergeEvents(base: EventRecord[], enrichment: EventRecord[]): EventRecord[] {
+    const byNeid = new Map(base.map((eventItem) => [eventItem.neid, eventItem]));
+    for (const eventItem of enrichment) {
+        if (byNeid.has(eventItem.neid)) continue;
+        byNeid.set(eventItem.neid, eventItem);
+    }
+    return Array.from(byNeid.values());
+}
+
+function citationDocumentNeidsFromValue(value: unknown): string[] {
+    if (!value) return [];
+    if (typeof value === 'string') {
+        const mapped = citationToDocumentNeid(value);
+        return mapped ? [mapped] : [];
+    }
+    if (Array.isArray(value)) {
+        return value.flatMap((item) => citationDocumentNeidsFromValue(item));
+    }
+    if (typeof value === 'object') {
+        const citation = (value as Record<string, unknown>).citation;
+        if (typeof citation === 'string') {
+            const mapped = citationToDocumentNeid(citation);
+            return mapped ? [mapped] : [];
+        }
+    }
+    return [];
+}
+
 export default defineEventHandler(async (): Promise<CollectionState> => {
     resetMcpSession();
 
     const seed = loadExtractedSeedGraph();
+    const seedHints = loadSeedGraphHints();
+    const strictDocumentNeids =
+        seedHints.documentNeids.length > 0
+            ? seedHints.documentNeids
+            : BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid));
+    const strictDocumentNeidSet = new Set(strictDocumentNeids);
     const extractedEntityKeys = new Set(
         seed.entities.map((entity) => seedKeyFromNameAndFlavor(entity.name, entity.flavor))
     );
@@ -118,13 +172,80 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     const relationships: RelationshipRecord[] = [];
     const relSeen = new Set<string>();
     const eventMap = new Map<string, EventRecord>();
+    const entityNeidBySeedKey = new Map<string, string>();
+    const eventNeidBySeedKey = new Map<string, string>();
+
+    // Baseline from extracted/quad seed so the app can load document-derived
+    // graph content even when MCP lookups are degraded.
+    for (const seedEntity of seed.entities) {
+        const neid = seedEntity.canonicalNeid ? normalizeNeid(seedEntity.canonicalNeid) : '';
+        if (!neid) continue;
+        entityMap.set(neid, {
+            neid,
+            name: seedEntity.name || neid,
+            flavor: seedEntity.flavor,
+            sourceDocuments: [
+                ...new Set(seedEntity.sourceDocumentNeids.map((doc) => normalizeNeid(doc))),
+            ],
+            origin: 'document',
+            extractedSeed: true,
+            mcpConfirmed: false,
+            properties: seedEntity.properties ?? undefined,
+        });
+        entityNeidBySeedKey.set(seedEntity.key, neid);
+    }
+    for (const seedEvent of seed.events) {
+        const syntheticNeid = seedIdForKey('event', seedEvent.key);
+        const seededDocs = [
+            ...new Set(seedEvent.sourceDocumentNeids.map((doc) => normalizeNeid(doc))),
+        ];
+        const seedProps = (seedEvent.properties ?? {}) as Record<string, unknown>;
+        eventMap.set(syntheticNeid, {
+            neid: syntheticNeid,
+            name: seedEvent.name || syntheticNeid,
+            category: (seedProps.event_category as { value?: string } | undefined)?.value,
+            date:
+                (seedProps.event_date as { value?: string } | undefined)?.value ??
+                (seedProps.date as { value?: string } | undefined)?.value,
+            description:
+                (seedProps.event_description as { value?: string } | undefined)?.value ??
+                (seedProps.description as { value?: string } | undefined)?.value,
+            likelihood:
+                (seedProps.event_likelihood as { value?: string } | undefined)?.value ??
+                (seedProps.likelihood as { value?: string } | undefined)?.value,
+            participantNeids: [],
+            sourceDocuments: seededDocs,
+            origin: 'document',
+            extractedSeed: true,
+            mcpConfirmed: false,
+            properties: seedEvent.properties ?? undefined,
+        });
+        eventNeidBySeedKey.set(seedEvent.key, syntheticNeid);
+    }
+    for (const edge of seed.relationships) {
+        const sourceNeid =
+            entityNeidBySeedKey.get(edge.sourceKey) ?? eventNeidBySeedKey.get(edge.sourceKey);
+        const targetNeid =
+            entityNeidBySeedKey.get(edge.targetKey) ?? eventNeidBySeedKey.get(edge.targetKey);
+        if (!sourceNeid || !targetNeid) continue;
+        addRelationship(relationships, relSeen, {
+            sourceNeid,
+            targetNeid,
+            type: edge.type,
+            sourceDocumentNeid: edge.sourceDocumentNeids[0]
+                ? normalizeNeid(edge.sourceDocumentNeids[0])
+                : undefined,
+            origin: 'document',
+            extractedSeed: true,
+        });
+    }
 
     // ─────────────────────────────────────────────────────────────
     // Phase 1: Fan out from each document NEID across all hop-1 flavors.
     // Produces the canonical document-derived entity set.
     // Expected: ~127 unique non-document entities.
     // ─────────────────────────────────────────────────────────────
-    for (const docNeid of BNY_DOCUMENT_NEIDS) {
+    for (const docNeid of strictDocumentNeids) {
         for (const flavor of HOP1_FLAVORS) {
             try {
                 const result = await mcpCallTool('elemental_get_related', {
@@ -180,40 +301,54 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     // must be in the hop-1 entity set.
     // Expected: ~53 unique event NEIDs.
     // ─────────────────────────────────────────────────────────────
-    for (const hubNeid of EVENT_HUB_NEIDS) {
+    const strictEventHubNeids = seedHints.eventHubNeids.filter((hubNeid) => entityMap.has(hubNeid));
+    for (const hubNeid of strictEventHubNeids) {
         try {
-            const result = await mcpCallTool('elemental_get_events', {
-                entity_id: { id_type: 'neid', id: hubNeid },
-                limit: 500,
-                include_participants: true,
-            });
-
-            const events = result?.events ?? [];
-            for (const evt of events) {
+            const eventsByNeid = new Map<string, any>();
+            for (const window of EVENT_TIME_WINDOWS) {
+                const result = await mcpCallTool('elemental_get_events', {
+                    entity_id: { id_type: 'neid', id: hubNeid },
+                    limit: 500,
+                    include_participants: true,
+                    ...(window.time_range ? { time_range: window.time_range } : {}),
+                });
+                for (const evt of result?.events ?? []) {
+                    if (!evt?.neid) continue;
+                    eventsByNeid.set(String(evt.neid), evt);
+                }
+            }
+            for (const evt of eventsByNeid.values()) {
                 const evtNeid = evt.neid as string;
                 if (!evtNeid || eventMap.has(evtNeid)) continue;
 
                 const props = evt.properties ?? {};
                 const participantNeids: string[] = [];
-                let hasDocumentParticipant = false;
 
                 if (Array.isArray(evt.participants)) {
                     for (const p of evt.participants) {
                         if (p.neid) {
                             participantNeids.push(p.neid);
-                            if (entityMap.has(p.neid)) {
-                                hasDocumentParticipant = true;
-                            }
                         }
                     }
                 }
 
-                // Also accept if the hub itself is in our entity set
-                if (!hasDocumentParticipant && entityMap.has(hubNeid)) {
-                    hasDocumentParticipant = true;
-                }
-
-                if (!hasDocumentParticipant) continue;
+                const citedDocNeids = Object.values(props)
+                    .flatMap((value) => citationDocumentNeidsFromValue(value))
+                    .map((docNeid) => normalizeNeid(docNeid))
+                    .filter((docNeid): docNeid is string => strictDocumentNeidSet.has(docNeid));
+                const appears = await mcpCallTool('elemental_get_related', {
+                    entity_id: { id_type: 'neid', id: evtNeid },
+                    related_flavor: 'document',
+                    direction: 'both',
+                    limit: 50,
+                }).catch(() => null);
+                const appearsInDocNeids = (appears?.relationships ?? [])
+                    .map((relationship: any) => normalizeNeid(String(relationship?.neid ?? '')))
+                    .filter((docNeid: string) => strictDocumentNeidSet.has(docNeid));
+                const sourceDocuments = Array.from(
+                    new Set([...citedDocNeids, ...appearsInDocNeids])
+                );
+                if (sourceDocuments.length === 0) continue;
 
                 // Record participant → event relationships (only for known entities)
                 for (const p of evt.participants ?? []) {
@@ -222,14 +357,22 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                             sourceNeid: p.neid,
                             targetNeid: evtNeid,
                             type: 'schema::relationship::participant',
+                            sourceDocumentNeid: sourceDocuments[0],
                             origin: 'document',
+                            extractedSeed: true,
                         });
                     }
                 }
-
-                const sourceDocuments: string[] = [];
-                const hub = entityMap.get(hubNeid);
-                if (hub) sourceDocuments.push(...hub.sourceDocuments);
+                for (const sourceDocumentNeid of sourceDocuments) {
+                    addRelationship(relationships, relSeen, {
+                        sourceNeid: evtNeid,
+                        targetNeid: sourceDocumentNeid,
+                        type: 'appears_in',
+                        sourceDocumentNeid,
+                        origin: 'document',
+                        extractedSeed: true,
+                    });
+                }
 
                 eventMap.set(evtNeid, {
                     neid: evtNeid,
@@ -240,6 +383,8 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                     likelihood: props.event_likelihood?.value as string | undefined,
                     participantNeids,
                     sourceDocuments: [...new Set(sourceDocuments)],
+                    extractedSeed: true,
+                    mcpConfirmed: true,
                 });
             }
         } catch (e: any) {
@@ -293,7 +438,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     // ─────────────────────────────────────────────────────────────
     const propertySeries: PropertySeriesRecord[] = [];
 
-    for (const neid of PROPERTY_BEARING_NEIDS) {
+    for (const neid of seedHints.propertyBearingNeids) {
         try {
             const result = await mcpCallTool('elemental_get_entity', {
                 entity_id: { id_type: 'neid', id: neid },
@@ -324,8 +469,22 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
         }
     }
 
-    const entities = Array.from(entityMap.values());
-    const events = Array.from(eventMap.values());
+    const documentEntities = Array.from(entityMap.values());
+    const documentEvents = Array.from(eventMap.values());
+    const enrichmentResult = await runEnrichmentExpansion({
+        anchorNeids: documentEntities.map((entity) => entity.neid),
+        hops: 2,
+        includeEvents: true,
+        maxEntities: 6000,
+        maxRelationships: 24000,
+        maxEvents: 6000,
+        maxEventHubs: 24,
+    });
+    for (const relationship of enrichmentResult.relationships) {
+        addRelationship(relationships, relSeen, relationship);
+    }
+    const entities = mergeEntities(documentEntities, enrichmentResult.entities);
+    const events = mergeEvents(documentEvents, enrichmentResult.events);
     const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
 
     const state: CollectionState = {

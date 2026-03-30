@@ -183,8 +183,20 @@ function persistToStorage(fingerprint: string): void {
 }
 
 export function useInsightsWorkspace() {
-    const { collection, entities, addGeminiUsage, collectionSummary, isReady, meta } =
-        useCollectionWorkspace();
+    const {
+        collection,
+        documentEntities: entities,
+        primaryCollectionSummary,
+        isReady,
+        primaryMeta,
+    } = useCollectionWorkspace();
+    const { fetchConfig: fetchTenantConfig, config: tenantConfig } = useTenantConfig();
+    const {
+        sendMessage: sendAgentMessage,
+        selectAgent: selectGatewayAgent,
+        currentAgentId,
+        messages: agentMessages,
+    } = useAgentChat();
 
     const allQuestions = computed(() => categories.flatMap((category) => category.questions));
     const totalQuestions = computed(() => allQuestions.value.length);
@@ -211,10 +223,10 @@ export function useInsightsWorkspace() {
         JSON.stringify({
             name: collection.value.meta.name,
             lastRebuilt: collection.value.meta.lastRebuilt ?? '',
-            docCount: collection.value.meta.documentCount,
-            entityCount: collection.value.meta.entityCount,
-            eventCount: collection.value.meta.eventCount,
-            relCount: collection.value.meta.relationshipCount,
+            docCount: primaryMeta.value.documentCount,
+            entityCount: primaryMeta.value.entityCount,
+            eventCount: primaryMeta.value.eventCount,
+            relCount: primaryMeta.value.relationshipCount,
         })
     );
 
@@ -255,7 +267,7 @@ export function useInsightsWorkspace() {
             insightEntitySummaries.value = {};
             insightEventSummaries.value = {};
         }
-        insightNarrative.value = collectionSummary.value;
+        insightNarrative.value = primaryCollectionSummary.value;
     }
 
     async function answerQuestion(questionId: string, force = false): Promise<void> {
@@ -271,54 +283,31 @@ export function useInsightsWorkspace() {
             cached: false,
         };
 
-        const startedAt = Date.now();
         try {
-            const result = await $fetch<{
-                output: string;
-                citations: InsightCitation[];
-                usage?: {
-                    model: string;
-                    promptTokens: number;
-                    completionTokens: number;
-                    totalTokens: number;
-                    costUsd: number;
-                };
-            }>('/api/collection/agent-actions', {
-                method: 'POST',
-                body: {
-                    action: 'answer_question',
-                    question: question.text,
-                },
-            });
-
-            const usage = result.usage
-                ? {
-                      ...result.usage,
-                      latencyMs: Date.now() - startedAt,
-                  }
-                : undefined;
-
-            if (usage) {
-                addGeminiUsage({
-                    model: usage.model,
-                    promptTokens: usage.promptTokens,
-                    completionTokens: usage.completionTokens,
-                    totalTokens: usage.totalTokens,
-                    costUsd: usage.costUsd,
-                    latencyMs: usage.latencyMs ?? 0,
-                    timestamp: new Date().toISOString(),
-                    label: `insights_${question.id}`,
-                });
+            if (!currentAgentId.value) {
+                const config = tenantConfig.value ?? (await fetchTenantConfig());
+                const agentId = config?.agents?.[0]?.engine_id;
+                if (!agentId) {
+                    throw new Error(
+                        'No deployed agents found for this tenant. Deploy an agent or verify tenant config.'
+                    );
+                }
+                selectGatewayAgent(agentId);
             }
+            await sendAgentMessage(question.text);
+            const latestAgentMessage = [...agentMessages.value]
+                .reverse()
+                .find((message) => message.role === 'agent');
+            const output = latestAgentMessage?.text?.trim() || 'No answer returned.';
 
             answers.value[question.id] = {
                 status: 'answered',
-                answer: result.output || 'No answer returned.',
-                citations: result.citations ?? [],
+                answer: output,
+                citations: [],
                 error: null,
                 cached: false,
-                usage,
-                matchedEntityNeids: detectEntityMentions(result.output || '', entities.value),
+                usage: undefined,
+                matchedEntityNeids: detectEntityMentions(output, entities.value),
                 updatedAt: new Date().toISOString(),
             };
             persistToStorage(collectionFingerprint.value);
@@ -382,6 +371,6 @@ export function useInsightsWorkspace() {
         insightEntitySummaries: computed(() => insightEntitySummaries.value),
         insightEventSummaries: computed(() => insightEventSummaries.value),
         resolveCitationEntityName,
-        collectionMeta: meta,
+        collectionMeta: primaryMeta,
     };
 }

@@ -74,7 +74,7 @@
     const {
         overviewViewModel,
         meta,
-        entities,
+        documentEntities: entities,
         isReady,
         rebuilding,
         rebuild,
@@ -231,7 +231,11 @@
     }
 
     async function handlePrimaryAction() {
-        if (overview.value.status === 'pending') {
+        if (
+            overview.value.status === 'pending' ||
+            overview.value.status === 'partial' ||
+            overview.value.status === 'error'
+        ) {
             await handleRunAnalysis();
             return;
         }

@@ -222,8 +222,14 @@
 <script setup lang="ts">
     import type { EntityRecord } from '~/utils/collectionTypes';
 
-    const { agreements, entities, documents, relationships, resolveEntityName, selectEntity } =
-        useCollectionWorkspace();
+    const {
+        agreements,
+        documentEntities: entities,
+        documents,
+        documentRelationships: relationships,
+        resolveEntityName,
+        selectEntity,
+    } = useCollectionWorkspace();
 
     const searchQuery = ref('');
     const selectedPartyNeid = ref<string | null>(null);

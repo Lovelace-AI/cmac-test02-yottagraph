@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { BNY_DOCUMENTS } from '~/utils/collectionTypes';
+import { BNY_DOCUMENTS, EVENT_HUB_NEIDS, PROPERTY_BEARING_NEIDS } from '~/utils/collectionTypes';
 import extractedGraphJson from '~/import/recordeval_graph_extracted.json';
+import { loadQuadDerivedNeids, loadQuadSeedGraph } from '~/server/utils/quadSeedGraph';
 
 interface ExtractedNode {
     id: string;
@@ -60,6 +61,12 @@ export interface ExtractedSeedGraph {
     entities: SeedEntityNode[];
     events: SeedEventNode[];
     relationships: SeedRelationship[];
+}
+
+export interface SeedGraphHints {
+    documentNeids: string[];
+    eventHubNeids: string[];
+    propertyBearingNeids: string[];
 }
 
 function normalizeName(name: string): string {
@@ -163,6 +170,7 @@ function documentNeidsFromNodeProperties(
 
 let cached: ExtractedSeedGraph | null = null;
 let cachedEntityNeidMap: Map<string, string> | null = null;
+let cachedHints: SeedGraphHints | null = null;
 
 const CANONICAL_ENTITY_NEID_OVERRIDES: Record<string, string> = {
     // High-confidence canonicalizations verified against the current tenant graph.
@@ -174,6 +182,19 @@ const CANONICAL_ENTITY_NEID_OVERRIDES: Record<string, string> = {
     [seedKeyFromNameAndFlavor('THE BANK OF NEW YORK', 'organization')]: '05384086983174826493',
     [seedKeyFromNameAndFlavor('HSBC Bank USA Trade Services', 'organization')]:
         '02625373596646965640',
+    // Additional canonicalizations from document-rooted MCP seed audit (2026-03-30).
+    [seedKeyFromNameAndFlavor('Department of the Treasury', 'organization')]:
+        '08883522583676895375',
+    [seedKeyFromNameAndFlavor('HSBC', 'organization')]: '06157989400122873900',
+    [seedKeyFromNameAndFlavor('Liquidity II Accounts', 'fund_account')]: '06638852300639391265',
+    [seedKeyFromNameAndFlavor('UNITED JERSEY BANK', 'organization')]: '06967031221082229818',
+    [seedKeyFromNameAndFlavor('New York, NY', 'location')]: '04648605347073135218',
+    [seedKeyFromNameAndFlavor('Trenton, NJ', 'location')]: '01054548445358605934',
+    [seedKeyFromNameAndFlavor('BNY', 'organization')]: '05384086983174826493',
+    [seedKeyFromNameAndFlavor('STATE OF NEW YORK', 'location')]: '04648605347073135218',
+    [seedKeyFromNameAndFlavor('Dallas, TX', 'location')]: '05716789654794197421',
+    [seedKeyFromNameAndFlavor('BLX', 'organization')]: '01470965072054453101',
+    [seedKeyFromNameAndFlavor('2711 NORTH HASKELL AVENUE', 'location')]: '04541494875554604248',
 };
 
 function normalizeNeid(neid: string): string {
@@ -204,6 +225,98 @@ function loadExtractedEntityNeidMap(): Map<string, string> {
     }
     cachedEntityNeidMap = map;
     return map;
+}
+
+function mergeSeedEntities(
+    base: Map<string, SeedEntityNode>,
+    incoming: SeedEntityNode[]
+): Map<string, SeedEntityNode> {
+    for (const entity of incoming) {
+        const existing = base.get(entity.key);
+        if (!existing) {
+            base.set(entity.key, {
+                ...entity,
+                sourceDocumentNeids: [...new Set(entity.sourceDocumentNeids ?? [])],
+            });
+            continue;
+        }
+        existing.sourceDocumentNeids = [
+            ...new Set([
+                ...(existing.sourceDocumentNeids ?? []),
+                ...(entity.sourceDocumentNeids ?? []),
+            ]),
+        ];
+        if (!existing.canonicalNeid && entity.canonicalNeid) {
+            existing.canonicalNeid = entity.canonicalNeid;
+        }
+        if (entity.properties) {
+            existing.properties = {
+                ...(existing.properties ?? {}),
+                ...entity.properties,
+            };
+        }
+    }
+    return base;
+}
+
+function mergeSeedEvents(
+    base: Map<string, SeedEventNode>,
+    incoming: SeedEventNode[]
+): Map<string, SeedEventNode> {
+    for (const eventItem of incoming) {
+        const existing = base.get(eventItem.key);
+        if (!existing) {
+            base.set(eventItem.key, {
+                ...eventItem,
+                sourceDocumentNeids: [...new Set(eventItem.sourceDocumentNeids ?? [])],
+            });
+            continue;
+        }
+        existing.sourceDocumentNeids = [
+            ...new Set([
+                ...(existing.sourceDocumentNeids ?? []),
+                ...(eventItem.sourceDocumentNeids ?? []),
+            ]),
+        ];
+        if (eventItem.properties) {
+            existing.properties = {
+                ...(existing.properties ?? {}),
+                ...eventItem.properties,
+            };
+        }
+    }
+    return base;
+}
+
+function mergeSeedRelationships(
+    base: SeedRelationship[],
+    incoming: SeedRelationship[]
+): SeedRelationship[] {
+    const byKey = new Map<string, SeedRelationship>();
+    const keyFor = (rel: SeedRelationship) =>
+        `${rel.sourceKey}|${rel.targetKey}|${rel.type}|${rel.recordedAt ?? ''}`;
+    for (const rel of [...base, ...incoming]) {
+        const key = keyFor(rel);
+        const existing = byKey.get(key);
+        if (!existing) {
+            byKey.set(key, {
+                ...rel,
+                sourceDocumentNeids: [...new Set(rel.sourceDocumentNeids ?? [])],
+                citations: [...new Set(rel.citations ?? [])],
+            });
+            continue;
+        }
+        existing.sourceDocumentNeids = [
+            ...new Set([
+                ...(existing.sourceDocumentNeids ?? []),
+                ...(rel.sourceDocumentNeids ?? []),
+            ]),
+        ];
+        existing.citations = [
+            ...new Set([...(existing.citations ?? []), ...(rel.citations ?? [])]),
+        ];
+    }
+    return Array.from(byKey.values());
 }
 
 export function loadExtractedSeedGraph(): ExtractedSeedGraph {
@@ -311,10 +424,15 @@ export function loadExtractedSeedGraph(): ExtractedSeedGraph {
         });
     }
 
+    const quadSeed = loadQuadSeedGraph();
+    const mergedEntityByKey = mergeSeedEntities(entityByKey, quadSeed.entities);
+    const mergedEventByKey = mergeSeedEvents(eventByKey, quadSeed.events);
+    const mergedRelationships = mergeSeedRelationships(relationships, quadSeed.relationships);
+
     cached = {
-        entities: Array.from(entityByKey.values()),
-        events: Array.from(eventByKey.values()),
-        relationships,
+        entities: Array.from(mergedEntityByKey.values()),
+        events: Array.from(mergedEventByKey.values()),
+        relationships: mergedRelationships,
     };
     return cached;
 }
@@ -330,4 +448,30 @@ export function seedKeyFromNameAndFlavor(name: string, flavor: string): string {
 
 export function citationToDocumentNeid(citation: string | undefined): string | undefined {
     return resolveCitationToDocumentNeid(citation);
+}
+
+export function loadSeedGraphHints(): SeedGraphHints {
+    if (cachedHints) return cachedHints;
+    const quadHints = loadQuadDerivedNeids();
+    cachedHints = {
+        documentNeids: [
+            ...new Set([
+                ...BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid)),
+                ...quadHints.documentNeids,
+            ]),
+        ],
+        eventHubNeids: [
+            ...new Set([
+                ...EVENT_HUB_NEIDS.map((neid) => normalizeNeid(neid)),
+                ...quadHints.eventHubNeids,
+            ]),
+        ],
+        propertyBearingNeids: [
+            ...new Set([
+                ...PROPERTY_BEARING_NEIDS.map((neid) => normalizeNeid(neid)),
+                ...quadHints.propertyBearingNeids,
+            ]),
+        ],
+    };
+    return cachedHints;
 }

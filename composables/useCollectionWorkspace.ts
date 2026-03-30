@@ -129,6 +129,32 @@ export interface WatchlistTheme {
     suggestedAskPrompt: string;
 }
 
+export interface EnrichmentNewsItem {
+    eventNeid: string;
+    title: string;
+    date?: string;
+    description?: string;
+    category?: string;
+    likelihood?: string;
+    citations: string[];
+    linkedEntityNames: string[];
+}
+
+export interface EnrichmentNewsGroup {
+    anchorNeid: string;
+    items: EnrichmentNewsItem[];
+}
+
+export interface EnrichmentEconomicSignal {
+    eventNeid: string;
+    title: string;
+    date?: string;
+    category?: string;
+    description?: string;
+    source: 'micro' | 'macro';
+    anchorNeid?: string;
+}
+
 function normalizeRelationshipType(type: string): string {
     return type.replace(/^schema::relationship::/, '');
 }
@@ -186,7 +212,7 @@ const agentLoading = ref(false);
 const agentResult = ref<{
     output: string;
     citations: any[];
-    generationSource?: 'gemini' | 'fallback';
+    generationSource?: 'gemini' | 'fallback' | 'gateway';
     generationNote?: string;
 } | null>(null);
 const mcpLog = ref<McpLogEntry[]>([]);
@@ -199,6 +225,49 @@ const enrichmentWatchlistGeneratedAt = ref<string | null>(null);
 const enrichmentLanguageByInsightId = ref<Record<string, EnrichmentLanguageCard>>({});
 const enrichmentLanguageLoading = ref(false);
 const enrichmentLanguageError = ref<string | null>(null);
+const enrichmentNews = ref<EnrichmentNewsGroup[]>([]);
+const enrichmentNewsLoading = ref(false);
+const enrichmentNewsError = ref<string | null>(null);
+const enrichmentEconomicSignals = ref<{
+    micro: EnrichmentEconomicSignal[];
+    macro: EnrichmentEconomicSignal[];
+}>({ micro: [], macro: [] });
+const enrichmentEconomicLoading = ref(false);
+const enrichmentEconomicError = ref<string | null>(null);
+const { fetchConfig: fetchTenantConfig, config: tenantConfig } = useTenantConfig();
+const {
+    sendMessage: sendAgentMessage,
+    selectAgent: selectGatewayAgent,
+    currentAgentId,
+    messages: agentMessages,
+} = useAgentChat();
+
+function gatewayPromptForAction(
+    action: string,
+    params?: { entityNeid?: string; question?: string },
+    resolveName?: (neid: string) => string
+): string {
+    if (action === 'summarize_collection') {
+        return 'Summarize this collection in plain English, highlight central entities/events, and end with three recommended checks.';
+    }
+    if (action === 'explain_entity' && params?.entityNeid) {
+        const label = resolveName?.(params.entityNeid) || params.entityNeid;
+        return `Explain the role of ${label} in this collection, including evidence and what to verify next.`;
+    }
+    if (action === 'compare_contexts') {
+        return 'Compare document-derived context versus enriched context, and explain what changes in interpretation.';
+    }
+    if (action === 'recommend_anchors') {
+        return 'Recommend the best enrichment anchors from the current collection and explain why each is high-value.';
+    }
+    if (action === 'answer_question') {
+        return (
+            params?.question?.trim() ||
+            'Answer the analyst question using grounded collection evidence.'
+        );
+    }
+    return params?.question?.trim() || 'Provide a grounded analysis of this collection.';
+}
 
 export function useCollectionWorkspace() {
     const isReady = computed(() => collection.value.status === 'ready');
@@ -208,16 +277,34 @@ export function useCollectionWorkspace() {
     const entities = computed(() => collection.value.entities);
     const events = computed(() => collection.value.events);
     const relationships = computed(() => collection.value.relationships);
-    const propertySeries = computed(() => collection.value.propertySeries);
+    const strictDocumentNeidSet = computed(
+        () => new Set(collection.value.documents.map((document) => document.neid))
+    );
+    const hasStrictDocumentSource = (sourceDocuments: string[] | undefined): boolean =>
+        Array.isArray(sourceDocuments) &&
+        sourceDocuments.some((docNeid) => strictDocumentNeidSet.value.has(docNeid));
+    const hasRelationshipCitationEvidence = (relationship: RelationshipRecord): boolean =>
+        Array.isArray(relationship.citations) && relationship.citations.length > 0;
+    const hasStrictRelationshipEvidence = (relationship: RelationshipRecord): boolean =>
+        (relationship.sourceDocumentNeid
+            ? strictDocumentNeidSet.value.has(relationship.sourceDocumentNeid)
+            : false) || hasRelationshipCitationEvidence(relationship);
+    const propertySeries = computed(() => strictDocumentPropertySeries.value);
     const meta = computed(() => collection.value.meta);
-    const extractedPropertyCount = computed(
-        () => collection.value.meta.extractedPropertyCount ?? 0
-    );
-    const propertyBearingRecordCount = computed(
-        () => collection.value.meta.extractedPropertyRecordCount ?? 0
-    );
+    const extractedPropertyCount = computed(() => {
+        const documentEventPropertyCount = collection.value.events
+            .filter((event) => event.origin === 'document')
+            .reduce((sum, event) => sum + Object.keys(event.properties ?? {}).length, 0);
+        return entityPropertyCount.value + documentEventPropertyCount;
+    });
+    const propertyBearingRecordCount = computed(() => {
+        const propertyBearingEventCount = collection.value.events.filter(
+            (event) => event.origin === 'document' && Object.keys(event.properties ?? {}).length > 0
+        ).length;
+        return propertyBearingEntityCount.value + propertyBearingEventCount;
+    });
     const entityPropertyCount = computed(() =>
-        collection.value.entities.reduce(
+        documentEntities.value.reduce(
             (sum, entity) => sum + Object.keys(entity.properties ?? {}).length,
             0
         )
@@ -225,23 +312,39 @@ export function useCollectionWorkspace() {
     const propertyBearingEntityCount = computed(
         () =>
             new Set(
-                collection.value.entities
+                documentEntities.value
                     .filter((entity) => Object.keys(entity.properties ?? {}).length > 0)
                     .map((entity) => entity.neid)
             ).size
     );
 
     const documentEntities = computed(() =>
-        collection.value.entities.filter((e) => e.origin === 'document')
+        collection.value.entities.filter(
+            (entity) =>
+                entity.origin === 'document' && hasStrictDocumentSource(entity.sourceDocuments)
+        )
     );
     const enrichedEntities = computed(() =>
         collection.value.entities.filter((e) => e.origin === 'enriched')
     );
+    const documentEvents = computed(() =>
+        collection.value.events.filter(
+            (eventItem) =>
+                eventItem.extractedSeed !== false &&
+                hasStrictDocumentSource(eventItem.sourceDocuments)
+        )
+    );
     const documentRelationships = computed(() =>
-        collection.value.relationships.filter((relationship) => relationship.origin === 'document')
+        collection.value.relationships.filter(
+            (relationship) =>
+                relationship.origin === 'document' && hasStrictRelationshipEvidence(relationship)
+        )
     );
     const enrichedRelationships = computed(() =>
         collection.value.relationships.filter((relationship) => relationship.origin === 'enriched')
+    );
+    const documentAgreements = computed(() =>
+        documentEntities.value.filter((entity) => entity.flavor === 'legal_agreement')
     );
     const entityNeidSet = computed(
         () => new Set(collection.value.entities.map((entity) => entity.neid))
@@ -283,7 +386,13 @@ export function useCollectionWorkspace() {
     const enrichmentSupersetGraphRelationships = computed(
         () => enrichmentExpandedGraphRelationshipsCollapsed.value
     );
-    const hasEnrichmentRun = computed(() => Boolean(enrichmentLastRun.value));
+    const hasEnrichmentRun = computed(
+        () =>
+            Boolean(enrichmentLastRun.value) ||
+            enrichedEntities.value.length > 0 ||
+            enrichedRelationships.value.length > 0 ||
+            outsideEvents.value.length > 0
+    );
     const INSIGHT_NOISE_ANCHORS = new Set<string>([
         '08749664511655725314', // The Hongkong and Shanghai Banking Corporation Limited, Singapore Branch
         '08883522583676895375', // United States Department of the Treasury
@@ -321,6 +430,11 @@ export function useCollectionWorkspace() {
         () => new Map(collection.value.entities.map((entity) => [entity.neid, entity] as const))
     );
     const documentEntityNeids = computed(() => new Set(documentEntities.value.map((e) => e.neid)));
+    const strictDocumentPropertySeries = computed(() =>
+        collection.value.propertySeries.filter((series) =>
+            documentEntityNeids.value.has(series.neid)
+        )
+    );
     const eventCountByEntityNeid = computed(() => {
         const counts = new Map<string, number>();
         for (const eventItem of collection.value.events) {
@@ -331,7 +445,11 @@ export function useCollectionWorkspace() {
         return counts;
     });
     const outsideEvents = computed(() =>
-        collection.value.events.filter((eventItem) => !eventItem.extractedSeed)
+        collection.value.events.filter(
+            (eventItem) =>
+                eventItem.extractedSeed === false ||
+                !hasStrictDocumentSource(eventItem.sourceDocuments)
+        )
     );
     const eventByNeid = computed(
         () =>
@@ -465,8 +583,28 @@ export function useCollectionWorkspace() {
     const pluralize = (count: number, singular: string, plural = `${singular}s`): string =>
         `${count} ${count === 1 ? singular : plural}`;
     const eventYear = (eventItem: EventRecord): number => {
-        if (eventItem.date) {
-            const year = Number(String(eventItem.date).slice(0, 4));
+        const props = (eventItem.properties ?? {}) as Record<string, unknown>;
+        const candidateDate =
+            eventItem.date ||
+            ((): string | undefined => {
+                const keys = [
+                    'event_date',
+                    'date',
+                    'schema::property::event_date',
+                    'schema::property::date',
+                ];
+                for (const key of keys) {
+                    if (!(key in props)) continue;
+                    const row = props[key] as any;
+                    const scalar =
+                        row && typeof row === 'object' && !Array.isArray(row) ? row.value : row;
+                    const text = String(scalar ?? '').trim();
+                    if (text) return text;
+                }
+                return undefined;
+            })();
+        if (candidateDate) {
+            const year = Number(String(candidateDate).slice(0, 4));
             if (!Number.isNaN(year) && year >= 1900 && year <= 2100) return year;
         }
         const match = eventItem.name.match(/(19|20)\d{2}/);
@@ -1248,9 +1386,7 @@ export function useCollectionWorkspace() {
             },
         }))
     );
-    const agreements = computed(() =>
-        collection.value.entities.filter((e) => e.flavor === 'legal_agreement')
-    );
+    const agreements = computed(() => documentAgreements.value);
     const extractedSeedEntities = computed(() =>
         collection.value.entities.filter((e) => e.extractedSeed)
     );
@@ -1423,6 +1559,73 @@ export function useCollectionWorkspace() {
             confidenceReason,
         };
     });
+    const overviewTrustCoverageSummary = computed<TrustCoverageSummary>(() => {
+        const strictEntities = documentEntities.value;
+        const strictRelationships = documentRelationships.value;
+        const totalRelationships = strictRelationships.length;
+        const evidenceBackedRelationships = strictRelationships.filter(
+            (rel) =>
+                Boolean(rel.sourceDocumentNeid) ||
+                (Array.isArray(rel.citations) && rel.citations.length > 0)
+        ).length;
+        const inferredRelationships = Math.max(0, totalRelationships - evidenceBackedRelationships);
+        const totalEntities = Math.max(strictEntities.length, 1);
+        const sourceBackedEntities = strictEntities.filter(
+            (e) => Array.isArray(e.sourceDocuments) && e.sourceDocuments.length > 0
+        ).length;
+
+        const coverageScore = Math.round(
+            (sourceBackedEntities / totalEntities) * 60 +
+                (totalRelationships > 0
+                    ? (evidenceBackedRelationships / totalRelationships) * 40
+                    : 20)
+        );
+
+        let confidenceLabel: TrustCoverageSummary['confidenceLabel'] = 'medium';
+        let confidenceReason =
+            'Evidence is substantial, with some inferred links requiring review.';
+        if (coverageScore >= 78) {
+            confidenceLabel = 'high';
+            confidenceReason =
+                'Most entities and relationships are directly traceable to source evidence.';
+        } else if (coverageScore <= 52) {
+            confidenceLabel = 'low';
+            confidenceReason =
+                'Coverage relies heavily on inferred links or has sparse source references.';
+        }
+
+        return {
+            coverageScore,
+            evidenceBackedRelationships,
+            inferredRelationships,
+            enrichedEntityShare: 0,
+            sourceCoverageShare: Math.round((sourceBackedEntities / totalEntities) * 100),
+            confidenceLabel,
+            confidenceReason,
+        };
+    });
+    const overviewScopedState = computed<CollectionState>(() => {
+        const strictEntities = documentEntities.value;
+        const strictRelationships = documentRelationships.value;
+        const strictEvents = documentEvents.value;
+        const strictAgreements = strictEntities.filter(
+            (entity) => entity.flavor === 'legal_agreement'
+        );
+        return {
+            ...collection.value,
+            meta: {
+                ...collection.value.meta,
+                entityCount: strictEntities.length,
+                relationshipCount: strictRelationships.length,
+                eventCount: strictEvents.length,
+                agreementCount: strictAgreements.length,
+            },
+            entities: strictEntities,
+            relationships: strictRelationships,
+            events: strictEvents,
+            propertySeries: strictDocumentPropertySeries.value,
+        };
+    });
 
     const keyCoverageNotes = computed(() => {
         const notes: string[] = [];
@@ -1530,11 +1733,28 @@ export function useCollectionWorkspace() {
 
     const overviewViewModel = computed(() =>
         mapCollectionToOverviewViewModel({
-            state: collection.value,
+            state: overviewScopedState.value,
             rebuilding: rebuilding.value,
-            trustCoverageSummary: trustCoverageSummary.value,
+            trustCoverageSummary: overviewTrustCoverageSummary.value,
         })
     );
+    const primaryMeta = computed(() => overviewScopedState.value.meta);
+    const primaryCollectionSummary = computed(() => {
+        const docCount = overviewScopedState.value.documents.length;
+        const entityCount = overviewScopedState.value.entities.length;
+        const eventCount = overviewScopedState.value.events.length;
+        const topEntity = topEntities.value.find((entity) => entity.origin === 'document');
+        const topEvent = topEvents.value.find((eventItem) =>
+            documentEvents.value.some((docEvent) => docEvent.neid === eventItem.neid)
+        );
+        const entityLine = topEntity
+            ? `Most central entity: ${topEntity.name} (${topEntity.flavor.replace(/_/g, ' ')}).`
+            : 'No entities identified yet.';
+        const eventLine = topEvent
+            ? `Most significant event: ${topEvent.name}${topEvent.date ? ` (${topEvent.date.slice(0, 10)})` : ''}.`
+            : 'No significant events have been identified yet.';
+        return `${docCount} source document${docCount === 1 ? '' : 's'} produced ${entityCount} entities and ${eventCount} events. ${entityLine} ${eventLine}`;
+    });
 
     async function generateEnrichmentLanguage(): Promise<void> {
         const cards = enrichmentLanguageCards.value;
@@ -1586,12 +1806,77 @@ export function useCollectionWorkspace() {
         try {
             const data = await $fetch<CollectionState>('/api/collection/bootstrap');
             collection.value = data;
+            if (data.status === 'ready') await loadEnrichmentContextData();
         } catch (e: any) {
             collection.value.error = e.message || 'Failed to bootstrap';
         }
     }
 
+    async function loadEnrichmentNews(): Promise<void> {
+        const anchors = enrichedEntities.value.map((entity) => entity.neid);
+        if (!anchors.length) {
+            enrichmentNews.value = [];
+            return;
+        }
+        enrichmentNewsLoading.value = true;
+        enrichmentNewsError.value = null;
+        try {
+            const response = await $fetch<{ groups: EnrichmentNewsGroup[] }>(
+                '/api/collection/enrichment-news',
+                {
+                    method: 'POST',
+                    body: { entityNeids: anchors, maxEntities: 12, eventsPerEntity: 12 },
+                }
+            );
+            enrichmentNews.value = response.groups ?? [];
+        } catch (error: any) {
+            enrichmentNewsError.value =
+                error?.data?.statusMessage || error?.message || 'Failed to load enrichment news.';
+            enrichmentNews.value = [];
+        } finally {
+            enrichmentNewsLoading.value = false;
+        }
+    }
+
+    async function loadEnrichmentEconomicSignals(): Promise<void> {
+        const anchors = enrichedEntities.value.map((entity) => entity.neid);
+        if (!anchors.length) {
+            enrichmentEconomicSignals.value = { micro: [], macro: [] };
+            return;
+        }
+        enrichmentEconomicLoading.value = true;
+        enrichmentEconomicError.value = null;
+        try {
+            const response = await $fetch<{
+                micro: EnrichmentEconomicSignal[];
+                macro: EnrichmentEconomicSignal[];
+            }>('/api/collection/enrichment-economics', {
+                method: 'POST',
+                body: { entityNeids: anchors, maxEntityAnchors: 8, eventsPerEntity: 20 },
+            });
+            enrichmentEconomicSignals.value = {
+                micro: response.micro ?? [],
+                macro: response.macro ?? [],
+            };
+        } catch (error: any) {
+            enrichmentEconomicError.value =
+                error?.data?.statusMessage ||
+                error?.message ||
+                'Failed to load micro/macroeconomic context.';
+            enrichmentEconomicSignals.value = { micro: [], macro: [] };
+        } finally {
+            enrichmentEconomicLoading.value = false;
+        }
+    }
+
+    async function loadEnrichmentContextData(): Promise<void> {
+        await Promise.all([loadEnrichmentNews(), loadEnrichmentEconomicSignals()]);
+    }
+
     async function rebuild(): Promise<void> {
+        const STREAM_PROGRESS_TIMEOUT_MS = 45_000;
+        const STREAM_TOTAL_TIMEOUT_MS = 150_000;
+        let timeoutPoll: ReturnType<typeof setInterval> | null = null;
         rebuilding.value = true;
         collection.value.status = 'loading';
         collection.value.error = undefined;
@@ -1614,8 +1899,35 @@ export function useCollectionWorkspace() {
         };
 
         try {
-            const response = await fetch('/api/collection/rebuild-stream');
+            const streamStartedAt = Date.now();
+            let lastMeaningfulProgressAt = streamStartedAt;
+            const streamController = new AbortController();
+            timeoutPoll = setInterval(() => {
+                const now = Date.now();
+                if (now - streamStartedAt > STREAM_TOTAL_TIMEOUT_MS) {
+                    streamController.abort(
+                        new Error(
+                            `Rebuild stream exceeded ${Math.round(STREAM_TOTAL_TIMEOUT_MS / 1000)}s`
+                        )
+                    );
+                    return;
+                }
+                if (now - lastMeaningfulProgressAt > STREAM_PROGRESS_TIMEOUT_MS) {
+                    const activeStep =
+                        rebuildSteps.value.find((step) => step.status === 'working')?.label ??
+                        'unknown step';
+                    streamController.abort(
+                        new Error(
+                            `Rebuild stream stalled for ${Math.round(STREAM_PROGRESS_TIMEOUT_MS / 1000)}s during ${activeStep}`
+                        )
+                    );
+                }
+            }, 2000);
+            const response = await fetch('/api/collection/rebuild-stream', {
+                signal: streamController.signal,
+            });
             if (!response.ok || !response.body) {
+                if (timeoutPoll) clearInterval(timeoutPoll);
                 let detail = '';
                 try {
                     detail = (await response.text()).trim();
@@ -1644,27 +1956,46 @@ export function useCollectionWorkspace() {
                     try {
                         const msg = JSON.parse(line.slice(6));
                         if (msg?.type === 'error') streamReportedError = true;
+                        if (msg?.type && msg.type !== 'heartbeat') {
+                            lastMeaningfulProgressAt = Date.now();
+                        }
                         handleStreamMessage(msg);
                     } catch {
                         // malformed line — ignore
                     }
                 }
             }
+            if (timeoutPoll) clearInterval(timeoutPoll);
 
             if (streamReportedError) {
                 await runFallbackRebuild('stream emitted error event');
+                await loadEnrichmentContextData();
                 return;
             }
+            await loadEnrichmentContextData();
         } catch (e: any) {
+            if (timeoutPoll) clearInterval(timeoutPoll);
             try {
-                await runFallbackRebuild(
-                    e?.message ? String(e.message).slice(0, 220) : 'stream request failed'
+                const fallbackReason = e?.message
+                    ? String(e.message).slice(0, 220)
+                    : 'stream request failed';
+                const workingStepIdx = rebuildSteps.value.findIndex(
+                    (step) => step.status === 'working'
                 );
+                if (workingStepIdx >= 0) {
+                    rebuildSteps.value[workingStepIdx] = {
+                        ...rebuildSteps.value[workingStepIdx],
+                        detail: `Stream stalled, switching to fallback rebuild… (${fallbackReason})`,
+                    };
+                }
+                await runFallbackRebuild(fallbackReason);
+                await loadEnrichmentContextData();
             } catch (fallbackError: any) {
                 collection.value.status = 'error';
                 collection.value.error = fallbackError?.message || e?.message || 'Rebuild failed';
             }
         } finally {
+            if (timeoutPoll) clearInterval(timeoutPoll);
             rebuilding.value = false;
         }
     }
@@ -1779,6 +2110,7 @@ export function useCollectionWorkspace() {
                 ranAt: new Date().toISOString(),
             };
             await generateEnrichmentLanguage();
+            await loadEnrichmentContextData();
         } catch (e: any) {
             console.error('Enrichment failed:', e.message);
         } finally {
@@ -1857,43 +2189,29 @@ export function useCollectionWorkspace() {
     ): Promise<void> {
         agentLoading.value = true;
         agentResult.value = null;
-        const startMs = Date.now();
         try {
-            const result = await $fetch<{
-                output: string;
-                citations: any[];
-                generationSource?: 'gemini' | 'fallback';
-                generationNote?: string;
-                usage?: {
-                    model: string;
-                    promptTokens: number;
-                    completionTokens: number;
-                    totalTokens: number;
-                    costUsd: number;
-                };
-            }>('/api/collection/agent-actions', { method: 'POST', body: { action, ...params } });
+            if (!currentAgentId.value) {
+                const config = tenantConfig.value ?? (await fetchTenantConfig());
+                const agentId = config?.agents?.[0]?.engine_id;
+                if (!agentId) {
+                    throw new Error(
+                        'No deployed agents found for this tenant. Deploy an agent or verify tenant config.'
+                    );
+                }
+                selectGatewayAgent(agentId);
+            }
+            const prompt = gatewayPromptForAction(action, params, resolveEntityName);
+            await sendAgentMessage(prompt);
+            const latestAgentMessage = [...agentMessages.value]
+                .reverse()
+                .find((message) => message.role === 'agent');
+            const output = latestAgentMessage?.text?.trim() || 'Agent returned no text response.';
             agentResult.value = {
-                output: result.output,
-                citations: result.citations,
-                generationSource: result.generationSource,
-                generationNote: result.generationNote,
+                output,
+                citations: [],
+                generationSource: 'gateway',
             };
-            if (result.usage) {
-                addGeminiUsage({
-                    model: result.usage.model,
-                    promptTokens: result.usage.promptTokens,
-                    completionTokens: result.usage.completionTokens,
-                    totalTokens: result.usage.totalTokens,
-                    costUsd: result.usage.costUsd,
-                    latencyMs: Date.now() - startMs,
-                    timestamp: new Date().toISOString(),
-                    label: action,
-                });
-            }
         } catch (e: any) {
-            if (e?.statusCode === 409) {
-                await bootstrap();
-            }
             agentResult.value = {
                 output: e.data?.statusMessage || e.message || 'Agent action failed',
                 citations: [],
@@ -1958,7 +2276,9 @@ export function useCollectionWorkspace() {
         entityPropertyCount,
         propertyBearingEntityCount,
         meta,
+        primaryMeta,
         documentEntities,
+        documentEvents,
         enrichedEntities,
         documentRelationships,
         enrichedRelationships,
@@ -1984,11 +2304,18 @@ export function useCollectionWorkspace() {
         peopleAffiliationInsights,
         enrichmentLanguageLoading: computed(() => enrichmentLanguageLoading.value),
         enrichmentLanguageError: computed(() => enrichmentLanguageError.value),
+        enrichmentNews: computed(() => enrichmentNews.value),
+        enrichmentNewsLoading: computed(() => enrichmentNewsLoading.value),
+        enrichmentNewsError: computed(() => enrichmentNewsError.value),
+        enrichmentEconomicSignals: computed(() => enrichmentEconomicSignals.value),
+        enrichmentEconomicLoading: computed(() => enrichmentEconomicLoading.value),
+        enrichmentEconomicError: computed(() => enrichmentEconomicError.value),
         enrichmentWatchlistThemes: computed(() => enrichmentWatchlistThemes.value),
         enrichmentWatchlistLoading: computed(() => enrichmentWatchlistLoading.value),
         enrichmentWatchlistError: computed(() => enrichmentWatchlistError.value),
         enrichmentWatchlistGeneratedAt: computed(() => enrichmentWatchlistGeneratedAt.value),
         agreements,
+        documentAgreements,
         extractedSeedEntities,
         mcpConfirmedEntities,
         mcpOnlyRelationships,
@@ -2000,6 +2327,7 @@ export function useCollectionWorkspace() {
         trustCoverageSummary,
         keyCoverageNotes,
         collectionSummary,
+        primaryCollectionSummary,
         recommendedActions,
         contextualAgentPrompts,
         overviewViewModel,
@@ -2007,6 +2335,7 @@ export function useCollectionWorkspace() {
         rebuild,
         enrich,
         generateEnrichmentLanguage,
+        loadEnrichmentContextData,
         generateEnrichmentWatchlist,
         fetchPropertyHistory,
         runAgentAction,

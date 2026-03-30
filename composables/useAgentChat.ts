@@ -89,7 +89,7 @@ export function useAgentChat() {
         if (accessToken.value) {
             reqHeaders['Authorization'] = `Bearer ${accessToken.value}`;
         }
-        const reqBody: any = { message: text };
+        const reqBody: any = { message: text, input: text };
         if (sessionId.value) {
             reqBody.session_id = sessionId.value;
         }
@@ -108,10 +108,21 @@ export function useAgentChat() {
 
             for await (const { event, data } of readSSE(response)) {
                 if (event === 'text') {
-                    agentMsg.text = data.text;
+                    if (typeof data?.text === 'string') {
+                        agentMsg.text = data.text;
+                    } else if (typeof data?.delta === 'string') {
+                        agentMsg.text += data.delta;
+                    }
+                } else if (event === 'message') {
+                    if (typeof data?.text === 'string') {
+                        agentMsg.text = data.text;
+                    }
                 } else if (event === 'done') {
-                    if (data.session_id) sessionId.value = data.session_id;
+                    if (data.session_id || data.sessionId) {
+                        sessionId.value = data.session_id ?? data.sessionId;
+                    }
                     if (data.text && !agentMsg.text) agentMsg.text = data.text;
+                    if (data.output_text && !agentMsg.text) agentMsg.text = data.output_text;
                     break;
                 } else if (event === 'error') {
                     throw new Error(data.message || 'Agent error');
@@ -130,7 +141,9 @@ export function useAgentChat() {
                 );
 
                 if (response.session_id) sessionId.value = response.session_id;
-                agentMsg.text = extractAgentText(response.output);
+                agentMsg.text = extractAgentText(
+                    (response as any).output ?? (response as any).result
+                );
                 agentMsg.streaming = false;
             } catch (e: any) {
                 agentMsg.text =

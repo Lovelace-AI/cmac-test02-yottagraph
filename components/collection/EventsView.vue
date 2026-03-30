@@ -211,7 +211,7 @@
 </template>
 
 <script setup lang="ts">
-    const { events, selectEntity, resolveEntityName } = useCollectionWorkspace();
+    const { documentEvents: events, selectEntity, resolveEntityName } = useCollectionWorkspace();
 
     type EventViewMode = 'timeline' | 'table' | 'simulation';
     type EventSeverity = 'high' | 'medium' | 'low';
@@ -246,8 +246,10 @@
     const filteredEvents = computed(() => {
         let list = events.value.map((eventItem) => {
             const significance = computeSignificance(eventItem);
+            const resolvedDate = resolveEventDate(eventItem);
             return {
                 ...eventItem,
+                date: resolvedDate ?? eventItem.date,
                 significance,
                 severity: severityForSignificance(significance),
             };
@@ -342,6 +344,26 @@
                     ? 1
                     : 0;
         return participantWeight + sourceWeight + confidenceWeight;
+    }
+
+    function resolveEventDate(eventItem: (typeof events.value)[number]): string | undefined {
+        if (eventItem.date) return eventItem.date;
+        const props = (eventItem.properties ?? {}) as Record<string, unknown>;
+        const candidateKeys = [
+            'event_date',
+            'date',
+            'schema::property::event_date',
+            'schema::property::date',
+        ];
+        for (const key of candidateKeys) {
+            if (!(key in props)) continue;
+            const value = props[key] as any;
+            const scalar =
+                value && typeof value === 'object' && !Array.isArray(value) ? value.value : value;
+            const text = String(scalar ?? '').trim();
+            if (text) return text;
+        }
+        return undefined;
     }
 
     function truncate(text: string, max: number): string {

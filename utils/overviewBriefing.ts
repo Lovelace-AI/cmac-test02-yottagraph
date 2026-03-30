@@ -281,7 +281,9 @@ export function mapCollectionToOverviewViewModel(params: {
                 ? 'Run Initial Analysis'
                 : status === 'processing'
                   ? 'Analysis Running'
-                  : 'Open Graph & Entities',
+                  : status === 'complete'
+                    ? 'Open Graph & Entities'
+                    : 'Re-run Extraction',
         dealSummaryFields: [
             {
                 label: 'Deal name',

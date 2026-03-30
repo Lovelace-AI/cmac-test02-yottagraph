@@ -162,6 +162,12 @@ export const EVENT_HUB_NEIDS = [
     '05477621199116204617', // Orrick, Herrington & Sutcliffe
     '04824620677155774613', // REPUBLIC NATIONAL BANK OF NEW YORK
     '06157989400122873900', // HSBC Bank USA, Natl Assoc
+    // Added from doc-rooted MCP seed audit (2026-03-30), filtered to deal-relevant hubs.
+    '05384086983174826493', // Bank of New York Mellon Corporation (BNY Mellon)
+    '04104505588419472813', // NC HOUSING ASSOCIATES #200 CO.
+    '07005109958829846067', // SDCMTN094714
+    '07683517764755523583', // Willdan Financial Services
+    '02277784462984661168', // Prior Rebate Liability
 ] as const;
 
 // Property-bearing entities for historical time-series retrieval via elemental_get_entity history.

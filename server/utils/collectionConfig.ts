@@ -55,6 +55,38 @@ function summarizeResponse(tool: string, result: unknown): string {
     return JSON.stringify(r).slice(0, 80);
 }
 
+function parseToolContentItem(item: any): unknown {
+    if (!item || typeof item !== 'object') return undefined;
+    if (item.type === 'json') return item.json;
+    if (item.type === 'text' && typeof item.text === 'string') {
+        try {
+            return JSON.parse(item.text);
+        } catch {
+            return item.text;
+        }
+    }
+    return undefined;
+}
+
+function extractToolResult(response: any): unknown {
+    const result = response?.result;
+    if (!result) return response;
+
+    // Newer MCP servers may return structuredContent directly.
+    if (result.structuredContent !== undefined) return result.structuredContent;
+
+    const content = result.content;
+    if (Array.isArray(content) && content.length > 0) {
+        const parsedItems = content
+            .map((item: any) => parseToolContentItem(item))
+            .filter((item: unknown) => item !== undefined);
+        if (parsedItems.length === 1) return parsedItems[0];
+        if (parsedItems.length > 1) return parsedItems;
+    }
+
+    return result;
+}
+
 function getGatewayConfig() {
     const config = useRuntimeConfig();
     const gatewayUrl = (config.public as any).gatewayUrl as string;
@@ -164,18 +196,7 @@ export async function mcpCallTool(
             { name: toolName, arguments: args },
             options?.timeoutMs ?? 20_000
         );
-        const content = response?.result?.content;
-        if (Array.isArray(content) && content.length > 0) {
-            const textItem = content.find((c: any) => c.type === 'text');
-            if (textItem?.text) {
-                try {
-                    result = JSON.parse(textItem.text);
-                } catch {
-                    result = textItem.text;
-                }
-            }
-        }
-        if (result === undefined) result = response?.result ?? response;
+        result = extractToolResult(response);
     } catch (e) {
         status = 'error';
         result = null;

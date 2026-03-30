@@ -97,6 +97,33 @@ export function useMcpExplorer() {
         return JSON.parse(raw);
     }
 
+    function parseToolContentItem(item: any): unknown {
+        if (!item || typeof item !== 'object') return undefined;
+        if (item.type === 'json') return item.json;
+        if (item.type === 'text' && typeof item.text === 'string') {
+            try {
+                return JSON.parse(item.text);
+            } catch {
+                return item.text;
+            }
+        }
+        return undefined;
+    }
+
+    function normalizeToolCallResult(payload: any): any {
+        const rpcResult = payload?.result ?? payload;
+        if (!rpcResult || typeof rpcResult !== 'object') return rpcResult;
+        if (rpcResult.structuredContent !== undefined) return rpcResult.structuredContent;
+        const content = rpcResult.content;
+        if (!Array.isArray(content)) return rpcResult;
+        const parsed = content
+            .map((item: any) => parseToolContentItem(item))
+            .filter((item: unknown) => item !== undefined);
+        if (parsed.length === 1) return parsed[0];
+        if (parsed.length > 1) return parsed;
+        return rpcResult;
+    }
+
     async function sendMcpRequest(serverName: string, method: string, params?: any): Promise<any> {
         const url = `/api/mcp/${encodeURIComponent(serverName)}`;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -243,7 +270,7 @@ export function useMcpExplorer() {
             });
             const result: ToolResult = {
                 toolName,
-                result: response?.result ?? response,
+                result: normalizeToolCallResult(response),
                 timestamp: Date.now(),
             };
             lastResult.value = result;

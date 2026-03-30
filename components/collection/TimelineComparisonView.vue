@@ -124,7 +124,7 @@
 <script setup lang="ts">
     import type { PropertyPoint } from '~/utils/collectionTypes';
 
-    const { entities, documents, propertySeries } = useCollectionWorkspace();
+    const { documentEntities: entities, documents, propertySeries } = useCollectionWorkspace();
 
     const selectedEntityId = ref<string | null>(null);
 

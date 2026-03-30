@@ -60,9 +60,9 @@
         >
             <div class="workspace-content-shell">
                 <SummaryMetaBar
-                    :entity-count="meta.entityCount"
-                    :event-count="meta.eventCount"
-                    :relationship-count="meta.relationshipCount"
+                    :entity-count="primaryMeta.entityCount"
+                    :event-count="primaryMeta.eventCount"
+                    :relationship-count="primaryMeta.relationshipCount"
                     :property-count="extractedPropertyCount"
                     :property-record-count="propertyBearingRecordCount"
                     :property-series="propertySeries.length"
@@ -183,7 +183,12 @@
                             class="d-flex align-center ga-1 flex-wrap mt-2"
                         >
                             <v-chip size="x-small" variant="tonal" color="deep-purple">
-                                {{ lastAskUsage?.model || 'model unavailable' }}
+                                {{
+                                    lastAskUsage?.model ||
+                                    (agentResult?.generationSource === 'gateway'
+                                        ? 'gateway-agent'
+                                        : 'model unavailable')
+                                }}
                             </v-chip>
                             <v-chip
                                 v-if="lastAskUsage"
@@ -290,7 +295,12 @@
                                 class="d-flex align-center ga-1 flex-wrap mt-2"
                             >
                                 <v-chip size="x-small" variant="tonal" color="deep-purple">
-                                    {{ lastAskUsage?.model || 'model unavailable' }}
+                                    {{
+                                        lastAskUsage?.model ||
+                                        (agentResult?.generationSource === 'gateway'
+                                            ? 'gateway-agent'
+                                            : 'model unavailable')
+                                    }}
                                 </v-chip>
                                 <v-chip
                                     v-if="lastAskUsage"
@@ -377,7 +387,7 @@
         bootstrap,
         activeTab,
         setTab,
-        meta,
+        primaryMeta,
         propertySeries,
         extractedPropertyCount,
         propertyBearingRecordCount,
@@ -426,7 +436,7 @@
             step: 3,
             status: 'pending',
             label: 'Composition Agent',
-            detail: 'Generating answer with Gemini...',
+            detail: 'Generating answer with deployed agent...',
         },
     ]);
 
@@ -564,7 +574,7 @@
                 step: 3,
                 status: 'pending',
                 label: 'Composition Agent',
-                detail: 'Generating answer with Gemini...',
+                detail: 'Generating answer with deployed agent...',
             },
         ];
 
