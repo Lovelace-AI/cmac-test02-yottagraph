@@ -1,6 +1,10 @@
 <template>
     <v-footer v-if="configuredServers.length > 0" app class="server-status-footer">
-        <v-container fluid class="pa-0 d-flex align-center" style="min-height: 36px">
+        <v-container
+            fluid
+            class="pa-0 d-flex align-center justify-space-between"
+            style="min-height: 36px"
+        >
             <div class="d-flex align-center flex-wrap py-1">
                 <span class="text-caption mr-3">Server Status:</span>
 
@@ -35,6 +39,17 @@
                     <v-divider v-if="index < configuredServers.length - 1" vertical class="mx-2" />
                 </div>
             </div>
+            <v-btn
+                v-if="isWorkspaceRoute"
+                size="small"
+                color="warning"
+                variant="tonal"
+                class="ask-yotta-footer-btn mr-2"
+                prepend-icon="mdi-robot-outline"
+                @click="state.showCollectionChat = !state.showCollectionChat"
+            >
+                Ask Yotta
+            </v-btn>
         </v-container>
     </v-footer>
 </template>
@@ -42,9 +57,12 @@
 <script setup lang="ts">
     import { computed } from 'vue';
     import { useServerStatus } from '~/composables/useServerStatus';
+    import { state } from '~/utils/appState';
 
     const { getConfiguredServers } = useServerStatus();
+    const route = useRoute();
     const configuredServers = computed(() => getConfiguredServers());
+    const isWorkspaceRoute = computed(() => route.path === '/');
 
     function getStatusColor(status: string) {
         switch (status) {
@@ -113,6 +131,11 @@
 
     .rotating {
         animation: rotate 1s linear infinite;
+    }
+
+    .ask-yotta-footer-btn {
+        text-transform: none;
+        letter-spacing: 0;
     }
 
     @keyframes rotate {

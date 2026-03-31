@@ -70,67 +70,71 @@
             </div>
         </div>
 
-        <div
-            class="flex-grow-1 overflow-y-auto px-4"
-            :class="currentTab === 'overview' ? 'py-2' : 'py-4'"
-        >
-            <div class="workspace-content-shell">
-                <v-alert v-if="collection.error" type="error" variant="tonal" class="mb-4" closable>
-                    {{ collection.error }}
-                </v-alert>
-                <v-alert
-                    v-if="!isReady && !rebuilding && !collection.error && currentTab !== 'overview'"
-                    type="info"
-                    variant="tonal"
-                    class="mb-4"
-                >
-                    Run initial analysis to extract entities, events, relationships, and
-                    evidence-linked summaries from this document collection.
-                </v-alert>
+        <div class="workspace-main-shell flex-grow-1">
+            <div
+                class="workspace-scroll-region px-4"
+                :class="currentTab === 'overview' ? 'py-2' : 'py-4'"
+            >
+                <div class="workspace-content-shell">
+                    <v-alert
+                        v-if="collection.error"
+                        type="error"
+                        variant="tonal"
+                        class="mb-4"
+                        closable
+                    >
+                        {{ collection.error }}
+                    </v-alert>
+                    <v-alert
+                        v-if="
+                            !isReady &&
+                            !rebuilding &&
+                            !collection.error &&
+                            currentTab !== 'overview'
+                        "
+                        type="info"
+                        variant="tonal"
+                        class="mb-4"
+                    >
+                        Run initial analysis to extract entities, events, relationships, and
+                        evidence-linked summaries from this document collection.
+                    </v-alert>
 
-                <TaskActionStrip
-                    v-if="tabQuickActions.length"
-                    :actions="tabQuickActions"
-                    class="mb-3"
-                    @run="runTabQuickAction"
-                />
+                    <TaskActionStrip
+                        v-if="tabQuickActions.length"
+                        :actions="tabQuickActions"
+                        class="mb-3"
+                        @run="runTabQuickAction"
+                    />
 
-                <CollectionOverview v-if="currentTab === 'overview'" />
-                <GraphWorkspace v-else-if="currentTab === 'graph'" />
-                <EventsView v-else-if="currentTab === 'events'" />
-                <InsightsView
-                    v-else-if="currentTab === 'insights'"
-                    @open-chat="launchStarterQuestion"
-                />
-                <TimelineComparisonView v-else-if="currentTab === 'timeline'" />
-                <ValidationView v-else-if="currentTab === 'validation'" />
-                <AgentWorkspace
-                    v-else-if="currentTab === 'agent'"
-                    @launch-question="launchStarterQuestion"
-                />
-                <EnrichmentView
-                    v-else-if="currentTab === 'enrichment'"
-                    @open-chat="launchStarterQuestion"
-                />
+                    <CollectionOverview v-if="currentTab === 'overview'" />
+                    <GraphWorkspace v-else-if="currentTab === 'graph'" />
+                    <EventsView v-else-if="currentTab === 'events'" />
+                    <InsightsView
+                        v-else-if="currentTab === 'insights'"
+                        @open-chat="launchStarterQuestion"
+                    />
+                    <TimelineComparisonView v-else-if="currentTab === 'timeline'" />
+                    <ValidationView v-else-if="currentTab === 'validation'" />
+                    <AgentWorkspace
+                        v-else-if="currentTab === 'agent'"
+                        @launch-question="launchStarterQuestion"
+                    />
+                    <EnrichmentView
+                        v-else-if="currentTab === 'enrichment'"
+                        @open-chat="launchStarterQuestion"
+                    />
+                </div>
+            </div>
+            <div v-if="showEntityAsDrawer && entityDrawerOpen" class="entity-overlay-layer pa-2">
+                <div ref="entityPanelRoot" class="entity-panel-shell entity-panel-shell--desktop">
+                    <EntityDetailPanel />
+                </div>
             </div>
         </div>
 
-        <v-navigation-drawer
-            v-if="showEntityAsDrawer"
-            v-model="entityDrawerOpen"
-            location="right"
-            width="480"
-            temporary
-            :scrim="false"
-            class="pa-2 entity-drawer"
-        >
-            <div ref="entityPanelRoot" class="entity-panel-shell">
-                <EntityDetailPanel />
-            </div>
-        </v-navigation-drawer>
-
         <v-dialog
-            v-else
+            v-if="!showEntityAsDrawer"
             v-model="entityDrawerOpen"
             :fullscreen="entityDialogFullscreen"
             max-width="760"
@@ -363,21 +367,13 @@
                 </v-card>
             </div>
         </v-dialog>
-
-        <v-btn
-            color="warning"
-            class="ask-yotta-btn"
-            prepend-icon="mdi-robot-outline"
-            @click="chatDrawerOpen = !chatDrawerOpen"
-        >
-            Ask Yotta
-        </v-btn>
     </div>
 </template>
 
 <script setup lang="ts">
     import { useDisplay } from 'vuetify';
     import type { WorkspaceTab } from '~/utils/collectionTypes';
+    import { state } from '~/utils/appState';
 
     const {
         collection,
@@ -406,7 +402,6 @@
         set: (tab) => setTab(tab),
     });
     const { mdAndUp, xs } = useDisplay();
-    const chatDrawerOpen = ref(false);
     const askYottaQuestion = ref('');
     const askYottaOutputEl = ref<HTMLElement | null>(null);
     const entityPanelRoot = ref<HTMLElement | null>(null);
@@ -463,6 +458,12 @@
     const entityDialogFullscreen = computed(() => xs.value);
     const showChatAsDrawer = computed(() => mdAndUp.value);
     const chatDialogFullscreen = computed(() => xs.value);
+    const chatDrawerOpen = computed<boolean>({
+        get: () => state.showCollectionChat,
+        set: (isOpen) => {
+            state.showCollectionChat = isOpen;
+        },
+    });
 
     const tabQuickActions = computed(() =>
         currentTab.value === 'graph' ||
@@ -618,6 +619,7 @@
     onBeforeUnmount(() => {
         window.removeEventListener('keydown', handleGlobalEsc);
         document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+        state.showCollectionChat = false;
     });
 
     watch(
@@ -690,6 +692,16 @@
         );
     }
 
+    .workspace-main-shell {
+        min-height: 0;
+        position: relative;
+    }
+
+    .workspace-scroll-region {
+        height: 100%;
+        overflow-y: auto;
+    }
+
     .workspace-content-shell {
         width: 100%;
         max-width: 1420px;
@@ -716,15 +728,6 @@
             color-mix(in srgb, var(--dynamic-surface) 90%, var(--dynamic-background) 10%),
             color-mix(in srgb, var(--dynamic-panel-background) 90%, var(--dynamic-background) 10%)
         );
-    }
-
-    .ask-yotta-btn {
-        position: fixed;
-        right: 18px;
-        bottom: 58px;
-        z-index: 12050;
-        text-transform: none;
-        letter-spacing: 0;
     }
 
     .ask-yotta-output {
@@ -767,13 +770,25 @@
         box-shadow: 0 -2px 8px color-mix(in srgb, var(--dynamic-background) 88%, transparent);
     }
 
-    :deep(.entity-drawer.v-navigation-drawer) {
-        width: min(480px, 94vw) !important;
-        z-index: 12020 !important;
-    }
-
     .entity-panel-shell {
         height: 100%;
+    }
+
+    .entity-panel-shell--desktop {
+        width: min(480px, 94vw);
+    }
+
+    .entity-overlay-layer {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        justify-content: flex-end;
+        z-index: 12020;
+        pointer-events: none;
+    }
+
+    .entity-overlay-layer .entity-panel-shell {
+        pointer-events: auto;
     }
 
     :deep(.chat-overlay-top.v-navigation-drawer) {
