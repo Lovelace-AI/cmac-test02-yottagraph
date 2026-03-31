@@ -46,6 +46,20 @@ export interface EnrichmentExpandResult {
             relationshipCount: number;
             propertyCount: number;
         };
+        rawByDepth: {
+            degree1: {
+                entityCount: number;
+                relationshipCount: number;
+                eventCount: number;
+                propertyCount: number;
+            };
+            degree2: {
+                entityCount: number;
+                relationshipCount: number;
+                eventCount: number;
+                propertyCount: number;
+            };
+        };
         curated: {
             entityCount: number;
             relationshipCount: number;
@@ -255,10 +269,51 @@ export async function runEnrichmentExpansion(
     let eventsTruncated = false;
     let eventHubsTruncated = false;
     const rawEntityCandidates = new Set<string>();
+    const rawEntityCandidatesByDepth = new Map<number, Set<string>>();
     const rawEventCandidates = new Set<string>();
+    const rawEventCandidatesByDepth = new Map<number, Set<string>>();
     let rawRelationshipCandidates = 0;
+    const rawRelationshipCandidatesByDepth = new Map<number, number>();
+    const rawPropertyCandidatesByDepth = new Map<number, number>();
     const capsReached = () =>
         entities.length >= maxEntities || relationships.length >= maxRelationships;
+
+    function addRawEntityCandidate(neid: string, depth: number): void {
+        const normalized = normalizeNeid(neid);
+        rawEntityCandidates.add(normalized);
+        const boundedDepth = Math.max(1, Math.min(depth, MAX_HOPS));
+        if (!rawEntityCandidatesByDepth.has(boundedDepth)) {
+            rawEntityCandidatesByDepth.set(boundedDepth, new Set<string>());
+        }
+        rawEntityCandidatesByDepth.get(boundedDepth)?.add(normalized);
+    }
+
+    function addRawEventCandidate(neid: string, depth: number): void {
+        const normalized = normalizeNeid(neid);
+        rawEventCandidates.add(normalized);
+        const boundedDepth = Math.max(1, Math.min(depth, MAX_HOPS));
+        if (!rawEventCandidatesByDepth.has(boundedDepth)) {
+            rawEventCandidatesByDepth.set(boundedDepth, new Set<string>());
+        }
+        rawEventCandidatesByDepth.get(boundedDepth)?.add(normalized);
+    }
+
+    function addRawRelationshipCandidate(count: number, depth: number): void {
+        rawRelationshipCandidates += count;
+        const boundedDepth = Math.max(1, Math.min(depth, MAX_HOPS));
+        rawRelationshipCandidatesByDepth.set(
+            boundedDepth,
+            (rawRelationshipCandidatesByDepth.get(boundedDepth) ?? 0) + count
+        );
+    }
+
+    function addRawPropertyCandidate(count: number, depth: number): void {
+        const boundedDepth = Math.max(1, Math.min(depth, MAX_HOPS));
+        rawPropertyCandidatesByDepth.set(
+            boundedDepth,
+            (rawPropertyCandidatesByDepth.get(boundedDepth) ?? 0) + count
+        );
+    }
 
     function upsertEntity(row: any, fallbackFlavor: string, depth: number): string | null {
         if (!row?.neid) return null;
@@ -419,8 +474,10 @@ export async function runEnrichmentExpansion(
                     );
                     for (const rel of sortedRelationships) {
                         if (capsReached()) break;
-                        if (rel?.neid) rawEntityCandidates.add(normalizeNeid(String(rel.neid)));
-                        rawRelationshipCandidates += relationshipTypesFromRow(rel).length;
+                        if (rel?.neid) addRawEntityCandidate(String(rel.neid), depth);
+                        const relationshipTypeCount = relationshipTypesFromRow(rel).length;
+                        addRawRelationshipCandidate(relationshipTypeCount, depth);
+                        addRawPropertyCandidate(countRecordProperties(rel), depth);
                         const targetNeid = upsertEntity(rel, flavor, depth);
                         if (!targetNeid) continue;
                         const relationshipTypes = relationshipTypesFromRow(rel);
@@ -489,7 +546,8 @@ export async function runEnrichmentExpansion(
                         for (const evt of result?.events ?? []) {
                             if (!evt?.neid) continue;
                             const normalizedEventNeid = normalizeNeid(String(evt.neid));
-                            rawEventCandidates.add(normalizedEventNeid);
+                            addRawEventCandidate(normalizedEventNeid, eventDepth);
+                            addRawPropertyCandidate(countRecordProperties(evt), eventDepth);
                             eventsByNeid.set(normalizedEventNeid, evt);
                         }
                     }
@@ -507,6 +565,14 @@ export async function runEnrichmentExpansion(
                         if (!eventNeid) continue;
                         for (const participant of evt.participants ?? []) {
                             if (!participant?.neid) continue;
+                            addRawEntityCandidate(String(participant.neid), eventDepth);
+                            addRawRelationshipCandidate(1, eventDepth);
+                            addRawPropertyCandidate(
+                                countRecordProperties({
+                                    properties: participant?.properties ?? {},
+                                }),
+                                eventDepth
+                            );
                             const participantNeid = upsertEntity(
                                 {
                                     neid: participant.neid,
@@ -564,6 +630,27 @@ export async function runEnrichmentExpansion(
 
     const degree1Summary = summarizeByDepth(1);
     const degree2Summary = summarizeByDepth(2);
+    const summarizeRawByDepth = (maxDepth: number) => {
+        const boundedDepth = Math.max(1, Math.min(maxDepth, MAX_HOPS));
+        const entityNeids = new Set<string>();
+        const eventNeids = new Set<string>();
+        let relationshipCount = 0;
+        let propertyCount = 0;
+        for (let depth = 1; depth <= boundedDepth; depth += 1) {
+            for (const neid of rawEntityCandidatesByDepth.get(depth) ?? []) entityNeids.add(neid);
+            for (const neid of rawEventCandidatesByDepth.get(depth) ?? []) eventNeids.add(neid);
+            relationshipCount += rawRelationshipCandidatesByDepth.get(depth) ?? 0;
+            propertyCount += rawPropertyCandidatesByDepth.get(depth) ?? 0;
+        }
+        return {
+            entityCount: entityNeids.size,
+            relationshipCount,
+            eventCount: eventNeids.size,
+            propertyCount,
+        };
+    };
+    const rawDegree1Summary = summarizeRawByDepth(1);
+    const rawDegree2Summary = summarizeRawByDepth(2);
 
     return {
         entities,
@@ -598,7 +685,11 @@ export async function runEnrichmentExpansion(
                 entityCount: rawEntityCandidates.size,
                 eventCount: rawEventCandidates.size,
                 relationshipCount: rawRelationshipCandidates,
-                propertyCount: degree1Summary.propertyCount,
+                propertyCount: rawDegree2Summary.propertyCount,
+            },
+            rawByDepth: {
+                degree1: rawDegree1Summary,
+                degree2: rawDegree2Summary,
             },
             curated: {
                 entityCount: entities.length,

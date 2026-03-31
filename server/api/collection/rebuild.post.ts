@@ -530,17 +530,11 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                     relationshipCount: documentRelationships.length,
                     propertyCount: baselineExtractedPropertyCount,
                 },
-                degree1: {
-                    ...enrichmentResult.counts.byDepth.degree1,
+                raw1Degree: {
+                    ...enrichmentResult.counts.rawByDepth.degree1,
                 },
-                degree2: {
-                    ...enrichmentResult.counts.byDepth.degree2,
-                },
-                auditOneHop: {
-                    entityCount: auditCounts.rawOneHop.entityCount,
-                    eventCount: auditCounts.rawOneHop.eventCount,
-                    relationshipCount: auditCounts.rawOneHop.relationshipCount,
-                    propertyCount: enrichmentResult.counts.raw.propertyCount,
+                raw2Degrees: {
+                    ...enrichmentResult.counts.rawByDepth.degree2,
                 },
             },
             lastRebuilt: new Date().toISOString(),

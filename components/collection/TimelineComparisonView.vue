@@ -1,5 +1,9 @@
 <template>
     <div class="timeline-comparison">
+        <v-alert type="info" variant="tonal" class="mb-3">
+            Compare how key properties change across document dates. Start by selecting an entity,
+            then use search and "Changes only" to focus the matrix.
+        </v-alert>
         <v-card class="mb-3">
             <v-card-text class="d-flex align-center ga-2 flex-wrap py-3">
                 <v-select
@@ -18,6 +22,12 @@
                         <v-list-item v-bind="props" :subtitle="item.raw.subtitle" />
                     </template>
                 </v-select>
+                <v-chip v-if="selectedEntity" size="small" variant="tonal" color="primary">
+                    {{ prettyFlavor(selectedEntity.flavor) }}
+                </v-chip>
+                <v-chip v-if="selectedEntity" size="small" variant="outlined">
+                    {{ comparisonRows.length }} properties
+                </v-chip>
                 <v-btn
                     v-if="selectedEntityId"
                     size="small"
@@ -45,8 +55,26 @@
                     variant="outlined"
                 >
                     <v-card-text class="py-3">
-                        <div class="text-caption text-medium-emphasis">{{ card.propertyName }}</div>
+                        <div class="text-caption text-medium-emphasis">
+                            {{ formatPropertyName(card.propertyName) }}
+                        </div>
                         <div class="text-body-1 font-weight-medium">{{ card.latestDisplay }}</div>
+                        <svg
+                            class="trend-sparkline my-1"
+                            viewBox="0 0 100 30"
+                            role="img"
+                            aria-hidden="true"
+                        >
+                            <polyline
+                                :points="sparklinePoints(card.seriesValues)"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                :class="card.delta >= 0 ? 'sparkline-up' : 'sparkline-down'"
+                            />
+                        </svg>
                         <div
                             class="text-caption"
                             :class="card.delta >= 0 ? 'text-success' : 'text-error'"
@@ -67,17 +95,90 @@
                         Cross-document value matrix for {{ selectedEntity.name }}.
                     </v-card-subtitle>
                 </v-card-item>
+                <v-card-text class="pt-0 pb-2 d-flex align-center ga-2 flex-wrap">
+                    <v-text-field
+                        v-model="propertySearch"
+                        label="Filter properties"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        clearable
+                        class="property-search"
+                        prepend-inner-icon="mdi-magnify"
+                    />
+                    <v-switch
+                        v-model="showChangesOnly"
+                        hide-details
+                        density="compact"
+                        color="primary"
+                        label="Changes only"
+                    />
+                    <v-chip size="small" variant="tonal">
+                        {{ filteredComparisonRows.length }} shown
+                    </v-chip>
+                </v-card-text>
+                <v-card-text v-if="propertyGroups.length" class="pt-0 pb-2">
+                    <div class="text-caption text-medium-emphasis mb-2">
+                        Property groups (collapse to hide from matrix)
+                    </div>
+                    <v-expansion-panels
+                        v-model="expandedPropertyGroups"
+                        multiple
+                        variant="accordion"
+                        density="compact"
+                        class="property-groups"
+                    >
+                        <v-expansion-panel
+                            v-for="group in propertyGroups"
+                            :key="group.key"
+                            :value="group.key"
+                        >
+                            <v-expansion-panel-title>
+                                <div class="d-flex align-center justify-space-between w-100 pr-2">
+                                    <span>{{ group.label }}</span>
+                                    <v-chip size="x-small" variant="tonal">
+                                        {{ group.rows.length }}
+                                    </v-chip>
+                                </div>
+                            </v-expansion-panel-title>
+                            <v-expansion-panel-text>
+                                <div class="d-flex flex-wrap ga-1">
+                                    <v-chip
+                                        v-for="row in group.rows.slice(0, 8)"
+                                        :key="`${group.key}:${row.propertyName}`"
+                                        size="x-small"
+                                        variant="outlined"
+                                        class="app-chip-button"
+                                        @click="
+                                            propertySearch = formatPropertyName(row.propertyName)
+                                        "
+                                    >
+                                        {{ formatPropertyName(row.propertyName) }}
+                                    </v-chip>
+                                    <span
+                                        v-if="group.rows.length > 8"
+                                        class="text-caption text-medium-emphasis"
+                                    >
+                                        +{{ group.rows.length - 8 }} more
+                                    </span>
+                                </div>
+                            </v-expansion-panel-text>
+                        </v-expansion-panel>
+                    </v-expansion-panels>
+                </v-card-text>
                 <v-card-text class="pa-0">
                     <v-data-table
                         :headers="comparisonHeaders"
-                        :items="comparisonRows"
+                        :items="filteredComparisonRows"
                         density="compact"
                         hover
                         fixed-header
                         height="420"
                     >
                         <template v-slot:item.propertyName="{ item }">
-                            <span class="font-weight-medium">{{ item.propertyName }}</span>
+                            <span class="font-weight-medium">{{
+                                formatPropertyName(item.propertyName)
+                            }}</span>
                         </template>
                         <template
                             v-for="doc in sortedDocuments"
@@ -89,6 +190,49 @@
                             </span>
                         </template>
                     </v-data-table>
+                </v-card-text>
+            </v-card>
+
+            <v-card class="mb-3">
+                <v-card-item>
+                    <v-card-title class="text-body-1">Top 5 Biggest Changes</v-card-title>
+                    <v-card-subtitle>
+                        Largest absolute percentage moves across the selected date range.
+                    </v-card-subtitle>
+                </v-card-item>
+                <v-card-text>
+                    <v-alert v-if="!biggestChanges.length" type="info" variant="tonal">
+                        Not enough numeric history to rank biggest changes for this entity.
+                    </v-alert>
+                    <v-list v-else density="comfortable" class="pa-0">
+                        <v-list-item
+                            v-for="(change, index) in biggestChanges"
+                            :key="change.propertyName"
+                            class="px-0"
+                        >
+                            <template #prepend>
+                                <v-avatar size="22" color="primary" variant="tonal">
+                                    {{ index + 1 }}
+                                </v-avatar>
+                            </template>
+                            <v-list-item-title class="d-flex align-center ga-2 flex-wrap">
+                                <span class="font-weight-medium">{{
+                                    formatPropertyName(change.propertyName)
+                                }}</span>
+                                <v-chip
+                                    size="x-small"
+                                    :color="change.delta >= 0 ? 'success' : 'error'"
+                                    variant="tonal"
+                                >
+                                    {{ change.delta >= 0 ? '+' : '' }}{{ change.delta.toFixed(1) }}%
+                                </v-chip>
+                            </v-list-item-title>
+                            <v-list-item-subtitle>
+                                {{ change.firstDate }} -> {{ change.lastDate }} ·
+                                {{ change.latestDisplay }}
+                            </v-list-item-subtitle>
+                        </v-list-item>
+                    </v-list>
                 </v-card-text>
             </v-card>
 
@@ -127,6 +271,9 @@
     const { documentEntities: entities, documents, propertySeries } = useCollectionWorkspace();
 
     const selectedEntityId = ref<string | null>(null);
+    const propertySearch = ref('');
+    const showChangesOnly = ref(false);
+    const expandedPropertyGroups = ref<string[]>([]);
 
     const entitiesWithSeries = computed(() => {
         const eligible = new Set(propertySeries.value.map((series) => series.neid));
@@ -166,7 +313,7 @@
     const comparisonHeaders = computed(() => [
         { title: 'Property', key: 'propertyName', sortable: true, width: 220 },
         ...sortedDocuments.value.map((doc) => ({
-            title: doc.date ? `${doc.title} (${doc.date})` : doc.title,
+            title: documentHeaderTitle(doc),
             key: doc.neid,
             sortable: false,
             minWidth: 150,
@@ -182,6 +329,54 @@
                 row[doc.neid] = valueAtDate(series.points, doc.date);
             }
             return row;
+        });
+    });
+    const propertyGroups = computed(() => {
+        const grouped = new Map<string, Array<Record<string, string>>>();
+        for (const row of comparisonRows.value) {
+            const key = propertyGroupKey(row.propertyName);
+            const bucket = grouped.get(key) ?? [];
+            bucket.push(row);
+            grouped.set(key, bucket);
+        }
+        return Array.from(grouped.entries())
+            .map(([key, rows]) => ({
+                key,
+                label: key,
+                rows: rows.sort((a, b) => a.propertyName.localeCompare(b.propertyName)),
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+    });
+    watch(
+        propertyGroups,
+        (groups) => {
+            if (!groups.length) {
+                expandedPropertyGroups.value = [];
+                return;
+            }
+            const allowed = new Set(groups.map((group) => group.key));
+            const retained = expandedPropertyGroups.value.filter((key) => allowed.has(key));
+            if (retained.length === 0) {
+                expandedPropertyGroups.value = groups.map((group) => group.key);
+                return;
+            }
+            if (retained.length !== expandedPropertyGroups.value.length) {
+                expandedPropertyGroups.value = retained;
+            }
+        },
+        { immediate: true }
+    );
+    const filteredComparisonRows = computed(() => {
+        const query = propertySearch.value.trim().toLowerCase();
+        const activeGroups = new Set(expandedPropertyGroups.value);
+        return comparisonRows.value.filter((row) => {
+            if (activeGroups.size > 0 && !activeGroups.has(propertyGroupKey(row.propertyName)))
+                return false;
+            const searchable =
+                `${row.propertyName} ${formatPropertyName(row.propertyName)}`.toLowerCase();
+            if (query && !searchable.includes(query)) return false;
+            if (!showChangesOnly.value) return true;
+            return rowHasChange(row);
         });
     });
 
@@ -211,6 +406,7 @@
                     delta,
                     firstDate: first.recordedAt.slice(0, 10),
                     lastDate: last.recordedAt.slice(0, 10),
+                    seriesValues: numericPoints.map((point) => point.value),
                 };
             })
             .filter(Boolean)
@@ -220,8 +416,14 @@
             delta: number;
             firstDate: string;
             lastDate: string;
+            seriesValues: number[];
         }>;
     });
+    const biggestChanges = computed(() =>
+        [...numericTrendCards.value]
+            .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+            .slice(0, 5)
+    );
 
     const notableChanges = computed(() => {
         const changes: Array<{
@@ -303,6 +505,56 @@
         if (!prevValue || !currentValue || prevValue === currentValue) return '';
         return 'changed-value';
     }
+
+    function rowHasChange(row: Record<string, string>): boolean {
+        for (let i = 1; i < sortedDocuments.value.length; i += 1) {
+            const previous = row[sortedDocuments.value[i - 1].neid] ?? '';
+            const current = row[sortedDocuments.value[i].neid] ?? '';
+            if (!previous || !current) continue;
+            if (previous !== current) return true;
+        }
+        return false;
+    }
+
+    function formatPropertyName(name: string): string {
+        return name.replace(/\+/g, ' plus ').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function documentHeaderTitle(doc: { title: string; date?: string }): string {
+        return doc.date ? doc.date.slice(0, 10) : doc.title;
+    }
+
+    function prettyFlavor(flavor: string): string {
+        return flavor.replace(/_/g, ' ');
+    }
+
+    function propertyGroupKey(name: string): string {
+        if (name.startsWith('sources_of_funds')) return 'Sources of funds';
+        if (name.startsWith('uses_of_funds')) return 'Uses of funds';
+        if (name.startsWith('balance')) return 'Balances';
+        if (name.startsWith('current_valuation')) return 'Valuation';
+        if (name.startsWith('gross_earnings')) return 'Earnings';
+        if (name.startsWith('excess_earnings')) return 'Earnings';
+        if (name.startsWith('internal_rate_of_return')) return 'Returns';
+        const parts = name.split('_').filter(Boolean);
+        if (parts.length >= 2) return formatPropertyName(parts.slice(0, 2).join('_'));
+        return formatPropertyName(name);
+    }
+
+    function sparklinePoints(values: number[]): string {
+        if (!values.length) return '';
+        if (values.length === 1) return '0,15 100,15';
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const span = max - min || 1;
+        return values
+            .map((value, index) => {
+                const x = (index / (values.length - 1)) * 100;
+                const y = 26 - ((value - min) / span) * 22;
+                return `${x.toFixed(2)},${y.toFixed(2)}`;
+            })
+            .join(' ');
+    }
 </script>
 
 <style scoped>
@@ -316,8 +568,30 @@
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     }
 
+    .property-search {
+        width: min(360px, 100%);
+    }
+
+    .property-groups :deep(.v-expansion-panel-title) {
+        min-height: 40px;
+    }
+
     .changed-value {
         font-weight: 600;
         color: rgb(var(--v-theme-primary));
+    }
+
+    .trend-sparkline {
+        width: 100%;
+        height: 36px;
+        color: rgb(var(--v-theme-primary));
+    }
+
+    .sparkline-up {
+        stroke: rgb(var(--v-theme-success));
+    }
+
+    .sparkline-down {
+        stroke: rgb(var(--v-theme-error));
     }
 </style>

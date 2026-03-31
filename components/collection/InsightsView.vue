@@ -246,38 +246,6 @@
                                     </div>
                                 </div>
 
-                                <v-expansion-panels variant="accordion" class="mt-3">
-                                    <v-expansion-panel>
-                                        <v-expansion-panel-title>
-                                            Supporting Evidence ({{
-                                                answerFor(question.id).citations.length
-                                            }})
-                                        </v-expansion-panel-title>
-                                        <v-expansion-panel-text>
-                                            <v-list density="compact" class="pa-0 bg-transparent">
-                                                <v-list-item
-                                                    v-for="citation in answerFor(question.id)
-                                                        .citations"
-                                                    :key="`${question.id}-${citation.neid}-${citation.label}`"
-                                                    class="px-0"
-                                                >
-                                                    <template #prepend>
-                                                        <v-icon size="15" class="mr-2"
-                                                            >mdi-link-variant</v-icon
-                                                        >
-                                                    </template>
-                                                    <v-list-item-title class="text-body-2">
-                                                        {{ citation.label }}
-                                                    </v-list-item-title>
-                                                    <v-list-item-subtitle class="text-caption">
-                                                        {{ citation.type }} · {{ citation.neid }}
-                                                    </v-list-item-subtitle>
-                                                </v-list-item>
-                                            </v-list>
-                                        </v-expansion-panel-text>
-                                    </v-expansion-panel>
-                                </v-expansion-panels>
-
                                 <div class="mt-3 d-flex flex-wrap ga-2">
                                     <v-btn
                                         size="x-small"

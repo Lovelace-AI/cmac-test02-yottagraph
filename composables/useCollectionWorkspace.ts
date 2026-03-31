@@ -147,9 +147,10 @@ export interface EnrichmentNewsGroup {
     items: EnrichmentNewsItem[];
 }
 
-export interface EnrichmentTypeCount {
+export interface EnrichableExtractedEntityGroup {
+    key: string;
     label: string;
-    count: number;
+    entities: EntityRecord[];
 }
 
 export interface EnrichmentEconomicSignal {
@@ -556,7 +557,7 @@ export function useCollectionWorkspace() {
             relationshipCount: documentRelationships.value.length,
             propertyCount: extractedPropertyCount.value,
         };
-        const fallbackDegree1 = {
+        const fallbackRaw1Degree = {
             entityCount: enrichedEntitiesDegree1.value.length,
             eventCount: enrichedEventsDegree1.value.length,
             relationshipCount: enrichedRelationshipsDegree1.value.length,
@@ -565,7 +566,7 @@ export function useCollectionWorkspace() {
                 enrichedEventsDegree1.value
             ),
         };
-        const fallbackDegree2 = {
+        const fallbackRaw2Degrees = {
             entityCount: enrichedEntitiesDegree2.value.length,
             eventCount: enrichedEventsDegree2.value.length,
             relationshipCount: enrichedRelationshipsDegree2.value.length,
@@ -574,34 +575,23 @@ export function useCollectionWorkspace() {
                 enrichedEventsDegree2.value
             ),
         };
-        const rawOneHop = collection.value.meta.rawOneHopCounts ?? {
-            entityCount: 0,
-            eventCount: 0,
-            relationshipCount: 0,
+        const persisted = collection.value.meta.enrichmentCounts;
+        return {
+            document: persisted?.document ?? fallbackDocument,
+            raw1Degree: persisted?.raw1Degree ?? persisted?.degree1 ?? fallbackRaw1Degree,
+            raw2Degrees: persisted?.raw2Degrees ?? persisted?.degree2 ?? fallbackRaw2Degrees,
         };
-        return (
-            collection.value.meta.enrichmentCounts ?? {
-                document: fallbackDocument,
-                degree1: fallbackDegree1,
-                degree2: fallbackDegree2,
-                auditOneHop: {
-                    ...rawOneHop,
-                    propertyCount: fallbackDegree1.propertyCount,
-                },
-            }
-        );
     });
     const enrichmentComparison = computed(() => {
         return {
             documentTruth: enrichmentCounts.value.document,
-            enrichedBy1Degree: enrichmentCounts.value.degree1,
-            enrichedBy2Degrees: enrichmentCounts.value.degree2,
-            rawAuditOneHop: enrichmentCounts.value.auditOneHop,
+            raw1Degree: enrichmentCounts.value.raw1Degree,
+            raw2Degrees: enrichmentCounts.value.raw2Degrees,
             netAdditions: {
-                entityCount: enrichmentCounts.value.degree1.entityCount,
-                eventCount: enrichmentCounts.value.degree1.eventCount,
-                relationshipCount: enrichmentCounts.value.degree1.relationshipCount,
-                propertyCount: enrichmentCounts.value.degree1.propertyCount,
+                entityCount: enrichmentCounts.value.raw1Degree.entityCount,
+                eventCount: enrichmentCounts.value.raw1Degree.eventCount,
+                relationshipCount: enrichmentCounts.value.raw1Degree.relationshipCount,
+                propertyCount: enrichmentCounts.value.raw1Degree.propertyCount,
             },
         };
     });
@@ -1526,29 +1516,45 @@ export function useCollectionWorkspace() {
         outsideEventCount: outsideEvents.value.length,
         takeawayBullets: enrichmentTakeawayBullets.value,
     }));
-    const toTypeCounts = (entries: string[]): EnrichmentTypeCount[] =>
-        Array.from(
-            entries.reduce((counts, label) => {
-                counts.set(label, (counts.get(label) ?? 0) + 1);
-                return counts;
-            }, new Map<string, number>())
-        )
-            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-            .map(([label, count]) => ({ label, count }));
-    const enrichableEntityTypeCounts = computed(() =>
-        toTypeCounts(
-            enrichedEntitiesDegree1.value.map((entity) =>
-                entity.flavor.replace(/^schema::flavor::/, '').replace(/_/g, ' ')
-            )
-        )
-    );
-    const enrichableEventTypeCounts = computed(() =>
-        toTypeCounts(
-            enrichedEventsDegree1.value.map(
-                (eventItem) => eventItem.category?.trim() || 'uncategorized'
-            )
-        )
-    );
+    const enrichableExtractedEntityGroups = computed<EnrichableExtractedEntityGroup[]>(() => {
+        const documentNeids = new Set(documentEntities.value.map((entity) => entity.neid));
+        const enrichableDocumentNeids = new Set<string>();
+        for (const relationship of enrichedRelationships.value) {
+            if (documentNeids.has(relationship.sourceNeid))
+                enrichableDocumentNeids.add(relationship.sourceNeid);
+            if (documentNeids.has(relationship.targetNeid))
+                enrichableDocumentNeids.add(relationship.targetNeid);
+        }
+        for (const eventItem of enrichedEventsDegree2.value) {
+            for (const participantNeid of eventItem.participantNeids) {
+                if (documentNeids.has(participantNeid))
+                    enrichableDocumentNeids.add(participantNeid);
+            }
+        }
+        const grouped = new Map<string, EntityRecord[]>();
+        const buckets = [
+            { key: 'organization', label: 'Organizations' },
+            { key: 'person', label: 'People' },
+            { key: 'financial_instrument', label: 'Financial Instruments' },
+            { key: 'fund_account', label: 'Fund Accounts' },
+            { key: 'location', label: 'Locations' },
+        ];
+        for (const entity of documentEntities.value) {
+            if (!enrichableDocumentNeids.has(entity.neid)) continue;
+            const flavorKey = entity.flavor.replace(/^schema::flavor::/, '');
+            if (!buckets.some((bucket) => bucket.key === flavorKey)) continue;
+            const existing = grouped.get(flavorKey) ?? [];
+            existing.push(entity);
+            grouped.set(flavorKey, existing);
+        }
+        return buckets.map((bucket) => ({
+            key: bucket.key,
+            label: bucket.label,
+            entities: (grouped.get(bucket.key) ?? [])
+                .slice()
+                .sort((a, b) => a.name.localeCompare(b.name)),
+        }));
+    });
     const strictProjectLocationEntities = computed(() =>
         collection.value.entities.filter((entity) => {
             if (entity.flavor !== 'location') return false;
@@ -1563,7 +1569,16 @@ export function useCollectionWorkspace() {
     const recentCoverageAnchors = computed(() => {
         const anchorByNeid = new Map<string, EntityRecord>();
         const addAnchor = (entity: EntityRecord) => {
-            if (!['organization', 'person', 'location'].includes(entity.flavor)) return;
+            if (
+                ![
+                    'organization',
+                    'person',
+                    'financial_instrument',
+                    'fund_account',
+                    'location',
+                ].includes(entity.flavor)
+            )
+                return;
             if (
                 entity.flavor === 'location' &&
                 !strictProjectLocationEntities.value.includes(entity)
@@ -1571,8 +1586,18 @@ export function useCollectionWorkspace() {
                 return;
             anchorByNeid.set(entity.neid, entity);
         };
-        for (const entity of keyQuestionEntities.value) addAnchor(entity);
-        for (const entity of enrichedEntitiesDegree1.value) {
+        const sortedDocumentEntities = documentEntities.value.slice().sort((a, b) => {
+            const relationshipDelta =
+                (relationshipCountByEntityNeid.value.get(b.neid) ?? 0) -
+                (relationshipCountByEntityNeid.value.get(a.neid) ?? 0);
+            if (relationshipDelta !== 0) return relationshipDelta;
+            const eventDelta =
+                (eventCountByEntityNeid.value.get(b.neid) ?? 0) -
+                (eventCountByEntityNeid.value.get(a.neid) ?? 0);
+            if (eventDelta !== 0) return eventDelta;
+            return a.name.localeCompare(b.name);
+        });
+        for (const entity of sortedDocumentEntities) {
             if (anchorByNeid.size >= 10) break;
             addAnchor(entity);
         }
@@ -2366,6 +2391,20 @@ export function useCollectionWorkspace() {
                 relationships: RelationshipRecord[];
                 events: EventRecord[];
                 counts?: {
+                    rawByDepth?: {
+                        degree1?: {
+                            entityCount: number;
+                            eventCount: number;
+                            relationshipCount: number;
+                            propertyCount: number;
+                        };
+                        degree2?: {
+                            entityCount: number;
+                            eventCount: number;
+                            relationshipCount: number;
+                            propertyCount: number;
+                        };
+                    };
                     byDepth?: {
                         degree1?: {
                             entityCount: number;
@@ -2416,31 +2455,21 @@ export function useCollectionWorkspace() {
             collection.value.meta.entityCount = collection.value.entities.length;
             collection.value.meta.relationshipCount = collection.value.relationships.length;
             collection.value.meta.eventCount = collection.value.events.length;
-            if (result.counts?.byDepth) {
-                const existingAudit = collection.value.meta.rawOneHopCounts ?? {
-                    entityCount: 0,
-                    eventCount: 0,
-                    relationshipCount: 0,
-                };
+            if (result.counts?.rawByDepth || result.counts?.byDepth) {
                 collection.value.meta.enrichmentCounts = {
                     document:
                         collection.value.meta.enrichmentCounts?.document ??
                         enrichmentCounts.value.document,
-                    degree1:
-                        result.counts.byDepth.degree1 ??
-                        collection.value.meta.enrichmentCounts?.degree1,
-                    degree2:
-                        result.counts.byDepth.degree2 ??
-                        collection.value.meta.enrichmentCounts?.degree2,
-                    auditOneHop: {
-                        entityCount: existingAudit.entityCount,
-                        eventCount: existingAudit.eventCount,
-                        relationshipCount: existingAudit.relationshipCount,
-                        propertyCount:
-                            result.counts.raw?.propertyCount ??
-                            collection.value.meta.enrichmentCounts?.auditOneHop.propertyCount ??
-                            0,
-                    },
+                    raw1Degree:
+                        result.counts?.rawByDepth?.degree1 ??
+                        result.counts?.byDepth?.degree1 ??
+                        collection.value.meta.enrichmentCounts?.raw1Degree ??
+                        enrichmentCounts.value.raw1Degree,
+                    raw2Degrees:
+                        result.counts?.rawByDepth?.degree2 ??
+                        result.counts?.byDepth?.degree2 ??
+                        collection.value.meta.enrichmentCounts?.raw2Degrees ??
+                        enrichmentCounts.value.raw2Degrees,
                 };
             }
             enrichmentLastRun.value = {
@@ -2661,8 +2690,7 @@ export function useCollectionWorkspace() {
         enrichmentLanguageError: computed(() => enrichmentLanguageError.value),
         enrichmentCounts,
         enrichmentComparison,
-        enrichableEntityTypeCounts,
-        enrichableEventTypeCounts,
+        enrichableExtractedEntityGroups,
         strictProjectLocationEntities,
         recentCoverageAnchors,
         keyQuestionEntities,

@@ -69,41 +69,33 @@
                                 <v-card-title class="text-body-2"
                                     >Enriched by 1 Degree</v-card-title
                                 >
-                                <v-card-subtitle
-                                    >Live curated 1-degree neighborhood</v-card-subtitle
-                                >
+                                <v-card-subtitle>Total raw 1-hop results</v-card-subtitle>
                             </v-card-item>
                             <v-card-text>
                                 <div class="metric-row">
                                     <span>Reference entities</span>
                                     <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.enrichedBy1Degree.entityCount
-                                        )
+                                        formatNumber(enrichmentComparison.raw1Degree.entityCount)
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
                                     <span>Reference events</span>
                                     <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.enrichedBy1Degree.eventCount
-                                        )
+                                        formatNumber(enrichmentComparison.raw1Degree.eventCount)
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
                                     <span>Reference relationships</span>
                                     <strong>{{
                                         formatNumber(
-                                            enrichmentComparison.enrichedBy1Degree.relationshipCount
+                                            enrichmentComparison.raw1Degree.relationshipCount
                                         )
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
                                     <span>Properties</span>
                                     <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.enrichedBy1Degree.propertyCount
-                                        )
+                                        formatNumber(enrichmentComparison.raw1Degree.propertyCount)
                                     }}</strong>
                                 </div>
                             </v-card-text>
@@ -115,104 +107,68 @@
                                 <v-card-title class="text-body-2"
                                     >Enriched by 2 Degrees</v-card-title
                                 >
-                                <v-card-subtitle>Reachable within 2 degrees</v-card-subtitle>
+                                <v-card-subtitle>Total raw 2-hop results</v-card-subtitle>
                             </v-card-item>
                             <v-card-text>
                                 <div class="metric-row">
                                     <span>Reference entities</span>
                                     <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.enrichedBy2Degrees.entityCount
-                                        )
+                                        formatNumber(enrichmentComparison.raw2Degrees.entityCount)
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
                                     <span>Reference events</span>
                                     <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.enrichedBy2Degrees.eventCount
-                                        )
+                                        formatNumber(enrichmentComparison.raw2Degrees.eventCount)
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
                                     <span>Reference relationships</span>
                                     <strong>{{
                                         formatNumber(
-                                            enrichmentComparison.enrichedBy2Degrees
-                                                .relationshipCount
+                                            enrichmentComparison.raw2Degrees.relationshipCount
                                         )
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
                                     <span>Properties</span>
                                     <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.enrichedBy2Degrees.propertyCount
-                                        )
+                                        formatNumber(enrichmentComparison.raw2Degrees.propertyCount)
                                     }}</strong>
                                 </div>
                             </v-card-text>
                         </v-card>
                     </v-col>
                 </v-row>
-                <v-alert type="info" variant="tonal" class="mt-3">
-                    Raw 1-hop audit benchmark:
-                    {{ formatNumber(enrichmentComparison.rawAuditOneHop.entityCount) }} entities,
-                    {{ formatNumber(enrichmentComparison.rawAuditOneHop.eventCount) }} events,
-                    {{ formatNumber(enrichmentComparison.rawAuditOneHop.relationshipCount) }}
-                    relationships. Live in-product cards above use curated degree-based counts.
-                </v-alert>
                 <v-row class="mt-1">
-                    <v-col cols="12" md="6">
+                    <v-col
+                        v-for="group in enrichableExtractedEntityGroups"
+                        :key="group.key"
+                        cols="12"
+                        md="6"
+                    >
                         <v-card>
                             <v-card-item>
                                 <v-card-title class="text-body-2">
-                                    Enrichable Entities by Type
+                                    {{ group.label }}
                                 </v-card-title>
+                                <v-card-subtitle>
+                                    {{ group.entities.length }} enrichable extracted entities
+                                </v-card-subtitle>
                             </v-card-item>
                             <v-card-text>
-                                <div
-                                    v-if="enrichableEntityTypeCounts.length"
-                                    class="d-flex flex-column ga-2"
-                                >
-                                    <div
-                                        v-for="entry in enrichableEntityTypeCounts"
-                                        :key="entry.label"
-                                        class="metric-row"
+                                <div v-if="group.entities.length" class="d-flex flex-wrap ga-2">
+                                    <v-chip
+                                        v-for="entity in group.entities"
+                                        :key="entity.neid"
+                                        size="small"
+                                        variant="tonal"
                                     >
-                                        <span>{{ entry.label }}</span>
-                                        <strong>{{ formatNumber(entry.count) }}</strong>
-                                    </div>
+                                        {{ entity.name }}
+                                    </v-chip>
                                 </div>
                                 <div v-else class="text-body-2 text-medium-emphasis">
-                                    No enrichable entities are currently available.
-                                </div>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                    <v-col cols="12" md="6">
-                        <v-card>
-                            <v-card-item>
-                                <v-card-title class="text-body-2">
-                                    Enrichable Events by Type
-                                </v-card-title>
-                            </v-card-item>
-                            <v-card-text>
-                                <div
-                                    v-if="enrichableEventTypeCounts.length"
-                                    class="d-flex flex-column ga-2"
-                                >
-                                    <div
-                                        v-for="entry in enrichableEventTypeCounts"
-                                        :key="entry.label"
-                                        class="metric-row"
-                                    >
-                                        <span>{{ entry.label }}</span>
-                                        <strong>{{ formatNumber(entry.count) }}</strong>
-                                    </div>
-                                </div>
-                                <div v-else class="text-body-2 text-medium-emphasis">
-                                    No enrichable events are currently available.
+                                    No enrichable extracted entities for this type.
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -303,7 +259,7 @@
                     variant="tonal"
                     class="mb-3"
                 >
-                    No recent article coverage was found for the current anchor set.
+                    No recent article coverage was found for the key extracted entities.
                 </v-alert>
                 <div v-else class="d-flex flex-column ga-3">
                     <v-card v-for="group in enrichmentNews.slice(0, 6)" :key="group.anchorNeid">
@@ -453,8 +409,7 @@
         enrichmentRelatedDeals,
         enrichmentRelatedDealsLoading,
         enrichmentRelatedDealsError,
-        enrichableEntityTypeCounts,
-        enrichableEventTypeCounts,
+        enrichableExtractedEntityGroups,
         strictProjectLocationEntities,
     } = useCollectionWorkspace();
 

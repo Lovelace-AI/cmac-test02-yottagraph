@@ -62,9 +62,11 @@ export interface EnrichmentCountBucket {
 
 export interface EnrichmentCountSummary {
     document: EnrichmentCountBucket;
-    degree1: EnrichmentCountBucket;
-    degree2: EnrichmentCountBucket;
-    auditOneHop: EnrichmentCountBucket;
+    raw1Degree: EnrichmentCountBucket;
+    raw2Degrees: EnrichmentCountBucket;
+    degree1?: EnrichmentCountBucket;
+    degree2?: EnrichmentCountBucket;
+    auditOneHop?: EnrichmentCountBucket;
 }
 
 export interface PropertyPoint {

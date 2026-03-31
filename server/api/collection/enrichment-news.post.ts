@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
     if (!entityNeids.length)
         return { groups: [] as Array<{ anchorNeid: string; items: NewsItem[] }> };
 
-    const maxEntities = Math.max(1, Math.min(body?.maxEntities ?? 12, 30));
+    const maxEntities = Math.max(1, Math.min(body?.maxEntities ?? 10, 20));
     const articlesPerEntity = Math.max(1, Math.min(body?.articlesPerEntity ?? 8, 20));
     const anchors = entityNeids.slice(0, maxEntities);
 
