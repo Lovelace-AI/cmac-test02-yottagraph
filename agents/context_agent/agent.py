@@ -619,6 +619,24 @@ def get_entity_profile(entity: str, flavor: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def _empty_context_bundle(collection_name: str, question: str, evidence_line: str) -> dict:
+    return {
+        "collectionName": collection_name,
+        "question": question,
+        "topEntities": [],
+        "topEvents": [],
+        "relationships": [],
+        "profileEvidence": [],
+        "evidenceLines": [evidence_line],
+        "stats": {
+            "documentCount": 0,
+            "entityCount": 0,
+            "eventCount": 0,
+            "relationshipCount": 0,
+        },
+    }
+
+
 def build_entity_profile_context_bundle(
     entity: str,
     question: str = "",
@@ -630,56 +648,51 @@ def build_entity_profile_context_bundle(
     This tool returns the full context JSON contract so the model can emit
     grounded output directly from tool-returned data instead of synthesizing.
     """
+    rendered_question = question or f"Profile request for {entity}"
+    normalized_input_neid = _normalize_neid(entity) if _is_neid_like(entity) else ""
     record = get_entity_profile_record(entity, flavor)
     if not record.get("ok"):
-        return {
-            "collectionName": collection_name,
-            "question": question or f"Profile request for {entity}",
-            "topEntities": [],
-            "topEvents": [],
-            "relationships": [],
-            "profileEvidence": [],
-            "evidenceLines": [
-                str(record.get("error", f"Could not resolve profile for '{entity}'.")),
-            ],
-            "stats": {
-                "documentCount": 0,
-                "entityCount": 0,
-                "eventCount": 0,
-                "relationshipCount": 0,
-            },
-        }
+        return _empty_context_bundle(
+            collection_name,
+            rendered_question,
+            str(record.get("error", f"Could not resolve profile for '{entity}'.")),
+        )
 
     resolved = record.get("resolved", {})
     neid = str(resolved.get("neid") or "")
     if not NEID_RE.match(neid):
-        return {
-            "collectionName": collection_name,
-            "question": question or f"Profile request for {entity}",
-            "topEntities": [],
-            "topEvents": [],
-            "relationships": [],
-            "profileEvidence": [],
-            "evidenceLines": [
-                f"Profile resolved but produced non-canonical NEID '{neid}'.",
-            ],
-            "stats": {
-                "documentCount": 0,
-                "entityCount": 0,
-                "eventCount": 0,
-                "relationshipCount": 0,
-            },
-        }
+        return _empty_context_bundle(
+            collection_name,
+            rendered_question,
+            (
+                f"Profile resolution for '{entity}' returned non-canonical NEID '{neid}'. "
+                "No profile row emitted."
+            ),
+        )
+
+    # Fail closed if caller supplied a NEID-like input but resolution returns a different ID.
+    if normalized_input_neid and normalized_input_neid != neid:
+        return _empty_context_bundle(
+            collection_name,
+            rendered_question,
+            (
+                f"Provided NEID {normalized_input_neid} did not match resolved NEID {neid}. "
+                "No profile row emitted."
+            ),
+        )
 
     name = str(resolved.get("name") or entity)
     flavor_value = str(resolved.get("flavor") or flavor or "unknown")
+    resolution_mode = "provided_neid" if normalized_input_neid else "name_search"
+    properties = record.get("properties", {})
+    missing_properties = record.get("missing_properties", [])
     profile_row = {
         "neid": neid,
         "name": name,
         "flavor": flavor_value,
-        "resolution": str(resolved.get("resolution_mode") or "name_search"),
-        "properties": record.get("properties", {}),
-        "missingProperties": record.get("missing_properties", []),
+        "resolution": resolution_mode,
+        "properties": properties if isinstance(properties, dict) else {},
+        "missingProperties": missing_properties if isinstance(missing_properties, list) else [],
     }
     evidence_lines = [f"Retrieved scalar profile for {name} ({neid})."]
     for note in record.get("notes", []):
@@ -688,7 +701,7 @@ def build_entity_profile_context_bundle(
 
     return {
         "collectionName": collection_name,
-        "question": question or f"Profile request for {entity}",
+        "question": rendered_question,
         "focusEntity": {
             "neid": neid,
             "name": name,
@@ -794,6 +807,8 @@ Behavior rules:
 - Use tools to retrieve and verify evidence before claiming facts.
 - For canonical/scalar profile requests (especially when a NEID is provided),
   call build_entity_profile_context_bundle and return that tool JSON as-is.
+- Never emit non-canonical IDs (for example: NE:..., EQ..., organization.444).
+  Valid NEIDs are exactly 20 numeric digits.
 - For profileEvidence, include only NEID-validated results from
   get_entity_profile_record tool output.
 - Any NEID surfaced in focusEntity/topEntities/topEvents/relationships/
