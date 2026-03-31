@@ -153,6 +153,16 @@ export interface EnrichableExtractedEntityGroup {
     entities: EntityRecord[];
 }
 
+export interface TopConnectedExtractedEntity {
+    neid: string;
+    name: string;
+    flavor: string;
+    linkedEntityCount: number;
+    relationshipCount: number;
+    eventCount: number;
+    sourceCount: number;
+}
+
 export interface EnrichmentEconomicSignal {
     eventNeid: string;
     title: string;
@@ -1555,6 +1565,77 @@ export function useCollectionWorkspace() {
                 .sort((a, b) => a.name.localeCompare(b.name)),
         }));
     });
+    const topConnectedExtractedEntities = computed<TopConnectedExtractedEntity[]>(() => {
+        const documentNeids = new Set(documentEntities.value.map((entity) => entity.neid));
+        const neighborByEntity = new Map<string, Set<string>>();
+        const relationshipCountByEntity = new Map<string, number>();
+        const eventCountByEntity = new Map<string, number>();
+
+        const addNeighbor = (source: string, target: string) => {
+            if (!neighborByEntity.has(source)) neighborByEntity.set(source, new Set());
+            neighborByEntity.get(source)!.add(target);
+        };
+        const increment = (counts: Map<string, number>, neid: string) => {
+            counts.set(neid, (counts.get(neid) ?? 0) + 1);
+        };
+
+        for (const relationship of documentRelationships.value) {
+            if (
+                !documentNeids.has(relationship.sourceNeid) ||
+                !documentNeids.has(relationship.targetNeid)
+            ) {
+                continue;
+            }
+            addNeighbor(relationship.sourceNeid, relationship.targetNeid);
+            addNeighbor(relationship.targetNeid, relationship.sourceNeid);
+            increment(relationshipCountByEntity, relationship.sourceNeid);
+            increment(relationshipCountByEntity, relationship.targetNeid);
+        }
+
+        for (const eventItem of documentEvents.value) {
+            const participants = Array.from(
+                new Set(eventItem.participantNeids.filter((neid) => documentNeids.has(neid)))
+            );
+            for (const participantNeid of participants) {
+                increment(eventCountByEntity, participantNeid);
+            }
+            for (let index = 0; index < participants.length; index += 1) {
+                for (let inner = index + 1; inner < participants.length; inner += 1) {
+                    const source = participants[index];
+                    const target = participants[inner];
+                    addNeighbor(source, target);
+                    addNeighbor(target, source);
+                }
+            }
+        }
+
+        return documentEntities.value
+            .map((entity) => ({
+                neid: entity.neid,
+                name: entity.name,
+                flavor: entity.flavor,
+                linkedEntityCount: neighborByEntity.get(entity.neid)?.size ?? 0,
+                relationshipCount: relationshipCountByEntity.get(entity.neid) ?? 0,
+                eventCount: eventCountByEntity.get(entity.neid) ?? 0,
+                sourceCount: entity.sourceDocuments.length,
+            }))
+            .filter(
+                (entity) =>
+                    entity.linkedEntityCount > 0 ||
+                    entity.relationshipCount > 0 ||
+                    entity.eventCount > 0
+            )
+            .sort((a, b) => {
+                const linkedDelta = b.linkedEntityCount - a.linkedEntityCount;
+                if (linkedDelta !== 0) return linkedDelta;
+                const relationshipDelta = b.relationshipCount - a.relationshipCount;
+                if (relationshipDelta !== 0) return relationshipDelta;
+                const eventDelta = b.eventCount - a.eventCount;
+                if (eventDelta !== 0) return eventDelta;
+                return a.name.localeCompare(b.name);
+            })
+            .slice(0, 12);
+    });
     const strictProjectLocationEntities = computed(() =>
         collection.value.entities.filter((entity) => {
             if (entity.flavor !== 'location') return false;
@@ -2390,6 +2471,18 @@ export function useCollectionWorkspace() {
                 entities: EntityRecord[];
                 relationships: RelationshipRecord[];
                 events: EventRecord[];
+                caps?: {
+                    maxEntities: number;
+                    maxRelationships: number;
+                    maxEvents: number;
+                    maxEventHubs: number;
+                };
+                truncated?: {
+                    entities: boolean;
+                    relationships: boolean;
+                    events: boolean;
+                    eventHubs: boolean;
+                };
                 counts?: {
                     rawByDepth?: {
                         degree1?: {
@@ -2470,6 +2563,22 @@ export function useCollectionWorkspace() {
                         result.counts?.byDepth?.degree2 ??
                         collection.value.meta.enrichmentCounts?.raw2Degrees ??
                         enrichmentCounts.value.raw2Degrees,
+                };
+            }
+            if (result.caps) {
+                collection.value.meta.enrichmentCaps = {
+                    maxEntities: result.caps.maxEntities,
+                    maxRelationships: result.caps.maxRelationships,
+                    maxEvents: result.caps.maxEvents,
+                    maxEventHubs: result.caps.maxEventHubs,
+                };
+            }
+            if (result.truncated) {
+                collection.value.meta.enrichmentTruncated = {
+                    entities: result.truncated.entities,
+                    relationships: result.truncated.relationships,
+                    events: result.truncated.events,
+                    eventHubs: result.truncated.eventHubs,
                 };
             }
             enrichmentLastRun.value = {
@@ -2691,6 +2800,7 @@ export function useCollectionWorkspace() {
         enrichmentCounts,
         enrichmentComparison,
         enrichableExtractedEntityGroups,
+        topConnectedExtractedEntities,
         strictProjectLocationEntities,
         recentCoverageAnchors,
         keyQuestionEntities,

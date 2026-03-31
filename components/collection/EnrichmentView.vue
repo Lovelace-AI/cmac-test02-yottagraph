@@ -141,6 +141,70 @@
                     </v-col>
                 </v-row>
                 <v-row class="mt-1">
+                    <v-col cols="12">
+                        <v-alert
+                            v-if="
+                                meta.enrichmentTruncated?.entities ||
+                                meta.enrichmentTruncated?.relationships ||
+                                meta.enrichmentTruncated?.events ||
+                                meta.enrichmentTruncated?.eventHubs
+                            "
+                            type="warning"
+                            variant="tonal"
+                            density="comfortable"
+                            class="mb-3"
+                        >
+                            Raw enrichment counts are lower bounds because expansion hit configured
+                            caps (entities
+                            {{ formatNumber(meta.enrichmentCaps?.maxEntities ?? 0) }}, relationships
+                            {{ formatNumber(meta.enrichmentCaps?.maxRelationships ?? 0) }}, events
+                            {{ formatNumber(meta.enrichmentCaps?.maxEvents ?? 0) }}).
+                        </v-alert>
+                        <v-card>
+                            <v-card-item>
+                                <v-card-title class="text-body-2">
+                                    Top Connected Extracted Entities
+                                </v-card-title>
+                                <v-card-subtitle>
+                                    Ranked by document-linked connections in the extracted graph.
+                                </v-card-subtitle>
+                            </v-card-item>
+                            <v-card-text>
+                                <v-alert
+                                    v-if="!topConnectedExtractedEntities.length"
+                                    type="info"
+                                    variant="tonal"
+                                    density="comfortable"
+                                >
+                                    No linked extracted entities were found yet.
+                                </v-alert>
+                                <div v-else class="d-flex flex-wrap ga-2">
+                                    <v-chip
+                                        v-for="entity in topConnectedExtractedEntities"
+                                        :key="`top-connected:${entity.neid}`"
+                                        size="small"
+                                        variant="tonal"
+                                    >
+                                        {{ entity.name }}
+                                        <span class="text-medium-emphasis ml-1">
+                                            ({{ formatFlavor(entity.flavor) }} ·
+                                            {{ entity.linkedEntityCount }} links ·
+                                            {{ entity.relationshipCount }} rels ·
+                                            {{ entity.eventCount }} events)
+                                        </span>
+                                    </v-chip>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                </v-row>
+                <v-row class="mt-1">
+                    <v-col cols="12">
+                        <v-alert type="info" variant="tonal" density="comfortable" class="mb-2">
+                            These groups are a subset: extracted entities that currently have at
+                            least one enrichment link in the graph.
+                        </v-alert>
+                    </v-col>
                     <v-col
                         v-for="group in enrichableExtractedEntityGroups"
                         :key="group.key"
@@ -153,7 +217,7 @@
                                     {{ group.label }}
                                 </v-card-title>
                                 <v-card-subtitle>
-                                    {{ group.entities.length }} enrichable extracted entities
+                                    {{ group.entities.length }} linked extracted entities
                                 </v-card-subtitle>
                             </v-card-item>
                             <v-card-text>
@@ -168,7 +232,7 @@
                                     </v-chip>
                                 </div>
                                 <div v-else class="text-body-2 text-medium-emphasis">
-                                    No enrichable extracted entities for this type.
+                                    No linked extracted entities for this type.
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -397,6 +461,7 @@
 
 <script setup lang="ts">
     const {
+        meta,
         resolveEntityName,
         enrichmentComparison,
         enrichmentGraphEntities,
@@ -410,6 +475,7 @@
         enrichmentRelatedDealsLoading,
         enrichmentRelatedDealsError,
         enrichableExtractedEntityGroups,
+        topConnectedExtractedEntities,
         strictProjectLocationEntities,
     } = useCollectionWorkspace();
 
@@ -429,6 +495,13 @@
 
     function formatSentiment(value: number): string {
         return value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2);
+    }
+
+    function formatFlavor(value: string): string {
+        return value
+            .replace(/^schema::flavor::/, '')
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (char) => char.toUpperCase());
     }
 </script>
 

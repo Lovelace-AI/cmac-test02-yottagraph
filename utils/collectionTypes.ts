@@ -103,6 +103,18 @@ export interface CollectionMeta {
         relationshipCount: number;
     };
     enrichmentCounts?: EnrichmentCountSummary;
+    enrichmentCaps?: {
+        maxEntities: number;
+        maxRelationships: number;
+        maxEvents: number;
+        maxEventHubs: number;
+    };
+    enrichmentTruncated?: {
+        entities: boolean;
+        relationships: boolean;
+        events: boolean;
+        eventHubs: boolean;
+    };
     cacheSource?: 'memory' | 'redis' | 'none';
     cachedAt?: string;
     cacheVersion?: string;

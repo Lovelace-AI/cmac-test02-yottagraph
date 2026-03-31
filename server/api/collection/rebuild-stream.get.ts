@@ -81,6 +81,10 @@ const EVENT_TIME_WINDOWS: Array<{
     { label: 'recent', time_range: { after: '2018-01-01', before: '2026-12-31' } },
     { label: 'historical', time_range: { before: '2018-01-01' } },
 ];
+const ENRICHMENT_MAX_ENTITIES = 50_000;
+const ENRICHMENT_MAX_RELATIONSHIPS = 200_000;
+const ENRICHMENT_MAX_EVENTS = 50_000;
+const ENRICHMENT_MAX_EVENT_HUBS = 250;
 let strictDocumentNeidSet = new Set(BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid)));
 
 function propertyValueFromRecord(record: unknown): unknown {
@@ -970,10 +974,10 @@ export default defineEventHandler(async (event) => {
             anchorNeids: documentEntities.map((entity) => entity.neid),
             hops: 2,
             includeEvents: true,
-            maxEntities: 6000,
-            maxRelationships: 24000,
-            maxEvents: 6000,
-            maxEventHubs: 24,
+            maxEntities: ENRICHMENT_MAX_ENTITIES,
+            maxRelationships: ENRICHMENT_MAX_RELATIONSHIPS,
+            maxEvents: ENRICHMENT_MAX_EVENTS,
+            maxEventHubs: ENRICHMENT_MAX_EVENT_HUBS,
         });
         for (const relationship of enrichmentResult.relationships) {
             upsertRelationship(relationshipMap, relationship);
@@ -1013,6 +1017,18 @@ export default defineEventHandler(async (event) => {
                     raw2Degrees: {
                         ...enrichmentResult.counts.rawByDepth.degree2,
                     },
+                },
+                enrichmentCaps: {
+                    maxEntities: enrichmentResult.caps.maxEntities,
+                    maxRelationships: enrichmentResult.caps.maxRelationships,
+                    maxEvents: enrichmentResult.caps.maxEvents,
+                    maxEventHubs: enrichmentResult.caps.maxEventHubs,
+                },
+                enrichmentTruncated: {
+                    entities: enrichmentResult.truncated.entities,
+                    relationships: enrichmentResult.truncated.relationships,
+                    events: enrichmentResult.truncated.events,
+                    eventHubs: enrichmentResult.truncated.eventHubs,
                 },
                 lastRebuilt: new Date().toISOString(),
             },

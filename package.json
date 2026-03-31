@@ -1,8 +1,8 @@
 {
-    "name": "cmac-test02",
-    "productName": "cmac-test02",
+    "name": "cmac-test02-yottagraph",
+    "productName": "Document Collection Intelligence",
     "version": "2.0.0",
-    "description": "Aether app: cmac-test02",
+    "description": "A modular application built with Aether",
     "scripts": {
         "predev": "test -f .env || node init-project.js --local",
         "dev": "nuxt dev",

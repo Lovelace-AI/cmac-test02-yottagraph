@@ -1,6 +1,6 @@
-# cmac-test02
+# Document Collection Intelligence
 
-Aether app: cmac-test02
+A modular application built with Aether
 
 ## Quick Start
 
