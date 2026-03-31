@@ -89,14 +89,6 @@
                 <v-icon start size="small">mdi-newspaper</v-icon>
                 News
             </v-tab>
-            <v-tab value="press">
-                <v-icon start size="small">mdi-newspaper-variant-outline</v-icon>
-                Recent Coverage
-            </v-tab>
-            <v-tab value="deals">
-                <v-icon start size="small">mdi-bank-transfer</v-icon>
-                Jersey City Deals
-            </v-tab>
         </v-tabs>
 
         <v-window v-model="activeSubtab">
@@ -332,188 +324,6 @@
                     @topic-click="applyTopicFilter"
                 />
             </v-window-item>
-
-            <v-window-item value="press">
-                <v-card v-if="strictProjectLocationEntities.length" class="mb-3" variant="outlined">
-                    <v-card-item>
-                        <v-card-title class="text-body-2"> Verified Project Location </v-card-title>
-                        <v-card-subtitle>
-                            Project-tied location entities found in the current graph.
-                        </v-card-subtitle>
-                    </v-card-item>
-                    <v-card-text>
-                        <div class="d-flex flex-wrap ga-2">
-                            <v-chip
-                                v-for="location in strictProjectLocationEntities"
-                                :key="location.neid"
-                                size="small"
-                                variant="tonal"
-                                color="secondary"
-                            >
-                                {{ location.name }}
-                            </v-chip>
-                        </div>
-                        <div class="text-caption text-medium-emphasis mt-3">
-                            No street-level address is shown unless the graph ties it directly to
-                            the Presidential Plaza project.
-                        </div>
-                    </v-card-text>
-                </v-card>
-                <v-alert
-                    v-if="enrichmentNewsLoading || enrichmentEconomicLoading"
-                    type="info"
-                    variant="tonal"
-                    class="mb-3"
-                >
-                    Loading recent MCP article coverage...
-                </v-alert>
-                <v-alert v-else-if="enrichmentNewsError" type="error" variant="tonal" class="mb-3">
-                    {{ enrichmentNewsError }}
-                </v-alert>
-                <v-alert
-                    v-else-if="!enrichmentNews.length"
-                    type="info"
-                    variant="tonal"
-                    class="mb-3"
-                >
-                    No recent MCP article coverage was found for the selected document-graph
-                    entities.
-                </v-alert>
-                <div v-else class="d-flex flex-column ga-3">
-                    <section
-                        v-for="group in enrichmentNews.slice(0, 6)"
-                        :key="group.anchorNeid"
-                        class="news-group-block"
-                    >
-                        <NewsGroupHeader
-                            :title="resolveEntityName(group.anchorNeid)"
-                            :count-label="`${group.items.length} recent articles`"
-                        />
-                        <div class="news-items">
-                            <NewsArticleItem
-                                v-for="item in group.items.slice(0, 4)"
-                                :key="item.articleNeid"
-                                :item="item"
-                                grouped
-                            />
-                        </div>
-                    </section>
-                </div>
-            </v-window-item>
-
-            <v-window-item value="deals">
-                <v-alert
-                    v-if="enrichmentRelatedDealsLoading"
-                    type="info"
-                    variant="tonal"
-                    class="mb-3"
-                >
-                    Loading Jersey City deal coverage...
-                </v-alert>
-                <v-alert
-                    v-else-if="enrichmentRelatedDealsError"
-                    type="error"
-                    variant="tonal"
-                    class="mb-3"
-                >
-                    {{ enrichmentRelatedDealsError }}
-                </v-alert>
-                <v-alert
-                    v-else-if="!enrichmentRelatedDeals.length"
-                    type="info"
-                    variant="tonal"
-                    class="mb-3"
-                >
-                    No Jersey City-related deal coverage was surfaced from the current
-                    document-graph anchors.
-                </v-alert>
-                <div v-else class="d-flex flex-column ga-3">
-                    <v-card v-for="deal in enrichmentRelatedDeals" :key="deal.id">
-                        <v-card-item>
-                            <v-card-title class="text-body-2">{{ deal.title }}</v-card-title>
-                            <v-card-subtitle>
-                                {{ deal.articleCount }} relevant articles
-                            </v-card-subtitle>
-                        </v-card-item>
-                        <v-card-text>
-                            <div class="text-body-2 mb-2">{{ deal.summary }}</div>
-                            <div v-if="deal.articles.length" class="d-flex flex-column ga-2 mb-2">
-                                <v-card
-                                    v-for="article in deal.articles"
-                                    :key="`${deal.id}:${article.articleNeid}`"
-                                    variant="outlined"
-                                >
-                                    <v-card-item>
-                                        <template #append>
-                                            <v-btn
-                                                v-if="article.url"
-                                                size="x-small"
-                                                variant="text"
-                                                color="primary"
-                                                :href="article.url"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                icon="mdi-open-in-new"
-                                            />
-                                        </template>
-                                        <v-card-title class="text-body-2">
-                                            {{
-                                                article.title ||
-                                                article.urlHost ||
-                                                'Headline unavailable'
-                                            }}
-                                        </v-card-title>
-                                        <v-card-subtitle>
-                                            {{ article.sourceName || article.urlHost || '' }}
-                                        </v-card-subtitle>
-                                    </v-card-item>
-                                    <v-card-text class="pt-0">
-                                        <div class="d-flex flex-wrap ga-1">
-                                            <v-chip
-                                                v-if="article.sentiment != null"
-                                                size="x-small"
-                                                variant="tonal"
-                                                color="info"
-                                            >
-                                                sentiment {{ formatSentiment(article.sentiment) }}
-                                            </v-chip>
-                                            <v-chip
-                                                v-if="article.urlHost"
-                                                size="x-small"
-                                                variant="tonal"
-                                                color="primary"
-                                            >
-                                                {{ article.urlHost }}
-                                            </v-chip>
-                                        </div>
-                                    </v-card-text>
-                                </v-card>
-                            </div>
-                            <div v-if="deal.relatedCusips.length" class="mb-2">
-                                <div class="text-caption text-medium-emphasis mb-1">
-                                    Candidate CUSIPs
-                                </div>
-                                <div class="d-flex flex-wrap ga-1">
-                                    <v-chip
-                                        v-for="cusip in deal.relatedCusips"
-                                        :key="`${deal.id}:${cusip}`"
-                                        size="x-small"
-                                        variant="tonal"
-                                        color="info"
-                                    >
-                                        {{ cusip }}
-                                    </v-chip>
-                                </div>
-                            </div>
-                            <div class="text-caption text-medium-emphasis">
-                                <div v-for="line in deal.evidence.slice(0, 3)" :key="line">
-                                    {{ line }}
-                                </div>
-                            </div>
-                        </v-card-text>
-                    </v-card>
-                </div>
-            </v-window-item>
         </v-window>
     </div>
 </template>
@@ -549,28 +359,18 @@
         lineageResults,
         lineageInvestigation,
         peopleAffiliationInsights,
-        enrichmentNews,
-        enrichmentNewsLoading,
-        enrichmentNewsError,
         filteredNewsCategories,
         filteredNewsLoading,
         filteredNewsRefreshing,
         filteredNewsInitialized,
         filteredNewsError,
         dedupedFilteredNewsArticles,
-        enrichmentEconomicLoading,
-        enrichmentRelatedDeals,
-        enrichmentRelatedDealsLoading,
-        enrichmentRelatedDealsError,
         loadFilteredNews,
         sortDedupedNewsArticles,
         topConnectedExtractedEntities,
-        strictProjectLocationEntities,
     } = useCollectionWorkspace();
 
-    const activeSubtab = ref<'comparison' | 'graph' | 'lineage' | 'news' | 'press' | 'deals'>(
-        'comparison'
-    );
+    const activeSubtab = ref<'comparison' | 'graph' | 'lineage' | 'news'>('comparison');
     const selectedNewsCategories = ref<string[]>([]);
     const newsSortMode = ref<
         'strongest_graph_connection' | 'most_graph_entities' | 'most_recent' | 'highest_relevance'
@@ -864,10 +664,6 @@
             .replace(/^schema::flavor::/, '')
             .replace(/_/g, ' ')
             .replace(/\b\w/g, (char) => char.toUpperCase());
-    }
-
-    function formatSentiment(value: number): string {
-        return value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2);
     }
 
     function applyTopicFilter(topic: string): void {
