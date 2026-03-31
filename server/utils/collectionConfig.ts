@@ -99,6 +99,31 @@ let mcpSessionId: string | null = null;
 let mcpInitialized = false;
 let mcpInitPromise: Promise<void> | null = null;
 
+function errorMessage(error: unknown): string {
+    if (!error) return '';
+    if (typeof error === 'string') return error;
+    return (error as any).message ? String((error as any).message) : String(error);
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+    const message = errorMessage(error).toLowerCase();
+    return (
+        message.includes('session not found') ||
+        message.includes('invalid session') ||
+        message.includes('mcp-session-id')
+    );
+}
+
+function isTransientTimeoutError(error: unknown): boolean {
+    const message = errorMessage(error).toLowerCase();
+    return (
+        message.includes('timeout') ||
+        message.includes('aborted') ||
+        message.includes('networkerror') ||
+        message.includes('failed to fetch')
+    );
+}
+
 async function mcpRpc(method: string, params?: any, timeoutMs = 20_000): Promise<any> {
     const { gatewayUrl, orgId } = getGatewayConfig();
     const url = `${gatewayUrl}/api/mcp/${orgId}/${MCP_SERVER_NAME}/mcp`;
@@ -183,7 +208,7 @@ async function ensureMcpSession(): Promise<void> {
 export async function mcpCallTool(
     toolName: string,
     args: Record<string, any>,
-    options?: { timeoutMs?: number }
+    options?: { timeoutMs?: number; attempts?: number }
 ): Promise<any> {
     await ensureMcpSession();
     const startMs = Date.now();
@@ -191,11 +216,36 @@ export async function mcpCallTool(
     let status: 'success' | 'error' = 'success';
 
     try {
-        const response = await mcpRpc(
-            'tools/call',
-            { name: toolName, arguments: args },
-            options?.timeoutMs ?? 20_000
-        );
+        const attempts = Math.max(1, options?.attempts ?? 2);
+        let lastError: unknown;
+        let response: any = null;
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                response = await mcpRpc(
+                    'tools/call',
+                    { name: toolName, arguments: args },
+                    options?.timeoutMs ?? 20_000
+                );
+                break;
+            } catch (error) {
+                lastError = error;
+                const hasNextAttempt = attempt < attempts;
+                if (!hasNextAttempt) break;
+                // Common gateway failure mode in long-running rebuilds: stale/evicted session.
+                if (isSessionNotFoundError(error)) {
+                    mcpSessionId = null;
+                    mcpInitialized = false;
+                    mcpInitPromise = null;
+                    await ensureMcpSession();
+                    continue;
+                }
+                if (isTransientTimeoutError(error)) {
+                    continue;
+                }
+                break;
+            }
+        }
+        if (!response) throw lastError ?? new Error('MCP tools/call failed without response');
         result = extractToolResult(response);
     } catch (e) {
         status = 'error';
