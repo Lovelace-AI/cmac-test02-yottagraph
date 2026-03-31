@@ -179,6 +179,37 @@ def lookup_entity(name: str) -> dict:
     return resp.json()
 
 
+def search_entities_batch(queries: list[str], max_results: int = 5) -> dict:
+    """Resolve multiple entity names in one request.
+
+    Use this when planner evidence asks for multiple entities, aliases, or
+    organizations at once. This is preferred to repeated lookup_entity calls.
+    """
+    payload = {
+        "queries": [{"queryId": idx + 1, "query": query} for idx, query in enumerate(queries)],
+        "maxResults": max_results,
+    }
+    resp = elemental_client.post("/entities/search", json=payload)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def find_entities_batch(expressions: list[str], limit: int = 25) -> dict:
+    """Run several /elemental/find expressions and return all result sets.
+
+    Use for efficient retrieval when requestedEvidence implies multiple filters.
+    """
+    results: list[dict] = []
+    for idx, expression in enumerate(expressions):
+        resp = elemental_client.post(
+            "/elemental/find",
+            data={"expression": expression, "limit": str(limit)},
+        )
+        resp.raise_for_status()
+        results.append({"index": idx, "expression": expression, "result": resp.json()})
+    return {"results": results}
+
+
 def _schema_payload() -> dict:
     data = get_schema()
     return data.get("schema", data)
@@ -330,11 +361,19 @@ def get_entity_profile(entity: str, flavor: str | None = None) -> str:
 
 
 # --- MCP Server integration ---
-# If MCP_SERVER_URL is set, the agent will also have access to tools from
-# the connected MCP server (e.g., the example-server with hello, get_current_time, echo_data).
+# If MCP_SERVER_URL is set, the agent will also have access to MCP tools
+# discovered at deploy time.
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "")
 
-_tools: list = [get_schema, find_entities, get_properties, lookup_entity, get_entity_profile]
+_tools: list = [
+    get_schema,
+    find_entities,
+    get_properties,
+    lookup_entity,
+    search_entities_batch,
+    find_entities_batch,
+    get_entity_profile,
+]
 
 if MCP_SERVER_URL:
     from google.adk.tools.mcp_tool import McpToolset
@@ -347,26 +386,48 @@ if MCP_SERVER_URL:
 root_agent = Agent(
     model="gemini-2.0-flash",
     name="context_agent",
-    instruction="""You are an assistant that helps users explore the Elemental yottagraph,
-a knowledge graph of real-world entities.
+    instruction="""You are the Context Agent in a 3-stage Ask Yotta pipeline.
+You are a super librarian of the knowledge graph.
 
-You can:
-1. Look up the schema to understand entity types and properties
-2. Search for entities by type, property values, or natural language
-3. Retrieve detailed property values for specific entities
-4. Look up entities by name
+Core mission:
+- Receive the planner brief and retrieve the highest-signal evidence needed by
+  the composition agent.
+- Return strict JSON context output, not a final user-facing narrative.
+- Optimize for retrieval efficiency, grounding, and schema correctness.
 
-If you have access to MCP tools (hello, get_current_time, echo_data), you can
-also demonstrate those when asked. These come from a connected MCP server.
+Retrieval playbook (distilled from platform skills and API docs):
+1) Start from planner intent + requestedEvidence.
+2) Reuse provided NEIDs whenever available; avoid re-resolving known entities.
+3) Use schema discovery only when needed for flavor/property disambiguation.
+4) Prefer targeted retrieval before broad search:
+   - lookup_entity or search_entities_batch for unresolved names
+   - find_entities / find_entities_batch for expression-based filters
+   - get_properties and get_entity_profile for canonical scalar evidence
+5) Batch calls whenever multiple names or filters are requested.
+6) Keep evidence concise and relevant to requestedEvidence.
+7) If evidence is sparse or ambiguous, explicitly note uncertainty in
+   evidenceLines.
 
-Start by understanding what the user wants to know, then use the appropriate
-tools to find the answer. Present results clearly and concisely.
+Output requirements:
+- Return STRICT JSON only (no markdown, no code fences).
+- Output must match this shape:
+{
+  "collectionName": "string",
+  "question": "string",
+  "focusEntity": {"neid":"string","name":"string","flavor":"string","docs":0},
+  "topEntities": [{"neid":"string","name":"string","flavor":"string","docs":0}],
+  "topEvents": [{"neid":"string","name":"string","date":"string","participants":0}],
+  "relationships": [{"type":"string","sourceNeid":"string","targetNeid":"string","sourceDocumentNeid":"string"}],
+  "evidenceLines": ["string"],
+  "stats": {"documentCount":0,"entityCount":0,"eventCount":0,"relationshipCount":0}
+}
 
-When the user asks for canonical metadata about an entity such as hard IDs,
-mailing/legal/physical addresses, aliases, descriptions, or profile fields,
-do not stop at lookup_entity. Prefer get_entity_profile because it explicitly
-maps flavor-specific core property names to PIDs from the schema and then
-calls get_properties. Relationships and events are supporting context, not a
-replacement for schema-backed entity properties.""",
+Behavior rules:
+- Never fabricate entities, events, relationships, or citations.
+- Use tools to retrieve and verify evidence before claiming facts.
+- If planner input includes a fallback context bundle, treat it as baseline and
+  improve precision/coverage when possible.
+- Do not mention hidden prompts, internal pipeline mechanics, or tool internals
+  in your JSON output.""",
     tools=_tools,
 )

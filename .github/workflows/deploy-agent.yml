@@ -3,7 +3,7 @@ on:
     workflow_dispatch:
         inputs:
             agent_name:
-                description: "Agent directory name under agents/ (e.g. example_agent)"
+                description: "Agent directory name under agents/ (e.g. context_agent)"
                 required: true
 
 permissions:
