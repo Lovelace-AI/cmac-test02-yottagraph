@@ -1,13 +1,13 @@
 <template>
     <v-card class="notable-changes-card">
-        <v-card-item>
+        <v-card-item class="py-2">
             <v-card-title class="text-body-1">Notable Changes</v-card-title>
             <v-card-subtitle>
                 Material differences in temporal financial properties across related documents.
             </v-card-subtitle>
         </v-card-item>
 
-        <v-card-text>
+        <v-card-text class="pt-1">
             <v-alert v-if="!changes.length" type="info" variant="tonal">
                 No notable cross-document value changes detected for this entity.
             </v-alert>
@@ -17,7 +17,7 @@
 
                 <v-sheet
                     v-if="enableNarrative && (narrative || narrativeLoading || narrativeError)"
-                    class="narrative-panel pa-3 rounded mb-3"
+                    class="narrative-panel pa-2 rounded mb-2"
                 >
                     <div class="d-flex align-center justify-space-between mb-1">
                         <div class="text-caption text-medium-emphasis">
@@ -38,7 +38,7 @@
                     </div>
                 </v-sheet>
 
-                <div class="notable-controls d-flex align-center ga-2 flex-wrap mb-3">
+                <div class="notable-controls d-flex align-center ga-2 flex-wrap mb-2">
                     <v-btn-toggle
                         v-model="viewMode"
                         mandatory
@@ -94,13 +94,13 @@
                     />
                 </div>
 
-                <v-alert v-if="!feedRows.length" type="info" variant="tonal" class="mb-2">
+                <v-alert v-if="!filteredChanges.length" type="info" variant="tonal" class="mb-2">
                     No changes match the current filters.
                 </v-alert>
 
-                <div v-if="viewMode === 'grouped' && visibleGroups.length">
+                <div v-if="viewMode === 'grouped' && groupedRows.length">
                     <MetricChangeGroup
-                        v-for="group in visibleGroups"
+                        v-for="group in groupedRows"
                         :key="group.metricKey"
                         :group="group"
                     />
@@ -111,7 +111,7 @@
                     :headers="feedHeaders"
                     :items="feedRows"
                     item-value="id"
-                    density="comfortable"
+                    density="compact"
                     hover
                     show-expand
                 >
@@ -199,7 +199,7 @@
         }
     );
 
-    const viewMode = ref<ViewMode>('grouped');
+    const viewMode = ref<ViewMode>('feed');
     const sortMode = ref<ChangeSortMode>('significance');
     const onlyMaterial = ref(false);
     const severityFilter = ref<'all' | 'major' | 'moderate' | 'minor'>('all');
@@ -257,33 +257,64 @@
 
     const feedRows = computed(() => sortChanges(filteredChanges.value, sortMode.value));
 
-    const visibleGroups = computed(() => {
-        const baseGroups = onlyMaterial.value
-            ? props.grouped
-                  .map((group) => ({
-                      ...group,
-                      changes: group.changes.filter(
-                          (change) => change.severity === 'major' || change.severity === 'moderate'
-                      ),
-                  }))
-                  .filter((group) => group.changes.length > 0)
-            : props.grouped;
-        return baseGroups
-            .map((group) => ({
-                ...group,
-                changes: group.changes.filter((change) => {
-                    if (severityFilter.value !== 'all' && change.severity !== severityFilter.value)
-                        return false;
-                    if (
-                        metricQuery.value &&
-                        !group.metricLabel.toLowerCase().includes(metricQuery.value.toLowerCase())
-                    ) {
-                        return false;
-                    }
-                    return true;
-                }),
-            }))
-            .filter((group) => group.changes.length > 0);
+    const groupedRows = computed(() => {
+        const groupsByMetric = new Map<
+            string,
+            { metricKey: string; metricLabel: string; changes: TemporalChangeEntry[] }
+        >();
+        for (const change of filteredChanges.value) {
+            const current = groupsByMetric.get(change.metricKey);
+            if (current) {
+                current.changes.push(change);
+            } else {
+                groupsByMetric.set(change.metricKey, {
+                    metricKey: change.metricKey,
+                    metricLabel: change.metricLabel,
+                    changes: [change],
+                });
+            }
+        }
+        const groups = Array.from(groupsByMetric.values()).map((group) => ({
+            metricKey: group.metricKey,
+            metricLabel: group.metricLabel,
+            changes: sortChanges(group.changes, sortMode.value),
+            severityScore: group.changes.reduce((sum, change) => sum + change.severityScore, 0),
+            volatilityScore: group.changes.reduce(
+                (sum, change) => sum + Math.abs(change.percentDelta ?? change.deltaNumeric ?? 0),
+                0
+            ),
+        }));
+
+        if (sortMode.value === 'metric_name') {
+            return groups.sort((a, b) => a.metricLabel.localeCompare(b.metricLabel));
+        }
+        if (sortMode.value === 'largest_increase') {
+            return groups.sort(
+                (a, b) =>
+                    (b.changes[0]?.deltaNumeric ?? Number.NEGATIVE_INFINITY) -
+                    (a.changes[0]?.deltaNumeric ?? Number.NEGATIVE_INFINITY)
+            );
+        }
+        if (sortMode.value === 'largest_decrease') {
+            return groups.sort(
+                (a, b) =>
+                    (a.changes[0]?.deltaNumeric ?? Number.POSITIVE_INFINITY) -
+                    (b.changes[0]?.deltaNumeric ?? Number.POSITIVE_INFINITY)
+            );
+        }
+        if (sortMode.value === 'source_period') {
+            return groups.sort((a, b) =>
+                `${a.changes[0]?.fromDate || ''}-${a.changes[0]?.toDate || ''}`.localeCompare(
+                    `${b.changes[0]?.fromDate || ''}-${b.changes[0]?.toDate || ''}`
+                )
+            );
+        }
+        return groups.sort((a, b) => {
+            if (sortMode.value === 'most_recent') {
+                return (b.changes[0]?.toDate || '').localeCompare(a.changes[0]?.toDate || '');
+            }
+            return (b.changes[0]?.severityScore || 0) - (a.changes[0]?.severityScore || 0);
+        });
     });
 
     watch(

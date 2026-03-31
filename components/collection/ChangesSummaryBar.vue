@@ -1,28 +1,28 @@
 <template>
-    <div class="summary-grid mb-3">
-        <v-sheet class="summary-item pa-3 rounded" color="surface">
+    <div class="summary-grid mb-2">
+        <v-sheet class="summary-item pa-2 rounded" color="surface">
             <div class="text-caption text-medium-emphasis">Total changes</div>
-            <div class="text-h6">{{ summary.totalChanges }}</div>
+            <div class="text-body-1 font-weight-bold">{{ summary.totalChanges }}</div>
         </v-sheet>
-        <v-sheet class="summary-item pa-3 rounded" color="surface">
+        <v-sheet class="summary-item pa-2 rounded" color="surface">
             <div class="text-caption text-medium-emphasis">Metrics changed</div>
-            <div class="text-h6">{{ summary.metricsChanged }}</div>
+            <div class="text-body-1 font-weight-bold">{{ summary.metricsChanged }}</div>
         </v-sheet>
-        <v-sheet class="summary-item pa-3 rounded" color="surface">
+        <v-sheet class="summary-item pa-2 rounded" color="surface">
             <div class="text-caption text-medium-emphasis">Largest increase</div>
-            <div class="text-body-2">{{ largestIncreaseLabel }}</div>
+            <div class="text-caption summary-value">{{ largestIncreaseLabel }}</div>
         </v-sheet>
-        <v-sheet class="summary-item pa-3 rounded" color="surface">
+        <v-sheet class="summary-item pa-2 rounded" color="surface">
             <div class="text-caption text-medium-emphasis">Largest decrease</div>
-            <div class="text-body-2">{{ largestDecreaseLabel }}</div>
+            <div class="text-caption summary-value">{{ largestDecreaseLabel }}</div>
         </v-sheet>
-        <v-sheet class="summary-item pa-3 rounded" color="surface">
+        <v-sheet class="summary-item pa-2 rounded" color="surface">
             <div class="text-caption text-medium-emphasis">Most volatile metric</div>
-            <div class="text-body-2">{{ mostVolatileLabel }}</div>
+            <div class="text-caption summary-value">{{ mostVolatileLabel }}</div>
         </v-sheet>
-        <v-sheet class="summary-item pa-3 rounded" color="surface">
+        <v-sheet class="summary-item pa-2 rounded" color="surface">
             <div class="text-caption text-medium-emphasis">Most recent comparison</div>
-            <div class="text-body-2">{{ recentLabel }}</div>
+            <div class="text-caption summary-value">{{ recentLabel }}</div>
         </v-sheet>
     </div>
 </template>
@@ -60,8 +60,8 @@
 <style scoped>
     .summary-grid {
         display: grid;
-        gap: 10px;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     }
 
     .summary-item {
@@ -71,5 +71,11 @@
             rgb(var(--v-theme-surface)) 94%,
             rgb(var(--v-theme-primary)) 6%
         );
+    }
+
+    .summary-value {
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 </style>

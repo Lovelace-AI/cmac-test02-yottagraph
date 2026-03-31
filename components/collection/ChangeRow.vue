@@ -1,5 +1,5 @@
 <template>
-    <div class="change-row py-3 px-2">
+    <div class="change-row py-2 px-2">
         <div class="d-flex align-start justify-space-between ga-3 flex-wrap">
             <div class="row-primary">
                 <div class="metric-title text-body-2 text-medium-emphasis mb-1">
