@@ -1164,7 +1164,6 @@ export default defineEventHandler(async (event) => {
         const enrichmentResult = await runEnrichmentExpansion(
             {
                 anchorNeids: documentEntities.map((entity) => entity.neid),
-                hops: 2,
                 includeEvents: true,
                 maxEntities: ENRICHMENT_MAX_ENTITIES,
                 maxRelationships: ENRICHMENT_MAX_RELATIONSHIPS,
@@ -1217,10 +1216,11 @@ export default defineEventHandler(async (event) => {
                     raw1Degree: {
                         ...enrichmentResult.counts.rawByDepth.degree1,
                     },
-                    raw2Degrees: {
-                        ...enrichmentResult.counts.rawByDepth.degree2,
+                    kgOneHop: {
+                        ...enrichmentResult.kgTotals.oneHop,
                     },
                 },
+                kgPerEntity: enrichmentResult.kgTotals.perEntity,
                 enrichmentCaps: {
                     maxEntities: enrichmentResult.caps.maxEntities,
                     maxRelationships: enrichmentResult.caps.maxRelationships,
