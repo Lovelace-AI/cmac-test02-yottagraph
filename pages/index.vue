@@ -110,6 +110,7 @@
                     <CollectionOverview v-if="currentTab === 'overview'" />
                     <GraphWorkspace
                         v-else-if="currentTab === 'graph'"
+                        key="document-graph-workspace"
                         :initial-source-backed-only="true"
                         :initial-include-context-endpoints="true"
                         :initial-analysis-mode="'centrality'"

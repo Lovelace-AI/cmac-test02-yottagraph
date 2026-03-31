@@ -212,6 +212,7 @@
 
             <v-window-item value="graph">
                 <GraphWorkspace
+                    key="enrichment-graph-workspace"
                     :entities-override="entities"
                     :relationships-override="relationships"
                     :initial-include-context-endpoints="true"
