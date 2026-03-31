@@ -1213,7 +1213,7 @@
 
         fitCameraToGraphBounds(g);
         applySelectedHighlight();
-        queueSigmaReflow();
+        queueSigmaReflow(true);
     }
 
     function centerNodeNeid(): string | null {
@@ -1591,6 +1591,7 @@
             try {
                 sigmaInstance.resize();
                 sigmaInstance.refresh();
+                if (graphInstance) fitCameraToGraphBounds(graphInstance);
             } catch {
                 // sigma state corrupted — schedule recovery
                 scheduleGraphRecovery();
@@ -1598,12 +1599,13 @@
         });
     }
 
-    function queueSigmaReflow() {
+    function queueSigmaReflow(recenter = false) {
         const guardedRefresh = () => {
             if (!sigmaInstance || !isContainerValid()) return;
             try {
                 sigmaInstance.resize();
                 sigmaInstance.refresh();
+                if (recenter && graphInstance) fitCameraToGraphBounds(graphInstance);
             } catch {
                 scheduleGraphRecovery();
             }
