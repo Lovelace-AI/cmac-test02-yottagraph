@@ -179,6 +179,7 @@ export interface LineageResultViewModel {
     supportCount: number;
     supportLabel: string;
     confidenceLabel: LineageConfidenceLabel;
+    confidenceReason: string;
     evidenceMode: LineageEvidenceMode;
     evidenceModeLabel: string;
     summarySentence: string;

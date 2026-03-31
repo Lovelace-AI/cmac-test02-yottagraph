@@ -1326,7 +1326,13 @@ export function useCollectionWorkspace() {
                     addDocumentNeids(eventItem.sourceDocuments);
                 }
                 const citationCount = bestRelationship?.citations?.length ?? 0;
-                const supportCount = supportingDocumentNeids.size || citationCount;
+                const documentSupportCount = supportingDocumentNeids.size;
+                const eventSupportCount = relatedEvents.length;
+                const supportCount = Math.max(
+                    documentSupportCount,
+                    citationCount,
+                    eventSupportCount > 0 ? 1 : 0
+                );
 
                 const hasDocumentedRelationship = Boolean(
                     bestRelationship && hasStrictRelationshipEvidence(bestRelationship)
@@ -1345,11 +1351,23 @@ export function useCollectionWorkspace() {
                               ? 'graph_enriched'
                               : 'inferred';
                 const confidenceLabel: LineageResultViewModel['confidenceLabel'] =
-                    supportCount >= 4 || evidenceMode === 'mixed'
+                    (documentSupportCount >= 3 && hasDocumentedRelationship) ||
+                    (documentSupportCount >= 2 && evidenceMode === 'mixed')
                         ? 'high'
-                        : supportCount >= 2 || evidenceMode === 'direct_document'
+                        : documentSupportCount >= 1 ||
+                            citationCount >= 2 ||
+                            hasDocumentedRelationship ||
+                            hasDocumentedEvent
                           ? 'medium'
                           : 'low';
+                const confidenceReason =
+                    confidenceLabel === 'high'
+                        ? `High confidence from ${labelForEvidenceCount(documentSupportCount)} and corroborating lineage/event anchors.`
+                        : confidenceLabel === 'medium'
+                          ? documentSupportCount >= 1
+                              ? `Moderate confidence from ${labelForEvidenceCount(documentSupportCount)} with partial corroboration.`
+                              : 'Moderate confidence from citation and event-anchor support where direct source coverage is limited.'
+                          : 'Low confidence because this lineage is mostly inferred and has limited direct source evidence.';
 
                 const supportingDocuments: LineageSupportingDocument[] = Array.from(
                     supportingDocumentNeids
@@ -1427,10 +1445,17 @@ export function useCollectionWorkspace() {
                     ...eventAnchors.slice(0, 2).map((item) => item.title),
                 ].filter(Boolean);
 
-                const summarySentence =
-                    card.plainSummary ||
-                    `${primaryStatement} is supported by ${labelForEvidenceCount(supportCount)}.`;
-                const explanationSentence = `Supported by ${labelForEvidenceCount(supportCount)} with ${lineageEvidenceModeLabel(evidenceMode).toLowerCase()}.`;
+                const supportLabel =
+                    documentSupportCount > 0
+                        ? `Supported by ${labelForEvidenceCount(documentSupportCount)}`
+                        : citationCount > 0
+                          ? `Supported by ${citationCount} citation${citationCount === 1 ? '' : 's'}`
+                          : eventSupportCount > 0
+                            ? `Supported by ${eventSupportCount} event anchor${eventSupportCount === 1 ? '' : 's'}`
+                            : 'Support is inferred from graph context';
+                const anchorSummary = topEvidenceAnchors.slice(1).join(', ');
+                const summarySentence = `${supportLabel}${anchorSummary ? `, including ${anchorSummary}.` : '.'}`;
+                const explanationSentence = `${relationshipTypeLabel}${effectiveDateLabel ? ` with date signal ${effectiveDateLabel}` : ''}. ${lineageEvidenceModeLabel(evidenceMode)}.`;
                 const groundingNotes = [
                     `Evidence mode: ${lineageEvidenceModeLabel(evidenceMode)}.`,
                     bestRelationship
@@ -1452,8 +1477,9 @@ export function useCollectionWorkspace() {
                     relationshipTypeLabel,
                     effectiveDateLabel,
                     supportCount,
-                    supportLabel: `Supported by ${labelForEvidenceCount(supportCount)}`,
+                    supportLabel,
                     confidenceLabel,
+                    confidenceReason,
                     evidenceMode,
                     evidenceModeLabel: lineageEvidenceModeLabel(evidenceMode),
                     summarySentence,
