@@ -354,7 +354,6 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
     try {
         const generated = await generateGeminiText({
             label: 'collection_answer',
-            model: 'gemini-3.1-preview',
             temperature: 0,
             maxOutputTokens: 1200,
             timeoutMs: 40000,

@@ -249,7 +249,6 @@ export default defineEventHandler(async (event): Promise<EnrichmentLanguageRespo
                 const generated = await generateGeminiText({
                     prompt,
                     label: 'enrichment_language',
-                    model: 'gemini-3.1-preview',
                     systemInstruction:
                         'You are Ask Yotta. Write clear, cautious, plain-English enrichment summaries grounded only in provided data.',
                     temperature: 0,
