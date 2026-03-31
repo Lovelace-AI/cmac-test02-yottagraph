@@ -8,6 +8,7 @@ import {
     seedKeyFromNameAndFlavor,
     citationToDocumentNeid,
 } from '~/server/utils/extractedSeedGraph';
+import { loadQuadOneHopAuditCounts } from '~/server/utils/quadSeedGraph';
 import {
     BNY_DOCUMENTS,
     HOP1_FLAVORS,
@@ -158,6 +159,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     resetMcpSession();
 
     const seed = loadExtractedSeedGraph();
+    const auditCounts = loadQuadOneHopAuditCounts();
     const seedHints = loadSeedGraphHints();
     const strictDocumentNeids =
         seedHints.documentNeids.length > 0
@@ -322,6 +324,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                 if (!evtNeid || eventMap.has(evtNeid)) continue;
 
                 const props = evt.properties ?? {};
+                const eventKey = seedKeyFromNameAndFlavor((evt.name as string) || '', 'event');
                 const participantNeids: string[] = [];
 
                 if (Array.isArray(evt.participants)) {
@@ -336,17 +339,35 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                     .flatMap((value) => citationDocumentNeidsFromValue(value))
                     .map((docNeid) => normalizeNeid(docNeid))
                     .filter((docNeid): docNeid is string => strictDocumentNeidSet.has(docNeid));
-                const appears = await mcpCallTool('elemental_get_related', {
-                    entity_id: { id_type: 'neid', id: evtNeid },
-                    related_flavor: 'document',
-                    direction: 'both',
-                    limit: 50,
-                }).catch(() => null);
+                const seededSyntheticNeid = eventNeidBySeedKey.get(eventKey);
+                const seededDocNeids = Array.from(
+                    new Set(
+                        (seededSyntheticNeid
+                            ? (eventMap.get(seededSyntheticNeid)?.sourceDocuments ?? [])
+                            : []
+                        )
+                            .map((docNeid) => normalizeNeid(docNeid))
+                            .filter((docNeid) => strictDocumentNeidSet.has(docNeid))
+                    )
+                );
+                const appears =
+                    citedDocNeids.length === 0 && seededDocNeids.length === 0
+                        ? await mcpCallTool(
+                              'elemental_get_related',
+                              {
+                                  entity_id: { id_type: 'neid', id: evtNeid },
+                                  related_flavor: 'document',
+                                  direction: 'both',
+                                  limit: 50,
+                              },
+                              { timeoutMs: 12_000 }
+                          ).catch(() => null)
+                        : null;
                 const appearsInDocNeids = (appears?.relationships ?? [])
                     .map((relationship: any) => normalizeNeid(String(relationship?.neid ?? '')))
                     .filter((docNeid: string) => strictDocumentNeidSet.has(docNeid));
                 const sourceDocuments = Array.from(
-                    new Set([...citedDocNeids, ...appearsInDocNeids])
+                    new Set([...seededDocNeids, ...citedDocNeids, ...appearsInDocNeids])
                 );
                 if (sourceDocuments.length === 0) continue;
 
@@ -473,7 +494,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     const documentEvents = Array.from(eventMap.values());
     const enrichmentResult = await runEnrichmentExpansion({
         anchorNeids: documentEntities.map((entity) => entity.neid),
-        hops: 2,
+        hops: 1,
         includeEvents: true,
         maxEntities: 6000,
         maxRelationships: 24000,
@@ -486,6 +507,15 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     const entities = mergeEntities(documentEntities, enrichmentResult.entities);
     const events = mergeEvents(documentEvents, enrichmentResult.events);
     const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
+    const curatedOneHopEntityCount = entities.filter(
+        (entity) => entity.origin === 'enriched'
+    ).length;
+    const curatedOneHopRelationshipCount = relationships.filter(
+        (relationship) => relationship.origin === 'enriched'
+    ).length;
+    const curatedOneHopEventCount = events.filter(
+        (eventItem) => eventItem.extractedSeed === false
+    ).length;
 
     const state: CollectionState = {
         meta: {
@@ -497,6 +527,12 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
             eventCount: events.length,
             relationshipCount: relationships.length,
             agreementCount: agreements.length,
+            rawOneHopCounts: { ...auditCounts.rawOneHop },
+            curatedOneHopCounts: {
+                entityCount: curatedOneHopEntityCount,
+                eventCount: curatedOneHopEventCount,
+                relationshipCount: curatedOneHopRelationshipCount,
+            },
             lastRebuilt: new Date().toISOString(),
         },
         documents: [...BNY_DOCUMENTS],
@@ -507,6 +543,6 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
         status: 'ready',
     };
 
-    setCachedCollection(state);
-    return state;
+    const cachedState = await setCachedCollection(state);
+    return cachedState;
 });

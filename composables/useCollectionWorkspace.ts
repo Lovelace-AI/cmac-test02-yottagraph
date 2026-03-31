@@ -155,6 +155,17 @@ export interface EnrichmentEconomicSignal {
     anchorNeid?: string;
 }
 
+export interface EnrichmentRelatedDealInsight {
+    id: string;
+    title: string;
+    summary: string;
+    anchorNeid?: string;
+    anchorName?: string;
+    eventCount: number;
+    relatedCusips: string[];
+    evidence: string[];
+}
+
 function normalizeRelationshipType(type: string): string {
     return type.replace(/^schema::relationship::/, '');
 }
@@ -163,34 +174,39 @@ const INITIAL_STEPS: RebuildStep[] = [
     {
         step: 1,
         status: 'pending',
-        label: 'Baseline Load',
-        detail: 'Loading extracted JSON baseline...',
+        label: 'Loading Document Graph',
+        detail: 'Loading document graph...',
     },
     {
         step: 2,
         status: 'pending',
-        label: 'Loading Entities',
-        detail: 'Resolving extracted entities through MCP traversal...',
+        label: 'Validating Graph Entities',
+        detail: 'Validating graph entities...',
     },
     {
         step: 3,
         status: 'pending',
-        label: 'Loading Events',
-        detail: 'Resolving extracted events from hub entities...',
+        label: 'Loading Document Events',
+        detail: 'Loading document events...',
     },
     {
         step: 4,
         status: 'pending',
-        label: 'Loading Relationships',
-        detail: 'Building document and participant links...',
+        label: 'Linking Graph',
+        detail: 'Linking graph...',
     },
     {
         step: 5,
         status: 'pending',
-        label: 'Loading Properties',
-        detail: 'Loading extracted properties and historical series...',
+        label: 'Loading Property History',
+        detail: 'Loading property history...',
     },
-    { step: 6, status: 'pending', label: 'Finalizing', detail: 'Building collection state...' },
+    {
+        step: 6,
+        status: 'pending',
+        label: 'Preparing Workspace',
+        detail: 'Preparing workspace...',
+    },
 ];
 
 const collection = ref<CollectionState>(emptyCollectionState());
@@ -234,6 +250,9 @@ const enrichmentEconomicSignals = ref<{
 }>({ micro: [], macro: [] });
 const enrichmentEconomicLoading = ref(false);
 const enrichmentEconomicError = ref<string | null>(null);
+const enrichmentRelatedDeals = ref<EnrichmentRelatedDealInsight[]>([]);
+const enrichmentRelatedDealsLoading = ref(false);
+const enrichmentRelatedDealsError = ref<string | null>(null);
 const { fetchConfig: fetchTenantConfig, config: tenantConfig } = useTenantConfig();
 const {
     sendMessage: sendAgentMessage,
@@ -251,6 +270,7 @@ function gatewayPromptForAction(
         return 'Summarize this collection in plain English, highlight central entities/events, and end with three recommended checks.';
     }
     if (action === 'explain_entity' && params?.entityNeid) {
+        if (params?.question?.trim()) return params.question.trim();
         const label = resolveName?.(params.entityNeid) || params.entityNeid;
         return `Explain the role of ${label} in this collection, including evidence and what to verify next.`;
     }
@@ -259,6 +279,12 @@ function gatewayPromptForAction(
     }
     if (action === 'recommend_anchors') {
         return 'Recommend the best enrichment anchors from the current collection and explain why each is high-value.';
+    }
+    if (action === 'recommend_curation_adjustments') {
+        return (
+            params?.question?.trim() ||
+            'Review the current curated one-hop enrichment strategy and recommend any include/exclude changes without changing the underlying graph automatically.'
+        );
     }
     if (action === 'answer_question') {
         return (
@@ -450,6 +476,44 @@ export function useCollectionWorkspace() {
                 eventItem.extractedSeed === false ||
                 !hasStrictDocumentSource(eventItem.sourceDocuments)
         )
+    );
+    const enrichmentComparison = computed(() => {
+        const documentCounts = {
+            entityCount: documentEntities.value.length,
+            eventCount: documentEvents.value.length,
+            relationshipCount: documentRelationships.value.length,
+        };
+        const oneHopContext = collection.value.meta.curatedOneHopCounts ?? {
+            entityCount: enrichedEntities.value.length,
+            eventCount: outsideEvents.value.length,
+            relationshipCount: enrichedRelationships.value.length,
+        };
+        const twoHopReference = {
+            oneHopOutsideNodeCount: 692,
+            additionalOutsideNodeCount: 996,
+            totalOutsideNodeCount: 1226,
+        };
+        return {
+            document: documentCounts,
+            oneHopContext,
+            twoHopReference,
+            netAdditions: {
+                entityCount: oneHopContext.entityCount,
+                eventCount: oneHopContext.eventCount,
+                relationshipCount: oneHopContext.relationshipCount,
+            },
+        };
+    });
+    const keyQuestionEntities = computed(() =>
+        documentEntities.value
+            .slice()
+            .sort((a, b) => {
+                const aDegree = relationshipCountByEntityNeid.value.get(a.neid) ?? 0;
+                const bDegree = relationshipCountByEntityNeid.value.get(b.neid) ?? 0;
+                if (bDegree !== aDegree) return bDegree - aDegree;
+                return a.name.localeCompare(b.name);
+            })
+            .slice(0, 8)
     );
     const eventByNeid = computed(
         () =>
@@ -1869,13 +1933,48 @@ export function useCollectionWorkspace() {
         }
     }
 
+    async function loadEnrichmentRelatedDeals(): Promise<void> {
+        const anchors = enrichedEntities.value.map((entity) => entity.neid);
+        if (!anchors.length) {
+            enrichmentRelatedDeals.value = [];
+            return;
+        }
+        enrichmentRelatedDealsLoading.value = true;
+        enrichmentRelatedDealsError.value = null;
+        try {
+            const response = await $fetch<{ deals: EnrichmentRelatedDealInsight[] }>(
+                '/api/collection/enrichment-related-deals',
+                {
+                    method: 'POST',
+                    body: { entityNeids: anchors, maxAnchors: 10, eventsPerAnchor: 20 },
+                }
+            );
+            enrichmentRelatedDeals.value = response.deals ?? [];
+        } catch (error: any) {
+            enrichmentRelatedDealsError.value =
+                error?.data?.statusMessage ||
+                error?.message ||
+                'Failed to load Jersey City related deal insights.';
+            enrichmentRelatedDeals.value = [];
+        } finally {
+            enrichmentRelatedDealsLoading.value = false;
+        }
+    }
+
     async function loadEnrichmentContextData(): Promise<void> {
-        await Promise.all([loadEnrichmentNews(), loadEnrichmentEconomicSignals()]);
+        await Promise.all([
+            loadEnrichmentNews(),
+            loadEnrichmentEconomicSignals(),
+            loadEnrichmentRelatedDeals(),
+        ]);
     }
 
     async function rebuild(): Promise<void> {
-        const STREAM_PROGRESS_TIMEOUT_MS = 45_000;
-        const STREAM_TOTAL_TIMEOUT_MS = 150_000;
+        // Watchdog guardrails for stream stalls.
+        // Keep these intentionally generous so slower MCP event windows
+        // do not prematurely force fallback rebuilds.
+        const STREAM_PROGRESS_TIMEOUT_MS = 90_000;
+        const STREAM_TOTAL_TIMEOUT_MS = 300_000;
         let timeoutPoll: ReturnType<typeof setInterval> | null = null;
         rebuilding.value = true;
         collection.value.status = 'loading';
@@ -2304,12 +2403,17 @@ export function useCollectionWorkspace() {
         peopleAffiliationInsights,
         enrichmentLanguageLoading: computed(() => enrichmentLanguageLoading.value),
         enrichmentLanguageError: computed(() => enrichmentLanguageError.value),
+        enrichmentComparison,
+        keyQuestionEntities,
         enrichmentNews: computed(() => enrichmentNews.value),
         enrichmentNewsLoading: computed(() => enrichmentNewsLoading.value),
         enrichmentNewsError: computed(() => enrichmentNewsError.value),
         enrichmentEconomicSignals: computed(() => enrichmentEconomicSignals.value),
         enrichmentEconomicLoading: computed(() => enrichmentEconomicLoading.value),
         enrichmentEconomicError: computed(() => enrichmentEconomicError.value),
+        enrichmentRelatedDeals: computed(() => enrichmentRelatedDeals.value),
+        enrichmentRelatedDealsLoading: computed(() => enrichmentRelatedDealsLoading.value),
+        enrichmentRelatedDealsError: computed(() => enrichmentRelatedDealsError.value),
         enrichmentWatchlistThemes: computed(() => enrichmentWatchlistThemes.value),
         enrichmentWatchlistLoading: computed(() => enrichmentWatchlistLoading.value),
         enrichmentWatchlistError: computed(() => enrichmentWatchlistError.value),

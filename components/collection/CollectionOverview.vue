@@ -17,26 +17,40 @@
 
         <v-card v-if="showPipelinePanel" class="pipeline-card" variant="flat">
             <v-card-text class="py-3">
-                <button
-                    type="button"
-                    class="pipeline-toggle w-100 d-flex align-center justify-space-between"
-                    @click="pipelineExpanded = !pipelineExpanded"
-                >
-                    <div
-                        class="text-caption text-medium-emphasis font-weight-medium text-uppercase"
+                <div class="pipeline-toolbar">
+                    <button
+                        type="button"
+                        class="pipeline-toggle d-flex align-center justify-space-between"
+                        @click="pipelineExpanded = !pipelineExpanded"
                     >
-                        Graph Reconstruction Pipeline
-                        <span
-                            v-if="!rebuilding && pipelineTotalDurationMs > 0"
-                            class="ml-2 text-caption text-disabled"
+                        <div
+                            class="text-caption text-medium-emphasis font-weight-medium text-uppercase"
                         >
-                            ({{ formatDuration(pipelineTotalDurationMs) }} total)
-                        </span>
-                    </div>
-                    <v-icon size="18" color="medium-emphasis">
-                        {{ pipelineExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
-                    </v-icon>
-                </button>
+                            Graph Reconstruction Pipeline
+                            <span
+                                v-if="!rebuilding && pipelineTotalDurationMs > 0"
+                                class="ml-2 text-caption text-disabled"
+                            >
+                                ({{ formatDuration(pipelineTotalDurationMs) }} total)
+                            </span>
+                        </div>
+                        <v-icon size="18" color="medium-emphasis">
+                            {{ pipelineExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
+                        </v-icon>
+                    </button>
+                    <v-btn
+                        v-if="isReady"
+                        size="x-small"
+                        variant="tonal"
+                        color="primary"
+                        prepend-icon="mdi-refresh"
+                        :loading="rebuilding"
+                        :disabled="rebuilding"
+                        @click="handleReloadGraph"
+                    >
+                        Reload Graph
+                    </v-btn>
+                </div>
                 <v-expand-transition>
                     <div v-if="pipelineExpanded" class="pt-2">
                         <SummaryAgentSteps :steps="rebuildSteps" />
@@ -131,6 +145,13 @@
         return /^\d{16,24}$/.test(value.trim());
     }
 
+    function isWeakAnchorLabel(value: string | null | undefined): boolean {
+        const text = String(value ?? '').trim();
+        if (!text) return true;
+        if (isNeidLike(text)) return true;
+        return /^\d{3,6}-\d{3,6}$/.test(text);
+    }
+
     function entityDisplayName(entity?: {
         name?: string;
         properties?: Record<string, unknown>;
@@ -162,7 +183,16 @@
         const bond = entities.value.find(
             (entity) => normalizeNeid(entity.neid) === normalizeNeid(MUNICIPAL_BOND_NEID)
         );
-        return entityDisplayName(bond);
+        const bondLabel = entityDisplayName(bond);
+        if (!isWeakAnchorLabel(bondLabel)) return bondLabel;
+        const bestNamedAnchor = entities.value
+            .filter((entity) =>
+                ['financial_instrument', 'fund_account', 'organization'].includes(entity.flavor)
+            )
+            .sort((a, b) => b.sourceDocuments.length - a.sourceDocuments.length)
+            .map((entity) => entityDisplayName(entity))
+            .find((label) => !isWeakAnchorLabel(label));
+        return bestNamedAnchor || 'the financing transaction at the center of this collection';
     });
 
     const narrativeParagraphs = computed(() => {
@@ -228,6 +258,10 @@
     async function handleRunAnalysis() {
         if (rebuilding.value) return;
         await rebuild();
+    }
+
+    async function handleReloadGraph() {
+        await handleRunAnalysis();
     }
 
     async function handlePrimaryAction() {
@@ -305,6 +339,13 @@
         background: transparent;
         text-align: left;
         cursor: pointer;
+        flex: 1;
+    }
+
+    .pipeline-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
 
     .overview-strip {

@@ -13,6 +13,13 @@ function isNeidLike(value: string): boolean {
     return /^\d{16,24}$/.test(value.trim());
 }
 
+function isWeakAnchorLabel(value: string | null | undefined): boolean {
+    const text = String(value ?? '').trim();
+    if (!text) return true;
+    if (isNeidLike(text)) return true;
+    return /^\d{3,6}-\d{3,6}$/.test(text);
+}
+
 function entityDisplayName(entity?: EntityRecord): string | null {
     if (!entity) return null;
     const direct = String(entity.name ?? '').trim();
@@ -96,8 +103,25 @@ export default defineEventHandler(async () => {
     const targetBond = entities.find(
         (entity) => normalizeNeid(entity.neid) === normalizeNeid(MUNICIPAL_BOND_NEID)
     );
-    const municipalBondLabel =
-        entityDisplayName(targetBond) ?? 'the municipal bond at the center of this transaction';
+    const dealAmount = '$142M';
+    const projectName = 'Presidential Plaza at Newport';
+    const financingType = 'municipal bond financing';
+    const issuerLabel =
+        entities.find((entity) =>
+            entity.name.includes('New Jersey Housing and Mortgage Finance Agency')
+        )?.name ?? 'New Jersey Housing and Mortgage Finance Agency';
+    const bestNamedAnchor =
+        entities
+            .filter((entity) =>
+                ['financial_instrument', 'fund_account', 'organization'].includes(entity.flavor)
+            )
+            .sort((a, b) => b.sourceDocuments.length - a.sourceDocuments.length)
+            .map((entity) => entityDisplayName(entity))
+            .find((label) => !isWeakAnchorLabel(label)) ?? null;
+    const targetBondLabel = entityDisplayName(targetBond);
+    const municipalBondLabel = !isWeakAnchorLabel(targetBondLabel)
+        ? targetBondLabel!
+        : (bestNamedAnchor ?? 'the financing transaction at the center of this collection');
     const documentTitles = documents
         .map((doc) => doc.title)
         .filter(Boolean)
@@ -119,7 +143,7 @@ export default defineEventHandler(async () => {
     } produced ${entities.length} entities and ${events.length} events. ${topEntityLine(entities)} ${topEventLine(events)}`;
     const fallbackNarrative = [
         `${meta.name} is a corpus of ${documents.length} source documents describing the same financing transaction and related parties.`,
-        `The corpus centers on ${municipalBondLabel}, so the documents should be read as one municipal bond financing story.`,
+        `The corpus centers on ${projectName}, a ${dealAmount} ${financingType} involving ${issuerLabel} and ${municipalBondLabel}.`,
         kindSummary
             ? `The documents mostly cover ${kindSummary}, and they read as one connected deal story rather than unrelated topics.`
             : `The documents read as one connected deal story rather than unrelated topics.`,
@@ -156,6 +180,10 @@ export default defineEventHandler(async () => {
                 `Description: ${meta.description || 'N/A'}`,
                 `Documents: ${documents.length}, Entities: ${entities.length}, Events: ${events.length}, Relationships: ${meta.relationshipCount}`,
                 `Agreements: ${meta.agreementCount}`,
+                `Deal amount: ${dealAmount}`,
+                `Project name: ${projectName}`,
+                `Financing type: ${financingType}`,
+                `Issuer: ${issuerLabel}`,
                 `Document titles sample: ${documentTitles || 'N/A'}`,
                 `Document type mix: ${kindSummary || 'N/A'}`,
                 `Entity mix: ${flavorSummary || 'N/A'}`,
@@ -163,7 +191,7 @@ export default defineEventHandler(async () => {
                 `Municipal bond anchor name: ${municipalBondLabel}`,
                 topEntityLine(entities),
                 topEventLine(events),
-                'Tone requirements: plain English, explain corpus meaning, explicitly mention the municipal bond anchor by name, never include NEID identifiers, do not describe ingestion/extraction process, no backend/tool references.',
+                'Tone requirements: plain English, explain corpus meaning, explicitly mention the financing anchor by name when it is human-readable, never include NEID identifiers or raw matter numbers, do not describe ingestion/extraction process, no backend/tool references.',
             ].join('\n'),
             temperature: 0.3,
             maxOutputTokens: 520,

@@ -380,10 +380,6 @@
             setTab('timeline');
             return;
         }
-        if (categoryId === 'agreements') {
-            setTab('agreements');
-            return;
-        }
         if (categoryId === 'evidence') {
             setTab('validation');
             return;

@@ -1,16 +1,32 @@
-import { BNY_DOCUMENTS, emptyCollectionState, type CollectionState } from '~/utils/collectionTypes';
-
-let cachedState: CollectionState | null = null;
+import { emptyCollectionState, type CollectionState } from '~/utils/collectionTypes';
+import {
+    getInMemoryCollectionCache,
+    readCollectionCache,
+    writeCollectionCache,
+} from '~/server/utils/collectionCache';
 
 export function getCachedCollection(): CollectionState | null {
-    return cachedState;
+    return getInMemoryCollectionCache();
 }
 
-export function setCachedCollection(state: CollectionState): void {
-    cachedState = state;
+export async function setCachedCollection(state: CollectionState): Promise<CollectionState> {
+    return writeCollectionCache(state);
 }
 
-export default defineEventHandler((): CollectionState => {
-    if (cachedState) return cachedState;
-    return emptyCollectionState();
+export default defineEventHandler(async (): Promise<CollectionState> => {
+    const memoryState = getInMemoryCollectionCache();
+    if (memoryState) return memoryState;
+
+    const cached = await readCollectionCache();
+    if (cached.state) return cached.state;
+
+    const emptyState = emptyCollectionState();
+    return {
+        ...emptyState,
+        meta: {
+            ...emptyState.meta,
+            cacheSource: 'none',
+            cacheVersion: cached.cacheVersion,
+        },
+    };
 });

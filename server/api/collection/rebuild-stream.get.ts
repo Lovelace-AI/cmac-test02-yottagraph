@@ -7,6 +7,7 @@ import {
     seedKeyFromNameAndFlavor,
     citationToDocumentNeid,
 } from '~/server/utils/extractedSeedGraph';
+import { loadQuadOneHopAuditCounts } from '~/server/utils/quadSeedGraph';
 import { runEnrichmentExpansion } from '~/server/utils/enrichmentExpand';
 import {
     BNY_DOCUMENTS,
@@ -234,6 +235,10 @@ function formatMs(ms: number): string {
     return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function formatCount(value: number): string {
+    return value.toLocaleString();
+}
+
 export default defineEventHandler(async (event) => {
     setResponseHeaders(event, {
         'Content-Type': 'text/event-stream',
@@ -268,6 +273,7 @@ export default defineEventHandler(async (event) => {
     resetMcpSession();
 
     let seed: ReturnType<typeof loadExtractedSeedGraph>;
+    const auditCounts = loadQuadOneHopAuditCounts();
     const seedHints = loadSeedGraphHints();
     const documentRootNeids =
         seedHints.documentNeids.length > 0
@@ -296,14 +302,9 @@ export default defineEventHandler(async (event) => {
             seed.entities.filter((entity) => countRecordProperties(entity) > 0).length +
             seed.events.filter((eventItem) => countRecordProperties(eventItem) > 0).length;
 
-        // ─── Phase 1: Load extracted JSON baseline ────────────────────
+        // ─── Phase 1: Load document graph baseline ────────────────────
         t0 = Date.now();
-        sendStep(
-            1,
-            'working',
-            'Baseline Load',
-            'Loading extracted entity/event baseline from JSON...'
-        );
+        sendStep(1, 'working', 'Loading Document Graph', 'Loading document graph...');
 
         for (const seedEntity of seed.entities) {
             const seededDocs = [
@@ -365,15 +366,15 @@ export default defineEventHandler(async (event) => {
         sendStep(
             1,
             'completed',
-            'Baseline Load',
-            `Loaded ${entityByKey.size} entities and ${eventByKey.size} events extractions from documents`,
+            'Loading Document Graph',
+            `Loaded ${formatCount(entityByKey.size)} entities and ${formatCount(eventByKey.size)} events from documents.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
-        // ─── Phase 2: Resolve seeded entities to NEIDs via docs ───────
+        // ─── Phase 2: Validate seeded entities against live graph ─────
         t0 = Date.now();
-        sendStep(2, 'working', 'Loading Entities', 'Loading entities from source documents...');
+        sendStep(2, 'working', 'Validating Graph Entities', 'Validating graph entities...');
 
         const unresolvedFlavors = HOP1_FLAVORS.filter((flavor) =>
             Array.from(entityByKey.values()).some(
@@ -385,6 +386,7 @@ export default defineEventHandler(async (event) => {
         );
         let phase2Resolved = 0;
         let phase2Rows = 0;
+        let phase2ProcessedTasks = 0;
         if (phase1Tasks.length > 0) {
             await pMap(
                 phase1Tasks,
@@ -443,6 +445,19 @@ export default defineEventHandler(async (event) => {
                             `Phase 2 resolve failed doc=${docNeid} flavor=${flavor}:`,
                             error?.message
                         );
+                    } finally {
+                        phase2ProcessedTasks += 1;
+                        if (
+                            phase2ProcessedTasks === phase1Tasks.length ||
+                            phase2ProcessedTasks % 4 === 0
+                        ) {
+                            sendStep(
+                                2,
+                                'working',
+                                'Validating Graph Entities',
+                                `Validated ${phase2Resolved} entity matches across ${phase2ProcessedTasks}/${phase1Tasks.length} live graph lookups...`
+                            );
+                        }
                     }
                 },
                 8
@@ -455,17 +470,17 @@ export default defineEventHandler(async (event) => {
         sendStep(
             2,
             'completed',
-            'Loading Entities',
+            'Validating Graph Entities',
             phase1Tasks.length > 0
-                ? 'Entities loaded and validated.'
-                : 'Entities loaded from seeded canonical NEIDs.',
+                ? `Validated ${formatCount(phase2Resolved)} entity matches across ${formatCount(phase1Tasks.length)} live graph lookups.`
+                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers already attached to the document graph. Full entity refresh runs in Loading Property History.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
         // ─── Phase 3: Seeded event enrichment ──────────────────────────
         t0 = Date.now();
-        sendStep(3, 'working', 'Loading Events', 'Loading events and participant links...');
+        sendStep(3, 'working', 'Loading Document Events', 'Loading document events...');
 
         const getEntityByNeid = (neid: string) =>
             Array.from(entityByKey.values()).find((entity) => entity.neid === neid);
@@ -479,10 +494,29 @@ export default defineEventHandler(async (event) => {
             .filter((hubNeid, idx, arr) => arr.indexOf(hubNeid) === idx);
         let phase3MatchedEvents = 0;
         let phase3ReturnedEvents = 0;
+        let phase3ProcessedHubs = 0;
+        let phase3ProcessedEvents = 0;
+        const activeHubLabels = new Set<string>();
+        const activeHubSummary = () => {
+            const labels = Array.from(activeHubLabels);
+            if (!labels.length) return '';
+            const preview = labels.slice(0, 3).join(', ');
+            return labels.length > 3
+                ? ` Active: ${preview}, +${labels.length - 3} more.`
+                : ` Active: ${preview}.`;
+        };
 
         await pMap(
             strictEventHubNeids,
             async (hubNeid) => {
+                const hubLabel = getEntityByNeid(hubNeid)?.name || hubNeid;
+                activeHubLabels.add(hubLabel);
+                sendStep(
+                    3,
+                    'working',
+                    'Loading Document Events',
+                    `Starting ${hubLabel}. ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete.${activeHubSummary()}`
+                );
                 try {
                     const eventsByNeid = new Map<string, any>();
                     for (const window of EVENT_TIME_WINDOWS) {
@@ -558,6 +592,8 @@ export default defineEventHandler(async (event) => {
                                     .filter((citation): citation is string => Boolean(citation))
                             ),
                         ];
+                        const baselineDocSet =
+                            seedEventDocsByKey.get(eventKey) ?? new Set<string>();
                         const citedDocNeids = [
                             ...new Set(
                                 citations
@@ -565,45 +601,49 @@ export default defineEventHandler(async (event) => {
                                     .filter((neid): neid is string => Boolean(neid))
                             ),
                         ];
+                        const baselineDocNeids = Array.from(baselineDocSet.values()).map(
+                            (docNeid) => normalizeNeid(docNeid)
+                        );
                         let appearsInDocNeids: string[] = [];
-                        try {
-                            const eventDocResult = await callToolWithRetry<any>(
-                                'elemental_get_related',
-                                {
-                                    entity_id: { id_type: 'neid', id: eventNeid },
-                                    related_flavor: 'document',
-                                    direction: 'both',
-                                    limit: 100,
-                                },
-                                { timeoutMs: 30_000, attempts: 1 }
-                            );
-                            const rows = eventDocResult?.relationships ?? [];
-                            appearsInDocNeids = [
-                                ...new Set(
-                                    rows
-                                        .map((row: any) => {
-                                            if (row?.neid) return normalizeNeid(String(row.neid));
-                                            return bnyDocumentNeidFromDocumentName(row?.name);
-                                        })
-                                        .filter((neid: string | undefined): neid is string =>
-                                            Boolean(neid)
-                                        )
-                                ),
-                            ];
-                        } catch {
-                            appearsInDocNeids = [];
+                        if (citedDocNeids.length === 0 && baselineDocNeids.length === 0) {
+                            try {
+                                const eventDocResult = await callToolWithRetry<any>(
+                                    'elemental_get_related',
+                                    {
+                                        entity_id: { id_type: 'neid', id: eventNeid },
+                                        related_flavor: 'document',
+                                        direction: 'both',
+                                        limit: 100,
+                                    },
+                                    { timeoutMs: 12_000, attempts: 1 }
+                                );
+                                const rows = eventDocResult?.relationships ?? [];
+                                appearsInDocNeids = [
+                                    ...new Set(
+                                        rows
+                                            .map((row: any) => {
+                                                if (row?.neid)
+                                                    return normalizeNeid(String(row.neid));
+                                                return bnyDocumentNeidFromDocumentName(row?.name);
+                                            })
+                                            .filter((neid: string | undefined): neid is string =>
+                                                Boolean(neid)
+                                            )
+                                    ),
+                                ];
+                            } catch {
+                                appearsInDocNeids = [];
+                            }
                         }
                         const docNeids = [
                             ...new Set(
-                                [...citedDocNeids, ...appearsInDocNeids].map((neid) =>
-                                    normalizeNeid(neid)
+                                [...baselineDocNeids, ...citedDocNeids, ...appearsInDocNeids].map(
+                                    (neid) => normalizeNeid(neid)
                                 )
                             ),
                         ].filter((docNeid) => isStrictDocumentNeid(docNeid));
                         const hasStrictDocumentEvidence = docNeids.length > 0;
                         if (!hasStrictDocumentEvidence) continue;
-                        const baselineDocSet =
-                            seedEventDocsByKey.get(eventKey) ?? new Set<string>();
                         for (const docNeid of docNeids) {
                             if (!seededEvent.sourceDocuments.includes(docNeid)) {
                                 seededEvent.sourceDocuments.push(docNeid);
@@ -660,12 +700,35 @@ export default defineEventHandler(async (event) => {
                                 mcpOnly: true,
                             });
                         }
+                        phase3ProcessedEvents += 1;
+                        if (phase3ProcessedEvents % 10 === 0) {
+                            sendStep(
+                                3,
+                                'working',
+                                'Loading Document Events',
+                                `Processing ${hubLabel}... ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete, kept ${formatCount(phase3ProcessedEvents)} document-backed events so far.${activeHubSummary()}`
+                            );
+                        }
                     }
                 } catch (error: any) {
                     console.error(
                         `Phase 3 event enrichment failed hub=${hubNeid}:`,
                         error?.message
                     );
+                } finally {
+                    activeHubLabels.delete(hubLabel);
+                    phase3ProcessedHubs += 1;
+                    if (
+                        phase3ProcessedHubs === strictEventHubNeids.length ||
+                        phase3ProcessedHubs % 2 === 0
+                    ) {
+                        sendStep(
+                            3,
+                            'working',
+                            'Loading Document Events',
+                            `Completed ${hubLabel}. ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete, reviewed ${formatCount(phase3ReturnedEvents)} graph events, kept ${formatCount(phase3ProcessedEvents)} document-backed events so far.${activeHubSummary()}`
+                        );
+                    }
                 }
             },
             4
@@ -677,20 +740,15 @@ export default defineEventHandler(async (event) => {
         sendStep(
             3,
             'completed',
-            'Loading Events',
-            'Events loaded and linked to participants/documents.',
+            'Loading Document Events',
+            `Loaded ${formatCount(eventByKey.size)} document-backed events and linked them to participants and documents.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
         // ─── Phase 4: Relationship assembly ────────────────────────────
         t0 = Date.now();
-        sendStep(
-            4,
-            'working',
-            'Loading Relationships',
-            'Building document links, participant links, and extracted baseline edges...'
-        );
+        sendStep(4, 'working', 'Linking Graph', 'Linking graph...');
 
         // Add extracted baseline appears_in edges for entities/events.
         for (const [key, entity] of entityByKey.entries()) {
@@ -767,20 +825,15 @@ export default defineEventHandler(async (event) => {
         sendStep(
             4,
             'completed',
-            'Loading Relationships',
-            'Relationships loaded from extracted and confirmed graph data.',
+            'Linking Graph',
+            `Built ${formatCount(relationshipMap.size)} document-graph relationships and evidence links.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
         // ─── Phase 5: Property coverage ───────────────────────────────
         t0 = Date.now();
-        sendStep(
-            5,
-            'working',
-            'Loading Properties',
-            `Loading extracted properties and historical series...`
-        );
+        sendStep(5, 'working', 'Loading Property History', 'Loading property history...');
 
         // First, get latest properties for all resolved entity NEIDs so
         // the extracted entity set has broad property coverage.
@@ -896,21 +949,26 @@ export default defineEventHandler(async (event) => {
         sendStep(
             5,
             'completed',
-            'Loading Properties',
-            'Properties and history loaded.',
+            'Loading Property History',
+            `Loaded ${formatCount(propertySeries.length)} historical property series.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
         // ─── Phase 6: Finalize ───────────────────────────────────────
         t0 = Date.now();
-        sendStep(6, 'working', 'Finalizing', 'Building collection state...');
+        sendStep(
+            6,
+            'working',
+            'Preparing Workspace',
+            'Merging the document graph with curated 1-hop context...'
+        );
 
         const documentEntities = Array.from(entityByKey.values());
         const documentEvents = Array.from(eventByKey.values());
         const enrichmentResult = await runEnrichmentExpansion({
             anchorNeids: documentEntities.map((entity) => entity.neid),
-            hops: 2,
+            hops: 1,
             includeEvents: true,
             maxEntities: 6000,
             maxRelationships: 24000,
@@ -924,6 +982,15 @@ export default defineEventHandler(async (event) => {
         const events = mergeEvents(documentEvents, enrichmentResult.events);
         const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
         const relationships = Array.from(relationshipMap.values());
+        const curatedOneHopEntityCount = entities.filter(
+            (entity) => entity.origin === 'enriched'
+        ).length;
+        const curatedOneHopRelationshipCount = relationships.filter(
+            (relationship) => relationship.origin === 'enriched'
+        ).length;
+        const curatedOneHopEventCount = events.filter(
+            (eventItem) => eventItem.extractedSeed === false
+        ).length;
 
         const state: CollectionState = {
             meta: {
@@ -937,6 +1004,12 @@ export default defineEventHandler(async (event) => {
                 agreementCount: agreements.length,
                 extractedPropertyCount: baselineExtractedPropertyCount,
                 extractedPropertyRecordCount: baselineExtractedPropertyRecordCount,
+                rawOneHopCounts: { ...auditCounts.rawOneHop },
+                curatedOneHopCounts: {
+                    entityCount: curatedOneHopEntityCount,
+                    eventCount: curatedOneHopEventCount,
+                    relationshipCount: curatedOneHopRelationshipCount,
+                },
                 lastRebuilt: new Date().toISOString(),
             },
             documents: [...BNY_DOCUMENTS],
@@ -947,18 +1020,18 @@ export default defineEventHandler(async (event) => {
             status: 'ready',
         };
 
-        setCachedCollection(state);
+        const cachedState = await setCachedCollection(state);
 
         sendStep(
             6,
             'completed',
-            'Finalizing',
+            'Preparing Workspace',
             `Graph complete: ${entities.length} entities, ${events.length} events, ${relationships.length} edges, ${baselineExtractedPropertyCount} extracted baseline properties across ${baselineExtractedPropertyRecordCount} records, ${propertySeries.length} property series`,
             Date.now() - t0
         );
 
         // Send full state and MCP log as final events
-        send('state', { state });
+        send('state', { state: cachedState });
         sendMcpLogSnapshot();
         send('done', {});
     } catch (error: any) {

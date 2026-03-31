@@ -180,7 +180,7 @@ function deriveStatus(state: CollectionState, rebuilding: boolean): OverviewStat
     if (rebuilding || state.status === 'loading') return 'processing';
     if (state.status !== 'ready') return 'pending';
     const hasCore = state.meta.entityCount > 0 && state.meta.relationshipCount > 0;
-    const hasAllModules = hasCore && state.meta.eventCount > 0 && state.meta.agreementCount > 0;
+    const hasAllModules = hasCore && state.meta.eventCount > 0;
     return hasAllModules ? 'complete' : 'partial';
 }
 
@@ -219,8 +219,6 @@ function confidenceLabel(summary: TrustCoverageSummary, status: OverviewStatus):
 function metricForTab(tab: WorkspaceTab, state: CollectionState): string {
     if (tab === 'graph') return `${formatCount(state.meta.entityCount)} mapped entities`;
     if (tab === 'timeline') return `${formatCount(state.meta.eventCount)} extracted events`;
-    if (tab === 'agreements')
-        return `${formatCount(state.meta.agreementCount)} detected agreements`;
     if (tab === 'insights')
         return `${formatCount(state.meta.relationshipCount)} relationship signals`;
     if (tab === 'validation') return `${formatCount(state.meta.documentCount)} source documents`;
@@ -334,13 +332,6 @@ export function mapCollectionToOverviewViewModel(params: {
                 tone: state.meta.eventCount ? healthTone : 'warning',
             },
             {
-                label: 'Agreement extraction',
-                value: state.meta.agreementCount
-                    ? `${formatCount(state.meta.agreementCount)} agreements`
-                    : 'Still processing',
-                tone: state.meta.agreementCount ? healthTone : 'warning',
-            },
-            {
                 label: 'Confidence and coverage',
                 value: `${confidence} confidence (${trustCoverageSummary.coverageScore}%)`,
                 tone:
@@ -365,11 +356,6 @@ export function mapCollectionToOverviewViewModel(params: {
                 value: formatCount(state.meta.relationshipCount),
             },
             { key: 'events', label: 'Events', value: formatCount(state.meta.eventCount) },
-            {
-                key: 'agreements',
-                label: 'Agreements',
-                value: formatCount(state.meta.agreementCount),
-            },
             { key: 'locations', label: 'Locations', value: formatCount(locationCount) },
         ],
         documents: sortDocumentsOldestToNewest(state.documents).map((doc) => ({
@@ -398,15 +384,6 @@ export function mapCollectionToOverviewViewModel(params: {
                 ctaLabel: 'Open timeline',
                 tab: 'timeline',
                 icon: 'mdi-chart-timeline-variant',
-            },
-            {
-                key: 'agreements',
-                title: 'Agreements',
-                description: 'Review obligations, counterparties, and legal structure links.',
-                metric: metricForTab('agreements', state),
-                ctaLabel: 'Open agreements',
-                tab: 'agreements',
-                icon: 'mdi-file-document-outline',
             },
             {
                 key: 'insights',

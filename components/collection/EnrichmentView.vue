@@ -1,103 +1,221 @@
 <template>
     <div class="enrichment-layout d-flex flex-column ga-3">
         <v-tabs v-model="activeSubtab" density="compact" color="primary" class="mb-1">
-            <v-tab value="entities">
-                <v-icon start size="small">mdi-shape-outline</v-icon>
-                Enriched Entities
+            <v-tab value="comparison">
+                <v-icon start size="small">mdi-scale-balance</v-icon>
+                Document vs 1-Hop
             </v-tab>
             <v-tab value="graph">
                 <v-icon start size="small">mdi-graph-outline</v-icon>
-                Graph
+                Curated Graph
             </v-tab>
             <v-tab value="lineage">
                 <v-icon start size="small">mdi-source-branch</v-icon>
-                Lineage
+                Corporate Lineage
             </v-tab>
-            <v-tab value="news">
+            <v-tab value="press">
                 <v-icon start size="small">mdi-newspaper-variant-outline</v-icon>
-                News
+                Related Press
             </v-tab>
-            <v-tab value="economics">
-                <v-icon start size="small">mdi-chart-line</v-icon>
-                Micro / Macro
-            </v-tab>
-            <v-tab value="setup">
-                <v-icon start size="small">mdi-tune-variant</v-icon>
-                Settings
+            <v-tab value="deals">
+                <v-icon start size="small">mdi-bank-transfer</v-icon>
+                Jersey City Deals
             </v-tab>
         </v-tabs>
 
         <v-window v-model="activeSubtab">
-            <v-window-item value="entities">
-                <v-card>
+            <v-window-item value="comparison">
+                <v-row>
+                    <v-col cols="12" md="4">
+                        <v-card>
+                            <v-card-item>
+                                <v-card-title class="text-body-2">Document Truth</v-card-title>
+                            </v-card-item>
+                            <v-card-text>
+                                <div class="metric-row">
+                                    <span>Entities</span>
+                                    <strong>{{ enrichmentComparison.document.entityCount }}</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Events</span>
+                                    <strong>{{ enrichmentComparison.document.eventCount }}</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Relationships</span>
+                                    <strong>{{
+                                        enrichmentComparison.document.relationshipCount
+                                    }}</strong>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                    <v-col cols="12" md="4">
+                        <v-card>
+                            <v-card-item>
+                                <v-card-title class="text-body-2">1-Hop Context</v-card-title>
+                            </v-card-item>
+                            <v-card-text>
+                                <div class="metric-row">
+                                    <span>Added entities</span>
+                                    <strong>{{
+                                        formatNumber(enrichmentComparison.oneHopContext.entityCount)
+                                    }}</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Added events</span>
+                                    <strong>{{
+                                        formatNumber(enrichmentComparison.oneHopContext.eventCount)
+                                    }}</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Added relationships</span>
+                                    <strong>{{
+                                        formatNumber(
+                                            enrichmentComparison.oneHopContext.relationshipCount
+                                        )
+                                    }}</strong>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                    <v-col cols="12" md="4">
+                        <v-card>
+                            <v-card-item>
+                                <v-card-title class="text-body-2">2-Hop Reference</v-card-title>
+                            </v-card-item>
+                            <v-card-text>
+                                <div class="metric-row">
+                                    <span>Outside nodes @ 1-hop</span>
+                                    <strong>{{
+                                        formatNumber(
+                                            enrichmentComparison.twoHopReference
+                                                .oneHopOutsideNodeCount
+                                        )
+                                    }}</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Additional nodes @ 2-hop</span>
+                                    <strong>{{
+                                        formatNumber(
+                                            enrichmentComparison.twoHopReference
+                                                .additionalOutsideNodeCount
+                                        )
+                                    }}</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Total outside nodes @ 2-hop</span>
+                                    <strong>{{
+                                        formatNumber(
+                                            enrichmentComparison.twoHopReference
+                                                .totalOutsideNodeCount
+                                        )
+                                    }}</strong>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                </v-row>
+                <v-card class="mt-3">
                     <v-card-item>
-                        <v-card-title class="text-body-1">
-                            Context Entities
-                            <v-chip size="x-small" variant="tonal" color="info" class="ml-2">
-                                {{ enrichedEntities.length }}
-                            </v-chip>
+                        <v-card-title class="text-body-2">
+                            Why the curated layer exists
                         </v-card-title>
+                        <template #append>
+                            <v-btn
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                prepend-icon="mdi-robot-outline"
+                                :loading="agentLoading"
+                                @click="requestCurationRecommendations"
+                            >
+                                Agent Recommendation Mode
+                            </v-btn>
+                        </template>
                         <v-card-subtitle>
-                            Full 2-hop context is loaded during analysis; these are the entities
-                            outside strict document extraction.
+                            The app uses a curated 1-hop graph in-product. The 2-hop numbers are
+                            shown only as a reference for how much larger the broader graph would
+                            get.
                         </v-card-subtitle>
                     </v-card-item>
-                    <v-card-text class="pa-0">
-                        <v-data-table
-                            :headers="enrichedHeaders"
-                            :items="enrichedEntities"
-                            :items-per-page="20"
-                            density="compact"
-                            hover
-                            @click:row="(_: any, row: any) => selectEntity(row.item.neid)"
-                        >
-                            <template #item.origin="{ item }">
-                                <v-chip size="x-small" variant="tonal" color="info">
-                                    {{ originLabel(item.origin) }}
-                                </v-chip>
-                            </template>
-                        </v-data-table>
+                    <v-card-text>
+                        <div class="text-caption text-medium-emphasis mb-2">
+                            Key document entities to ask questions about:
+                        </div>
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-chip
+                                v-for="entity in keyQuestionEntities"
+                                :key="entity.neid"
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                class="app-chip-button"
+                                @click="selectEntity(entity.neid)"
+                            >
+                                {{ entity.name }}
+                            </v-chip>
+                        </div>
+                        <v-alert class="mt-3" type="info" variant="tonal" density="compact">
+                            This mode asks the deployed agent to critique the current curation
+                            rules. It does not change rebuild output automatically.
+                        </v-alert>
+                        <v-card v-if="agentResult?.output" class="mt-3" variant="outlined">
+                            <v-card-item>
+                                <v-card-title class="text-body-2">
+                                    Agent curation suggestions
+                                </v-card-title>
+                                <v-card-subtitle>
+                                    Review these suggestions before changing the deterministic
+                                    allowlist/blocklist rules.
+                                </v-card-subtitle>
+                            </v-card-item>
+                            <v-card-text>
+                                <div
+                                    v-if="structuredAgentSections.length"
+                                    class="d-flex flex-column ga-3"
+                                >
+                                    <div
+                                        v-for="section in structuredAgentSections"
+                                        :key="section.key"
+                                    >
+                                        <div class="text-caption text-medium-emphasis mb-1">
+                                            {{ section.label }}
+                                        </div>
+                                        <div class="d-flex flex-column ga-1">
+                                            <div
+                                                v-for="item in section.items"
+                                                :key="`${section.key}:${item}`"
+                                                class="text-body-2"
+                                            >
+                                                {{ item }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-else class="agent-output text-body-2">
+                                    {{ agentResult.output }}
+                                </div>
+                            </v-card-text>
+                        </v-card>
                     </v-card-text>
                 </v-card>
             </v-window-item>
 
             <v-window-item value="graph">
-                <v-card class="mb-3">
-                    <v-card-text class="d-flex align-center justify-space-between flex-wrap ga-3">
-                        <div class="d-flex align-center ga-2 flex-wrap">
-                            <v-switch
-                                v-model="showEnrichedEntities"
-                                hide-details
-                                density="compact"
-                                color="info"
-                                label="Show expanded entities"
-                                class="mr-1"
-                            />
-                            <v-switch
-                                v-model="showEnrichedRelationships"
-                                hide-details
-                                density="compact"
-                                color="info"
-                                label="Show expanded relationships"
-                            />
-                        </div>
-                        <div class="text-caption text-medium-emphasis">
-                            {{ graphModeDescription }}
-                        </div>
-                    </v-card-text>
-                </v-card>
-
+                <v-alert type="info" variant="tonal" class="mb-2">
+                    Curated one-hop graph view. Default mode is clustered/simplified to keep the
+                    expanded context readable.
+                </v-alert>
                 <GraphWorkspace
-                    :entities-override="activeGraphEntities"
-                    :relationships-override="activeGraphRelationships"
-                    :show-enriched-entities="showEnrichedEntities"
-                    :show-enriched-relationships="showEnrichedRelationships"
+                    :entities-override="enrichmentExpandedGraphEntities"
+                    :relationships-override="enrichmentExpandedGraphRelationships"
+                    :initial-analysis-mode="'simplified'"
                 />
             </v-window-item>
 
             <v-window-item value="lineage">
                 <v-alert v-if="lineageInsights.length === 0" type="info" variant="tonal">
-                    No lineage insights found in current enriched graph.
+                    No lineage insights found in the curated one-hop graph.
                 </v-alert>
                 <div v-else class="d-flex flex-column ga-3">
                     <v-card v-for="insight in lineageInsights" :key="insight.id">
@@ -107,9 +225,6 @@
                         </v-card-item>
                         <v-card-text>
                             <div class="text-body-2 mb-2">{{ insight.plainSummary }}</div>
-                            <div class="text-caption text-medium-emphasis mb-2">
-                                {{ insight.documentContext }}
-                            </div>
                             <div class="d-flex flex-wrap ga-1">
                                 <v-chip
                                     v-for="line in insight.evidence.slice(0, 3)"
@@ -126,9 +241,14 @@
                 </div>
             </v-window-item>
 
-            <v-window-item value="news">
-                <v-alert v-if="enrichmentNewsLoading" type="info" variant="tonal" class="mb-3">
-                    Loading entity-linked news context...
+            <v-window-item value="press">
+                <v-alert
+                    v-if="enrichmentNewsLoading || enrichmentEconomicLoading"
+                    type="info"
+                    variant="tonal"
+                    class="mb-3"
+                >
+                    Loading related press context...
                 </v-alert>
                 <v-alert v-else-if="enrichmentNewsError" type="error" variant="tonal" class="mb-3">
                     {{ enrichmentNewsError }}
@@ -139,22 +259,21 @@
                     variant="tonal"
                     class="mb-3"
                 >
-                    No recent platform events/news were returned for enriched entities.
+                    No related press/news items found for enriched entities.
                 </v-alert>
-
                 <div v-else class="d-flex flex-column ga-3">
-                    <v-card v-for="group in enrichmentNews" :key="group.anchorNeid">
+                    <v-card v-for="group in enrichmentNews.slice(0, 6)" :key="group.anchorNeid">
                         <v-card-item>
                             <v-card-title class="text-body-2">
                                 {{ resolveEntityName(group.anchorNeid) }}
                             </v-card-title>
                             <v-card-subtitle>
-                                {{ group.items.length }} recent related event-driven news items
+                                {{ group.items.length }} related press/event items
                             </v-card-subtitle>
                         </v-card-item>
                         <v-card-text class="d-flex flex-column ga-2">
                             <v-card
-                                v-for="item in group.items.slice(0, 6)"
+                                v-for="item in group.items.slice(0, 4)"
                                 :key="item.eventNeid"
                                 variant="outlined"
                             >
@@ -167,25 +286,8 @@
                                         <span v-if="item.category"> • {{ item.category }}</span>
                                     </v-card-subtitle>
                                 </v-card-item>
-                                <v-card-text>
-                                    <div class="text-body-2 mb-2">
-                                        {{
-                                            truncate(
-                                                item.description || 'No summary available.',
-                                                260
-                                            )
-                                        }}
-                                    </div>
-                                    <div class="d-flex flex-wrap ga-1">
-                                        <v-chip
-                                            v-for="entityName in item.linkedEntityNames.slice(0, 4)"
-                                            :key="`${item.eventNeid}:${entityName}`"
-                                            size="x-small"
-                                            variant="tonal"
-                                        >
-                                            {{ entityName }}
-                                        </v-chip>
-                                    </div>
+                                <v-card-text class="text-body-2">
+                                    {{ truncate(item.description || 'No summary available.', 240) }}
                                 </v-card-text>
                             </v-card>
                         </v-card-text>
@@ -193,135 +295,66 @@
                 </div>
             </v-window-item>
 
-            <v-window-item value="economics">
-                <v-alert v-if="enrichmentEconomicLoading" type="info" variant="tonal" class="mb-3">
-                    Loading micro and macroeconomic context...
+            <v-window-item value="deals">
+                <v-alert
+                    v-if="enrichmentRelatedDealsLoading"
+                    type="info"
+                    variant="tonal"
+                    class="mb-3"
+                >
+                    Loading Jersey City related deals and CUSIP context...
                 </v-alert>
                 <v-alert
-                    v-else-if="enrichmentEconomicError"
+                    v-else-if="enrichmentRelatedDealsError"
                     type="error"
                     variant="tonal"
                     class="mb-3"
                 >
-                    {{ enrichmentEconomicError }}
+                    {{ enrichmentRelatedDealsError }}
                 </v-alert>
-
-                <v-row>
-                    <v-col cols="12" md="6">
-                        <v-card>
-                            <v-card-item>
-                                <v-card-title class="text-body-2">Micro Signals</v-card-title>
-                                <v-card-subtitle>
-                                    Entity-linked operational and deal-level context.
-                                </v-card-subtitle>
-                            </v-card-item>
-                            <v-card-text class="d-flex flex-column ga-2">
-                                <v-alert
-                                    v-if="!enrichmentEconomicSignals.micro.length"
-                                    type="info"
-                                    variant="tonal"
-                                >
-                                    No micro signals returned.
-                                </v-alert>
-                                <v-card
-                                    v-for="signal in enrichmentEconomicSignals.micro.slice(0, 10)"
-                                    :key="signal.eventNeid"
-                                    variant="outlined"
-                                >
-                                    <v-card-item>
-                                        <v-card-title class="text-body-2">{{
-                                            signal.title
-                                        }}</v-card-title>
-                                        <v-card-subtitle>
-                                            {{ signal.date || 'Date unavailable' }}
-                                            <span v-if="signal.category">
-                                                • {{ signal.category }}
-                                            </span>
-                                        </v-card-subtitle>
-                                    </v-card-item>
-                                </v-card>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                    <v-col cols="12" md="6">
-                        <v-card>
-                            <v-card-item>
-                                <v-card-title class="text-body-2">Macro Signals</v-card-title>
-                                <v-card-subtitle>
-                                    Broader macro context from live platform graph events.
-                                </v-card-subtitle>
-                            </v-card-item>
-                            <v-card-text class="d-flex flex-column ga-2">
-                                <v-alert
-                                    v-if="!enrichmentEconomicSignals.macro.length"
-                                    type="info"
-                                    variant="tonal"
-                                >
-                                    No macro signals returned.
-                                </v-alert>
-                                <v-card
-                                    v-for="signal in enrichmentEconomicSignals.macro.slice(0, 10)"
-                                    :key="signal.eventNeid"
-                                    variant="outlined"
-                                >
-                                    <v-card-item>
-                                        <v-card-title class="text-body-2">{{
-                                            signal.title
-                                        }}</v-card-title>
-                                        <v-card-subtitle>
-                                            {{ signal.date || 'Date unavailable' }}
-                                            <span v-if="signal.category">
-                                                • {{ signal.category }}
-                                            </span>
-                                        </v-card-subtitle>
-                                    </v-card-item>
-                                </v-card>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                </v-row>
-            </v-window-item>
-
-            <v-window-item value="setup">
-                <v-card>
-                    <v-card-item>
-                        <v-card-title class="text-body-1">Expansion Settings</v-card-title>
-                        <v-card-subtitle>
-                            Full 2-hop graph loads during analysis; use this to refresh context on
-                            demand.
-                        </v-card-subtitle>
-                    </v-card-item>
-                    <v-card-text>
-                        <v-radio-group v-model="hopsModel" inline hide-details class="mb-3">
-                            <v-radio label="1-hop (focused)" :value="1" />
-                            <v-radio label="2-hop (broader)" :value="2" />
-                        </v-radio-group>
-                        <v-switch
-                            v-model="includeEventsModel"
-                            color="primary"
-                            hide-details
-                            density="comfortable"
-                            label="Include related events"
-                            class="mb-2"
-                        />
-                        <v-btn
-                            color="primary"
-                            prepend-icon="mdi-arrow-expand-all"
-                            :loading="enriching"
-                            :disabled="!isReady || documentEntities.length === 0"
-                            @click="runEnrichment"
-                        >
-                            Refresh Context
-                        </v-btn>
-                        <div
-                            v-if="enrichmentLastRun"
-                            class="text-caption text-medium-emphasis mt-3"
-                        >
-                            Last run: {{ enrichmentLastRun.anchorNeids.length }} anchors,
-                            {{ enrichmentLastRun.hops }}-hop
-                        </div>
-                    </v-card-text>
-                </v-card>
+                <v-alert
+                    v-else-if="!enrichmentRelatedDeals.length"
+                    type="info"
+                    variant="tonal"
+                    class="mb-3"
+                >
+                    No Jersey City-related deal context was surfaced from current enrichment
+                    anchors.
+                </v-alert>
+                <div v-else class="d-flex flex-column ga-3">
+                    <v-card v-for="deal in enrichmentRelatedDeals" :key="deal.id">
+                        <v-card-item>
+                            <v-card-title class="text-body-2">{{ deal.title }}</v-card-title>
+                            <v-card-subtitle>
+                                {{ deal.eventCount }} relevant events
+                            </v-card-subtitle>
+                        </v-card-item>
+                        <v-card-text>
+                            <div class="text-body-2 mb-2">{{ deal.summary }}</div>
+                            <div v-if="deal.relatedCusips.length" class="mb-2">
+                                <div class="text-caption text-medium-emphasis mb-1">
+                                    Candidate CUSIPs
+                                </div>
+                                <div class="d-flex flex-wrap ga-1">
+                                    <v-chip
+                                        v-for="cusip in deal.relatedCusips"
+                                        :key="`${deal.id}:${cusip}`"
+                                        size="x-small"
+                                        variant="tonal"
+                                        color="info"
+                                    >
+                                        {{ cusip }}
+                                    </v-chip>
+                                </div>
+                            </div>
+                            <div class="text-caption text-medium-emphasis">
+                                <div v-for="line in deal.evidence.slice(0, 3)" :key="line">
+                                    {{ line }}
+                                </div>
+                            </div>
+                        </v-card-text>
+                    </v-card>
+                </div>
             </v-window-item>
         </v-window>
     </div>
@@ -329,89 +362,93 @@
 
 <script setup lang="ts">
     const {
-        documentEntities,
-        enrichedEntities,
-        enriching,
-        isReady,
-        enrich,
         selectEntity,
         resolveEntityName,
-        enrichmentHops,
-        enrichmentIncludeEvents,
-        enrichmentLastRun,
-        hasEnrichmentRun,
-        enrichmentDocumentGraphEntities,
-        enrichmentDocumentGraphRelationships,
-        enrichmentSupersetGraphEntities,
-        enrichmentSupersetGraphRelationships,
+        enrichmentComparison,
+        keyQuestionEntities,
+        agentLoading,
+        agentResult,
+        runAgentAction,
+        enrichmentExpandedGraphEntities,
+        enrichmentExpandedGraphRelationships,
         lineageInsights,
         enrichmentNews,
         enrichmentNewsLoading,
         enrichmentNewsError,
-        enrichmentEconomicSignals,
         enrichmentEconomicLoading,
-        enrichmentEconomicError,
-        setEnrichmentHops,
-        setEnrichmentIncludeEvents,
-        loadEnrichmentContextData,
+        enrichmentRelatedDeals,
+        enrichmentRelatedDealsLoading,
+        enrichmentRelatedDealsError,
     } = useCollectionWorkspace();
 
-    const activeSubtab = ref<'entities' | 'graph' | 'lineage' | 'news' | 'economics' | 'setup'>(
-        'entities'
-    );
-    const showEnrichedEntities = ref(true);
-    const showEnrichedRelationships = ref(true);
+    const activeSubtab = ref<'comparison' | 'graph' | 'lineage' | 'press' | 'deals'>('comparison');
+    const structuredAgentSections = computed(() => {
+        const output = agentResult.value?.output?.trim();
+        if (!output) return [] as Array<{ key: string; label: string; items: string[] }>;
 
-    const hopsModel = computed<1 | 2>({
-        get: () => enrichmentHops.value,
-        set: (hops) => setEnrichmentHops(hops),
-    });
-    const includeEventsModel = computed({
-        get: () => enrichmentIncludeEvents.value,
-        set: (includeEvents: boolean) => setEnrichmentIncludeEvents(includeEvents),
-    });
+        const desiredSections = [
+            { key: 'keep', label: 'Keep' },
+            { key: 'consider adding', label: 'Consider adding' },
+            { key: 'consider removing', label: 'Consider removing' },
+            { key: 'why', label: 'Why' },
+        ];
 
-    const activeGraphEntities = computed(() =>
-        hasEnrichmentRun.value
-            ? enrichmentSupersetGraphEntities.value
-            : enrichmentDocumentGraphEntities.value
-    );
-    const activeGraphRelationships = computed(() =>
-        hasEnrichmentRun.value
-            ? enrichmentSupersetGraphRelationships.value
-            : enrichmentDocumentGraphRelationships.value
-    );
-    const graphModeDescription = computed(() => {
-        if (!hasEnrichmentRun.value) return 'Showing document-only graph.';
-        if (!showEnrichedEntities.value && !showEnrichedRelationships.value) {
-            return 'Expanded graph loaded with additional nodes and links hidden.';
+        const normalizedLines = output
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean);
+        const sectionMap = new Map<string, string[]>();
+        let activeKey: string | null = null;
+
+        for (const line of normalizedLines) {
+            const matchedSection = desiredSections.find((section) =>
+                line.toLowerCase().startsWith(section.key)
+            );
+            if (matchedSection) {
+                activeKey = matchedSection.key;
+                if (!sectionMap.has(activeKey)) sectionMap.set(activeKey, []);
+                const remainder = line
+                    .slice(matchedSection.key.length)
+                    .replace(/^[:\-]\s*/, '')
+                    .trim();
+                if (remainder) sectionMap.get(activeKey)?.push(remainder);
+                continue;
+            }
+
+            const cleaned = line.replace(/^[-*]\s*/, '').trim();
+            if (!cleaned) continue;
+            if (!activeKey) continue;
+            sectionMap.get(activeKey)?.push(cleaned);
         }
-        if (!showEnrichedEntities.value) return 'Added entities hidden.';
-        if (!showEnrichedRelationships.value) return 'Added relationships hidden.';
-        return 'Expanded graph overlays broader platform context.';
+
+        return desiredSections
+            .map((section) => ({
+                key: section.key,
+                label: section.label,
+                items: sectionMap.get(section.key) ?? [],
+            }))
+            .filter((section) => section.items.length > 0);
     });
-
-    const enrichedHeaders = [
-        { title: 'Name', key: 'name', sortable: true },
-        { title: 'Type', key: 'flavor', sortable: true },
-        { title: 'Source', key: 'origin', sortable: false },
-    ];
-
-    async function runEnrichment() {
-        const anchors = documentEntities.value.map((entity) => entity.neid);
-        if (!anchors.length) return;
-        await enrich(anchors, hopsModel.value, includeEventsModel.value);
-        await loadEnrichmentContextData();
-    }
-
-    function originLabel(origin: string): string {
-        if (origin === 'document') return 'Document';
-        if (origin === 'enriched') return 'Context';
-        return 'Agent';
-    }
 
     function truncate(text: string, max: number): string {
         return text.length > max ? `${text.slice(0, max).trimEnd()}...` : text;
+    }
+
+    function formatNumber(value: number): string {
+        return value.toLocaleString();
+    }
+
+    async function requestCurationRecommendations() {
+        const prompt = [
+            'Review the current curated one-hop enrichment strategy for this collection.',
+            `Document graph counts: ${enrichmentComparison.value.document.entityCount} entities, ${enrichmentComparison.value.document.eventCount} events, ${enrichmentComparison.value.document.relationshipCount} relationships.`,
+            `Raw one-hop counts: ${enrichmentComparison.value.rawOneHop.entityCount} entities, ${enrichmentComparison.value.rawOneHop.eventCount} events, ${enrichmentComparison.value.rawOneHop.relationshipCount} relationships.`,
+            `Current curated additions: ${enrichmentComparison.value.netAdditions.entityCount} entities, ${enrichmentComparison.value.netAdditions.eventCount} events, ${enrichmentComparison.value.netAdditions.relationshipCount} relationships.`,
+            `Key document entities: ${keyQuestionEntities.value.map((entity) => entity.name).join(', ') || 'none'}.`,
+            'Recommend specific include/exclude adjustments to node flavors or relationship types that would improve analyst value.',
+            'Do not recommend automatically changing the graph. Separate your answer into: keep, consider adding, consider removing, and why.',
+        ].join(' ');
+        await runAgentAction('recommend_curation_adjustments', { question: prompt });
     }
 </script>
 
@@ -419,5 +456,17 @@
     .enrichment-layout {
         width: min(1180px, 100%);
         margin: 0 auto;
+    }
+
+    .metric-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+    }
+
+    .agent-output {
+        white-space: pre-wrap;
+        line-height: 1.6;
     }
 </style>

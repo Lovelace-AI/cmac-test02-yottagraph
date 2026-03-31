@@ -142,7 +142,7 @@
 
                 <div>
                     <div class="text-subtitle-2 mb-1 panel-subtitle">
-                        Document coverage
+                        Document corpus
                         <v-chip size="x-small" variant="tonal" class="ml-1">
                             {{ selectedEntity.sourceDocuments.length }}
                         </v-chip>
@@ -158,7 +158,19 @@
                         </v-chip>
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
-                        No source document associations for this entity.
+                        <div
+                            v-if="documentCorpusRelationshipLines.length"
+                            class="d-flex flex-column ga-1"
+                        >
+                            <div
+                                v-for="line in documentCorpusRelationshipLines"
+                                :key="line"
+                                class="text-body-2"
+                            >
+                                {{ line }}
+                            </div>
+                        </div>
+                        <div v-else>No source document associations for this entity.</div>
                     </div>
                 </div>
 
@@ -194,21 +206,18 @@
                         size="small"
                         variant="tonal"
                         prepend-icon="mdi-brain"
-                        @click="
-                            runAgentAction('explain_entity', { entityNeid: selectedEntity.neid })
-                        "
+                        :loading="agentLoading"
+                        @click="runExplainEntity"
                     >
                         Explain
                     </v-btn>
-                    <v-btn
-                        size="small"
-                        variant="tonal"
-                        prepend-icon="mdi-arrow-expand-all"
-                        @click="enrich([selectedEntity.neid], 1)"
-                    >
-                        Expand 1-hop
-                    </v-btn>
                 </div>
+                <v-card v-if="entityExplainOutput" variant="outlined" class="panel-section-card">
+                    <v-card-text class="py-2 px-3">
+                        <div class="text-caption text-medium-emphasis mb-1">Explanation</div>
+                        <div class="text-body-2 explain-output">{{ entityExplainOutput }}</div>
+                    </v-card-text>
+                </v-card>
             </section>
 
             <section v-else-if="activeTab === 'relationships'" class="d-flex flex-column ga-3">
@@ -448,10 +457,13 @@
         selectedEntityRelationships,
         selectedEntityEvents,
         selectedEntityPropertySeries,
+        documentEntities,
+        documentEvents,
         selectEntity,
         resolveEntityName,
+        agentLoading,
+        agentResult,
         runAgentAction,
-        enrich,
     } = useCollectionWorkspace();
 
     const activeTab = ref<PanelTab>('properties');
@@ -573,6 +585,7 @@
     const entitySubtype = computed(() =>
         readPropertyText('entity_subtype', 'subtype', 'agreement_subtype', 'organization_type')
     );
+    const entityExplainOutput = computed(() => agentResult.value?.output?.trim() || null);
     const entityDescription = computed(() =>
         readPropertyText('description', 'entity_description', 'summary', 'notes')
     );
@@ -633,6 +646,34 @@
             })
             .slice(0, 12)
     );
+    const documentEntityNeidSet = computed(
+        () => new Set(documentEntities.value.map((e) => e.neid))
+    );
+    const documentEventNeidSet = computed(() => new Set(documentEvents.value.map((e) => e.neid)));
+    const documentCorpusRelationshipLines = computed(() => {
+        if (!selectedEntity.value) return [] as string[];
+        const lines: string[] = [];
+        for (const relationship of selectedEntityRelationships.value) {
+            const otherNeid =
+                relationship.sourceNeid === selectedEntity.value.neid
+                    ? relationship.targetNeid
+                    : relationship.sourceNeid;
+            const pointsToDocument = BNY_DOCUMENTS.some((doc) => doc.neid === otherNeid);
+            const pointsToDocumentGraphEntity = documentEntityNeidSet.value.has(otherNeid);
+            const pointsToDocumentGraphEvent = documentEventNeidSet.value.has(otherNeid);
+            if (!pointsToDocument && !pointsToDocumentGraphEntity && !pointsToDocumentGraphEvent) {
+                continue;
+            }
+            const targetLabel = pointsToDocument
+                ? `document ${resolveEntityName(otherNeid)}`
+                : pointsToDocumentGraphEvent
+                  ? `document event ${resolveEntityName(otherNeid)}`
+                  : `document entity ${resolveEntityName(otherNeid)}`;
+            const relType = normalizeRelationshipType(relationship.type);
+            lines.push(`Linked via ${relType} to ${targetLabel}.`);
+        }
+        return Array.from(new Set(lines)).slice(0, 5);
+    });
     const relationshipPeerPreview = computed(() => {
         if (!selectedEntity.value) return [];
         return strongestRelationships.value.slice(0, 6).map((rel) => {
@@ -712,7 +753,7 @@
         const eventCount = selectedEntityEvents.value.length;
         const sourceCount = selectedEntity.value.sourceDocuments.length;
         const flavor = selectedEntity.value.flavor.replace(/_/g, ' ');
-        return `${selectedEntity.value.name} is a ${flavor} connected by ${relCount} relationship${relCount === 1 ? '' : 's'}, participating in ${eventCount} event${eventCount === 1 ? '' : 's'}, and backed by ${sourceCount} source document${sourceCount === 1 ? '' : 's'}.`;
+        return `${selectedEntity.value.name} is a ${flavor} connected by ${formatCount(relCount)} relationship${relCount === 1 ? '' : 's'}, participating in ${formatCount(eventCount)} event${eventCount === 1 ? '' : 's'}, and backed by ${formatCount(sourceCount)} source document${sourceCount === 1 ? '' : 's'}.`;
     });
 
     const sourcesNarrative = computed(() => {
@@ -769,9 +810,17 @@
 
     function formatValue(value: unknown): string {
         if (value === null || value === undefined) return '—';
-        if (Array.isArray(value)) return value.map((item) => String(item)).join(', ');
+        if (typeof value === 'number') return value.toLocaleString();
+        if (Array.isArray(value))
+            return value
+                .map((item) => (typeof item === 'number' ? item.toLocaleString() : String(item)))
+                .join(', ');
         if (typeof value === 'object') return JSON.stringify(value);
         return String(value);
+    }
+
+    function formatCount(value: number): string {
+        return value.toLocaleString();
     }
 
     function readPropertyRaw(...keys: string[]): unknown {
@@ -822,6 +871,30 @@
         const doc = BNY_DOCUMENTS.find((item) => item.neid === citation.neid);
         if (doc) return;
         selectEntity(citation.neid);
+    }
+
+    async function runExplainEntity() {
+        if (!selectedEntity.value) return;
+        const prompt = [
+            `Explain the role of ${selectedEntity.value.name} in this collection.`,
+            `Entity type: ${selectedEntity.value.flavor}.`,
+            `Document corpus links: ${selectedEntity.value.sourceDocuments.map((docNeid) => resolveEntityName(docNeid)).join(', ') || 'none'}.`,
+            `Relationship count: ${selectedEntityRelationships.value.length}.`,
+            `Event count: ${selectedEntityEvents.value.length}.`,
+            `Top relationship counterparties: ${
+                relationshipPeerPreview.value
+                    .map((peer) => peer.name)
+                    .slice(0, 6)
+                    .join(', ') || 'none'
+            }.`,
+            `Document-graph context: ${documentCorpusRelationshipLines.value.join(' ') || 'No additional document-graph linkage summary available.'}`,
+            `Role summary: ${entityRoleSummary.value}`,
+            'Answer using the supplied collection context. Do not ask for more context unless the data above is actually insufficient.',
+        ].join(' ');
+        await runAgentAction('explain_entity', {
+            entityNeid: selectedEntity.value.neid,
+            question: prompt,
+        });
     }
 </script>
 
@@ -908,5 +981,10 @@
     .entity-kicker {
         letter-spacing: 0.06em;
         text-transform: uppercase;
+    }
+
+    .explain-output {
+        white-space: pre-wrap;
+        line-height: 1.6;
     }
 </style>

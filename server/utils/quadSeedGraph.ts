@@ -58,6 +58,19 @@ export interface QuadDerivedNeids {
     propertyBearingNeids: string[];
 }
 
+export interface QuadOneHopAuditCounts {
+    document: {
+        entityCount: number;
+        eventCount: number;
+        relationshipCount: number;
+    };
+    rawOneHop: {
+        entityCount: number;
+        eventCount: number;
+        relationshipCount: number;
+    };
+}
+
 type ParsedNodeRef = {
     flavor: string;
     name: string;
@@ -413,4 +426,21 @@ export function loadQuadDerivedNeids(): QuadDerivedNeids {
         propertyBearingNeids: Array.from(propertyBearingNeids),
     };
     return cachedDerivedNeids;
+}
+
+export function loadQuadOneHopAuditCounts(): QuadOneHopAuditCounts {
+    // Fixed benchmark numbers from the documented CSV audit (2026-03-30).
+    // These provide user-facing transparency for raw 1-hop scale versus curated 1-hop.
+    return {
+        document: {
+            entityCount: 127,
+            eventCount: 56,
+            relationshipCount: 267,
+        },
+        rawOneHop: {
+            entityCount: 90132,
+            eventCount: 6092,
+            relationshipCount: 116841,
+        },
+    };
 }

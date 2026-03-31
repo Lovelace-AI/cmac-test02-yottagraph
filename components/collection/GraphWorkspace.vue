@@ -4,7 +4,7 @@
         <div class="d-flex align-center justify-space-between mb-2 flex-wrap ga-2 graph-toolbar">
             <div class="d-flex align-center ga-2 flex-wrap">
                 <v-chip size="small" variant="tonal" color="success">
-                    {{ displayedDocumentEntityCount }} document-derived
+                    {{ formatNumber(displayedDocumentEntityCount) }} document-derived
                 </v-chip>
                 <v-chip
                     v-if="displayedEnrichedEntityCount"
@@ -12,13 +12,13 @@
                     variant="tonal"
                     color="info"
                 >
-                    {{ displayedEnrichedEntityCount }} enriched
+                    {{ formatNumber(displayedEnrichedEntityCount) }} enriched
                 </v-chip>
                 <v-chip size="small" variant="outlined">
-                    {{ visibleRelationships.length }} links shown
+                    {{ formatNumber(visibleRelationships.length) }} links shown
                 </v-chip>
                 <span class="text-caption text-medium-emphasis">
-                    {{ relationships.length }} total links
+                    {{ formatNumber(relationships.length) }} total links
                 </span>
             </div>
             <div class="d-flex align-center ga-2 flex-wrap justify-end">
@@ -58,6 +58,8 @@
                         <v-select
                             v-model="relationshipTypeFilter"
                             :items="relationshipTypeOptions"
+                            item-title="title"
+                            item-value="value"
                             label="Relationship type"
                             density="compact"
                             variant="outlined"
@@ -219,7 +221,7 @@
                             {{ flavor.replace(/_/g, ' ') }}
                         </span>
                         <span class="text-caption text-medium-emphasis">
-                            {{ localFlavorCounts.get(flavor) ?? 0 }}
+                            {{ formatNumber(localFlavorCounts.get(flavor) ?? 0) }}
                         </span>
                     </button>
 
@@ -240,7 +242,9 @@
                         <span class="text-caption" style="min-width: 110px">
                             {{ relType.replace(/schema::relationship::/, '').replace(/_/g, ' ') }}
                         </span>
-                        <span class="text-caption text-medium-emphasis">{{ count }}</span>
+                        <span class="text-caption text-medium-emphasis">{{
+                            formatNumber(count)
+                        }}</span>
                     </div>
                 </div>
 
@@ -285,7 +289,13 @@
                             fontStyle: 'italic',
                         }"
                     >
-                        Click for details
+                        {{
+                            tooltip.kind === 'entity'
+                                ? 'Click entity node for details and explanation'
+                                : tooltip.kind === 'document'
+                                  ? 'Document context node'
+                                  : 'Event context node'
+                        }}
                     </div>
                 </div>
 
@@ -322,6 +332,14 @@
         relationshipsOverride?: RelationshipRecord[];
         showEnrichedEntities?: boolean;
         showEnrichedRelationships?: boolean;
+        initialAnalysisMode?:
+            | 'centrality'
+            | 'relationship'
+            | 'timeline'
+            | 'source'
+            | 'simplified'
+            | 'enrichment_cluster'
+            | 'edge_cluster';
     }>();
 
     const ENTITY_COLORS_DARK: Record<string, string> = {
@@ -373,6 +391,8 @@
         documentEvents: events,
         selectedEntityNeid,
         selectEntity,
+        resolveEntityName,
+        runAgentAction,
     } = useCollectionWorkspace();
     const entities = computed(() => props.entitiesOverride ?? workspaceEntities.value);
     const relationships = computed(
@@ -410,7 +430,7 @@
         | 'simplified'
         | 'enrichment_cluster'
         | 'edge_cluster'
-    >('centrality');
+    >(props.initialAnalysisMode ?? 'centrality');
     const relationshipTypeFilter = ref<string | null>(null);
     const sourceBackedOnly = ref(false);
     const highConfidenceOnly = ref(false);
@@ -435,6 +455,7 @@
         color: string;
         degree: number;
         events: number;
+        kind: 'entity' | 'event' | 'document';
         x: number;
         y: number;
     }
@@ -473,9 +494,19 @@
         });
     });
 
-    const relationshipTypeOptions = computed(() =>
-        Array.from(new Set(relationships.value.map((r) => r.type))).sort()
-    );
+    const relationshipTypeOptions = computed<Array<{ value: string; title: string }>>(() => {
+        const counts = new Map<string, number>();
+        for (const relationship of relationships.value) {
+            counts.set(relationship.type, (counts.get(relationship.type) ?? 0) + 1);
+        }
+        if (!counts.has('appears_in')) counts.set('appears_in', 0);
+        return Array.from(counts.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([type, count]) => ({
+                value: type,
+                title: `${type.replace(/schema::relationship::/, '').replace(/_/g, ' ')} (${formatNumber(count)})`,
+            }));
+    });
 
     const visibleRelationships = computed(() => {
         const enrichedNeids = new Set(
@@ -584,7 +615,7 @@
         entities.value
             .map((entity) => ({
                 value: entity.neid,
-                title: `${entity.name} (${entity.flavor.replace(/_/g, ' ')})`,
+                title: `${displayEntityName(entity.neid, entity.name)} (${entity.flavor.replace(/_/g, ' ')})`,
             }))
             .sort((a, b) => a.title.localeCompare(b.title))
     );
@@ -643,9 +674,9 @@
     }
 
     function edgeAlpha(origin: string, hasEvidence: boolean): number {
-        if (origin === 'enriched') return colorMode.value === 'dark' ? 0.26 : 0.32;
-        if (hasEvidence) return colorMode.value === 'dark' ? 0.74 : 0.72;
-        return colorMode.value === 'dark' ? 0.46 : 0.5;
+        if (origin === 'enriched') return colorMode.value === 'dark' ? 0.44 : 0.56;
+        if (hasEvidence) return colorMode.value === 'dark' ? 0.66 : 0.6;
+        return colorMode.value === 'dark' ? 0.54 : 0.52;
     }
 
     function parseHexColor(color: string): { r: number; g: number; b: number } | null {
@@ -687,11 +718,41 @@
     function edgeColorFromNode(sourceNeid: string, targetNeid: string): string {
         const base = edgeBaseColor(sourceNeid);
         const other = edgeBaseColor(targetNeid);
-        const blended = mixHex(base, other, 0.24);
-        // In light mode, use a lighter shade of node-derived color as requested.
+        const blended = mixHex(base, other, 0.28);
         return colorMode.value === 'dark'
-            ? mixHex(blended, '#ffffff', 0.12)
-            : mixHex(blended, '#ffffff', 0.32);
+            ? mixHex(blended, '#e2e8f0', 0.06)
+            : mixHex(blended, '#0f172a', 0.08);
+    }
+
+    function formatNumber(value: number): string {
+        return new Intl.NumberFormat('en-US').format(value);
+    }
+
+    function isNeidLike(value: string): boolean {
+        return /^\d{16,24}$/.test(String(value ?? '').trim());
+    }
+
+    function displayEntityName(neid: string, fallbackName?: string): string {
+        const resolved = resolveEntityName(neid);
+        if (resolved && !isNeidLike(resolved)) return resolved;
+        const fallback = String(fallbackName ?? '').trim();
+        if (fallback && !isNeidLike(fallback)) return fallback;
+        return neid;
+    }
+
+    function positionTooltip(pointerX?: number, pointerY?: number): { x: number; y: number } {
+        const rect = graphContainer.value?.getBoundingClientRect();
+        const frameWidth = graphFrame.value?.clientWidth ?? 0;
+        const frameHeight = graphFrame.value?.clientHeight ?? 0;
+        const localX = pointerX !== undefined && rect ? pointerX - rect.left : 0;
+        const localY = pointerY !== undefined && rect ? pointerY - rect.top : 0;
+        const estimatedWidth = 220;
+        const estimatedHeight = 104;
+        const desiredX = localX + 14;
+        const desiredY = localY - estimatedHeight - 10;
+        const x = Math.max(8, Math.min(desiredX, Math.max(8, frameWidth - estimatedWidth - 8)));
+        const y = Math.max(8, Math.min(desiredY, Math.max(8, frameHeight - estimatedHeight - 8)));
+        return { x, y };
     }
 
     function sourceModeColor(sourceCount: number): string {
@@ -1025,17 +1086,18 @@
         // Hover
         sigmaInstance.on('enterNode', ({ node, event }) => {
             const attrs = g.getNodeAttributes(node);
-            const rect = graphContainer.value!.getBoundingClientRect();
             const pointerX = (event as any)?.x;
             const pointerY = (event as any)?.y;
+            const positioned = positionTooltip(pointerX, pointerY);
             tooltip.value = {
                 name: attrs.label ?? node,
                 flavor: attrs.entity_type ?? '',
                 color: ENTITY_COLORS.value[attrs.entity_type] ?? attrs.color ?? '#9E9E9E',
                 degree: g.degree(node),
                 events: attrs.eventCount ?? 0,
-                x: pointerX !== undefined ? pointerX - rect.left + 12 : 0,
-                y: pointerY !== undefined ? pointerY - rect.top + 12 : 0,
+                kind: (attrs.node_kind ?? 'entity') as 'entity' | 'event' | 'document',
+                x: positioned.x,
+                y: positioned.y,
             };
         });
 
@@ -1045,22 +1107,21 @@
 
         sigmaInstance.on('moveBody', ({ event }) => {
             if (tooltip.value) {
-                const rect = graphContainer.value!.getBoundingClientRect();
                 const pointerX = (event as any)?.x;
                 const pointerY = (event as any)?.y;
-                tooltip.value.x =
-                    pointerX !== undefined ? pointerX - rect.left + 12 : tooltip.value.x;
-                tooltip.value.y =
-                    pointerY !== undefined ? pointerY - rect.top + 12 : tooltip.value.y;
+                const positioned = positionTooltip(pointerX, pointerY);
+                tooltip.value.x = positioned.x;
+                tooltip.value.y = positioned.y;
             }
         });
 
         // Click — keep selection handling lightweight to avoid canvas corruption
         sigmaInstance.on('clickNode', ({ node }) => {
             const kind = g.getNodeAttribute(node, 'node_kind');
-            if (kind !== 'entity') return;
             tooltip.value = null;
+            if (kind !== 'entity') return;
             selectEntity(node);
+            void runAgentAction('explain_entity', { entityNeid: node });
         });
 
         sigmaInstance.on('clickStage', () => {
@@ -1605,7 +1666,10 @@
             cursor = prev.get(cursor) ?? null;
         }
         shortestPathText.value = `${path.length - 1} hops: ${path
-            .map((neid) => entities.value.find((e) => e.neid === neid)?.name ?? neid)
+            .map((neid) => {
+                const entity = entities.value.find((entry) => entry.neid === neid);
+                return displayEntityName(neid, entity?.name);
+            })
             .join(' -> ')}`;
     }
 </script>

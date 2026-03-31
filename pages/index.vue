@@ -102,7 +102,6 @@
                     v-else-if="currentTab === 'insights'"
                     @open-chat="launchStarterQuestion"
                 />
-                <AgreementsView v-else-if="currentTab === 'agreements'" />
                 <TimelineComparisonView v-else-if="currentTab === 'timeline'" />
                 <ValidationView v-else-if="currentTab === 'validation'" />
                 <AgentWorkspace
@@ -391,14 +390,11 @@
         propertySeries,
         extractedPropertyCount,
         propertyBearingRecordCount,
-        documentEntities,
         geminiLog,
         recommendedActions,
         runAgentAction,
         agentLoading,
         agentResult,
-        enrich,
-        enriching,
         selectedEntity,
         selectEntity,
     } = useCollectionWorkspace();
@@ -443,7 +439,6 @@
     const tabs: Array<{ value: WorkspaceTab; label: string; icon: string }> = [
         { value: 'overview', label: 'Overview', icon: 'mdi-view-dashboard-outline' },
         { value: 'graph', label: 'Graph & Entities', icon: 'mdi-graph-outline' },
-        { value: 'agreements', label: 'Legal Agreements', icon: 'mdi-file-document-outline' },
         { value: 'events', label: 'Events', icon: 'mdi-calendar-star-outline' },
         { value: 'timeline', label: 'Financials', icon: 'mdi-chart-timeline-variant' },
         { value: 'insights', label: 'Insights', icon: 'mdi-lightbulb-on-outline' },
@@ -471,48 +466,6 @@
             ? []
             : recommendedActions.value.filter((action) => action.tab === currentTab.value)
     );
-    const DEFAULT_ENRICHABLE_ANCHORS = new Set<string>([
-        '08749664511655725314',
-        '05384086983174826493',
-        '06157989400122873900',
-        '05477621199116204617',
-        '02080889041561724035',
-        '07683517764755523583',
-        '06967031221082229818',
-        '06471256961308361850',
-        '04104505588419472813',
-        '04008955034518895738',
-        '07942829951042429385',
-    ]);
-    const HSBC_US_NEID = '06157989400122873900';
-    const REPUBLIC_NEID = '04824620677155774613';
-    const hasHsbcFamilyDocumentContext = computed(() =>
-        documentEntities.value.some(
-            (entity) =>
-                entity.neid === HSBC_US_NEID ||
-                entity.neid === REPUBLIC_NEID ||
-                entity.name.toLowerCase().includes('hsbc')
-        )
-    );
-    const hasUnitedJerseyDocumentContext = computed(() =>
-        documentEntities.value.some(
-            (entity) =>
-                entity.neid === '06967031221082229818' ||
-                entity.name.toLowerCase().includes('united jersey bank')
-        )
-    );
-    const autoEnrichmentAnchorNeids = computed(() =>
-        Array.from(
-            new Set([
-                ...documentEntities.value
-                    .filter((entity) => DEFAULT_ENRICHABLE_ANCHORS.has(entity.neid))
-                    .map((entity) => entity.neid),
-                ...(hasHsbcFamilyDocumentContext.value ? ['08749664511655725314'] : []),
-                ...(hasUnitedJerseyDocumentContext.value ? ['06967031221082229818'] : []),
-            ])
-        )
-    );
-
     const askYottaPromptMap: Record<WorkspaceTab, string[]> = {
         overview: [
             'Summarize this collection in plain English.',
@@ -529,10 +482,6 @@
         insights: [
             'What are the top executive insights from this collection?',
             'Which findings should be highlighted in the briefing?',
-        ],
-        agreements: [
-            'Which agreements are most central?',
-            'Which parties appear across multiple agreements?',
         ],
         timeline: [
             'How did key financial properties change across documents?',
@@ -646,21 +595,19 @@
         await rebuild();
     }
 
-    async function runAutomaticEnrichmentAfterRebuild() {
-        if (enriching.value) return;
-        const anchors = autoEnrichmentAnchorNeids.value;
-        if (!anchors.length) return;
-        try {
-            await enrich(anchors, 2, true);
-        } catch {
-            // keep extraction success even if background enrichment fails
-        }
-    }
-
     onMounted(() => {
         bootstrap();
     });
 
+    watch(
+        () => currentTab.value,
+        (tab) => {
+            if (tab === 'agreements') {
+                setTab('graph');
+            }
+        },
+        { immediate: true }
+    );
     watch(
         () => agentResult.value?.output,
         async (output) => {
@@ -673,14 +620,6 @@
                     behavior: 'smooth',
                 });
             }
-        }
-    );
-    watch(
-        () => rebuilding.value,
-        async (isRunning, wasRunning) => {
-            if (isRunning || !wasRunning) return;
-            if (!isReady.value || collection.value.status === 'error') return;
-            await runAutomaticEnrichmentAfterRebuild();
         }
     );
 </script>

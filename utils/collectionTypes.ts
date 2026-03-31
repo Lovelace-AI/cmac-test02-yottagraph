@@ -73,6 +73,19 @@ export interface CollectionMeta {
     agreementCount: number;
     extractedPropertyCount?: number;
     extractedPropertyRecordCount?: number;
+    rawOneHopCounts?: {
+        entityCount: number;
+        eventCount: number;
+        relationshipCount: number;
+    };
+    curatedOneHopCounts?: {
+        entityCount: number;
+        eventCount: number;
+        relationshipCount: number;
+    };
+    cacheSource?: 'memory' | 'redis' | 'none';
+    cachedAt?: string;
+    cacheVersion?: string;
     lastRebuilt?: string;
 }
 
@@ -193,6 +206,7 @@ export function emptyCollectionState(): CollectionState {
             agreementCount: 0,
             extractedPropertyCount: 0,
             extractedPropertyRecordCount: 0,
+            cacheSource: 'none',
         },
         documents: [...BNY_DOCUMENTS],
         entities: [],

@@ -39,11 +39,31 @@ export interface EnrichmentExpandResult {
         hopMs: Array<{ depth: number; ms: number; sourceCount: number; discoveredCount: number }>;
         eventsMs: number;
     };
+    counts: {
+        raw: {
+            entityCount: number;
+            relationshipCount: number;
+        };
+        curated: {
+            entityCount: number;
+            relationshipCount: number;
+            eventCount: number;
+        };
+    };
 }
 
-const ENRICHMENT_FLAVORS = ['organization', 'person', 'financial_instrument', 'location'] as const;
+const ENRICHMENT_FLAVORS = [
+    'organization',
+    'person',
+    'financial_instrument',
+    'fund_account',
+    'legal_agreement',
+    'location',
+    'cusip_number',
+    'event',
+] as const;
 const MAX_RELATIONSHIPS_PER_CALL = 500;
-const MAX_HOPS = 2;
+const MAX_HOPS = 1;
 const DEFAULT_MAX_EVENT_HUBS = 12;
 const MAX_EVENTS_PER_HUB = 500;
 const DEFAULT_MAX_ENTITIES = 6000;
@@ -56,6 +76,49 @@ const EVENT_CALL_CONCURRENCY = 4;
 const EVENT_TIME_WINDOWS: Array<{ time_range?: { after?: string; before?: string } }> = [
     { time_range: { after: '2018-01-01', before: '2026-12-31' } },
     { time_range: { before: '2018-01-01' } },
+];
+const CURATED_NODE_FLAVORS = new Set<string>([
+    'organization',
+    'person',
+    'financial_instrument',
+    'fund_account',
+    'legal_agreement',
+    'location',
+    'event',
+    'cusip_number',
+]);
+const EXCLUDED_RELATIONSHIP_KEYWORDS = [
+    'born_in',
+    'died_in',
+    'wikidata',
+    'wikipedia',
+    'instance_of',
+];
+const INCLUDED_RELATIONSHIP_KEYWORDS = [
+    'participant',
+    'issuer',
+    'beneficiary',
+    'borrower',
+    'trustee',
+    'advisor',
+    'party',
+    'location',
+    'located',
+    'parent',
+    'subsidiary',
+    'owner',
+    'ownership',
+    'predecessor',
+    'successor',
+    'sponsor',
+    'fund_of',
+    'holds_investment',
+    'works_at',
+    'board_member',
+    'officer',
+    'underwriter',
+    'counterparty',
+    'guarantor',
 ];
 
 function normalizeNeid(neid: string): string {
@@ -92,6 +155,29 @@ function relationshipTypesFromRow(row: any): string[] {
     );
 }
 
+function normalizeRelationshipLabel(type: string): string {
+    return String(type ?? '')
+        .trim()
+        .replace(/^schema::relationship::/, '')
+        .toLowerCase();
+}
+
+function shouldKeepRelationshipType(type: string): boolean {
+    const normalized = normalizeRelationshipLabel(type);
+    if (!normalized) return false;
+    if (EXCLUDED_RELATIONSHIP_KEYWORDS.some((keyword) => normalized.includes(keyword)))
+        return false;
+    return INCLUDED_RELATIONSHIP_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function shouldKeepEntityFlavor(flavor: string): boolean {
+    const normalized = String(flavor ?? '')
+        .trim()
+        .replace(/^schema::flavor::/, '')
+        .toLowerCase();
+    return CURATED_NODE_FLAVORS.has(normalized);
+}
+
 async function pMap<T>(
     items: T[],
     fn: (item: T) => Promise<void>,
@@ -111,7 +197,7 @@ async function pMap<T>(
 export async function runEnrichmentExpansion(
     body: EnrichmentExpandRequest
 ): Promise<EnrichmentExpandResult> {
-    const hops = Math.max(1, Math.min(body.hops ?? 1, MAX_HOPS));
+    const hops = 1;
     const includeEvents = body.includeEvents !== false;
     const maxEntities = Math.max(1, Math.min(body.maxEntities ?? DEFAULT_MAX_ENTITIES, 50000));
     const maxRelationships = Math.max(
@@ -142,12 +228,19 @@ export async function runEnrichmentExpansion(
     let relationshipsTruncated = false;
     let eventsTruncated = false;
     let eventHubsTruncated = false;
+    const rawEntityCandidates = new Set<string>();
+    let rawRelationshipCandidates = 0;
     const capsReached = () =>
         entities.length >= maxEntities || relationships.length >= maxRelationships;
 
     function upsertEntity(row: any, fallbackFlavor: string): string | null {
         if (!row?.neid) return null;
         const normalizedNeid = normalizeNeid(String(row.neid));
+        const resolvedFlavor = String(row.flavor || fallbackFlavor || '').replace(
+            /^schema::flavor::/,
+            ''
+        );
+        if (!shouldKeepEntityFlavor(resolvedFlavor)) return null;
         if (seenEntities.has(normalizedNeid)) return normalizedNeid;
         if (entities.length >= maxEntities) {
             entitiesTruncated = true;
@@ -157,7 +250,7 @@ export async function runEnrichmentExpansion(
         entities.push({
             neid: normalizedNeid,
             name: row.name || normalizedNeid,
-            flavor: row.flavor || fallbackFlavor,
+            flavor: resolvedFlavor || fallbackFlavor,
             sourceDocuments: [],
             origin: 'enriched',
             extractedSeed: false,
@@ -172,6 +265,7 @@ export async function runEnrichmentExpansion(
         relationshipType: string,
         row: any
     ): void {
+        if (!shouldKeepRelationshipType(relationshipType)) return;
         const normalizedSourceNeid = normalizeNeid(sourceNeid);
         const normalizedTargetNeid = normalizeNeid(targetNeid);
         const key = `${normalizedSourceNeid}|${normalizedTargetNeid}|${relationshipType}`;
@@ -266,6 +360,8 @@ export async function runEnrichmentExpansion(
                     );
                     for (const rel of sortedRelationships) {
                         if (capsReached()) break;
+                        if (rel?.neid) rawEntityCandidates.add(normalizeNeid(String(rel.neid)));
+                        rawRelationshipCandidates += relationshipTypesFromRow(rel).length;
                         const targetNeid = upsertEntity(rel, flavor);
                         if (!targetNeid) continue;
                         const relationshipTypes = relationshipTypesFromRow(rel);
@@ -406,6 +502,17 @@ export async function runEnrichmentExpansion(
             eventErrors,
             hopMs,
             eventsMs,
+        },
+        counts: {
+            raw: {
+                entityCount: rawEntityCandidates.size,
+                relationshipCount: rawRelationshipCandidates,
+            },
+            curated: {
+                entityCount: entities.length,
+                relationshipCount: relationships.length,
+                eventCount: events.length,
+            },
         },
     };
 }

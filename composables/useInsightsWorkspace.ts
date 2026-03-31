@@ -88,21 +88,6 @@ const categories: InsightQuestionCategory[] = [
             },
         ],
     },
-    {
-        id: 'agreements',
-        title: 'Agreements and Parties',
-        icon: 'mdi-file-document-outline',
-        questions: [
-            {
-                id: 'agreement-structure',
-                text: 'What agreement structure emerges from the documents, and which parties are central?',
-            },
-            {
-                id: 'cross-party-obligations',
-                text: 'Which recurring parties or obligations appear across multiple agreements and events?',
-            },
-        ],
-    },
 ];
 
 const answers = ref<Record<string, InsightQuestionAnswer>>({});
