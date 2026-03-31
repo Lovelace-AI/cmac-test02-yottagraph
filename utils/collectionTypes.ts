@@ -81,6 +81,37 @@ export interface PropertySeriesRecord {
     points: PropertyPoint[];
 }
 
+export interface LineageInvestigationRelationship {
+    sourceNeid: string;
+    targetNeid: string;
+    type: string;
+    recordedAt?: string;
+    citations?: string[];
+    properties?: Record<string, unknown>;
+    hop: number;
+    source: 'cached' | 'crawl';
+}
+
+export interface LineageInvestigationChain {
+    rootNeid: string;
+    nodeNeids: string[];
+    relationshipTypes: string[];
+}
+
+export interface LineageInvestigationResult {
+    status: 'idle' | 'running' | 'ready' | 'error';
+    startedAt?: string;
+    completedAt?: string;
+    roots: string[];
+    scannedRelationshipTypes: string[];
+    matchedRelationshipTypes: string[];
+    scannedOrganizations: number;
+    traversedHops: number;
+    relationships: LineageInvestigationRelationship[];
+    chains: LineageInvestigationChain[];
+    error?: string;
+}
+
 export interface CollectionMeta {
     name: string;
     description: string;
@@ -132,6 +163,7 @@ export interface CollectionState {
     relationships: RelationshipRecord[];
     events: EventRecord[];
     propertySeries: PropertySeriesRecord[];
+    lineageInvestigation?: LineageInvestigationResult;
     status: 'idle' | 'loading' | 'ready' | 'error';
     error?: string;
 }
@@ -306,6 +338,16 @@ export function emptyCollectionState(): CollectionState {
         relationships: [],
         events: [],
         propertySeries: [],
+        lineageInvestigation: {
+            status: 'idle',
+            roots: [],
+            scannedRelationshipTypes: [],
+            matchedRelationshipTypes: [],
+            scannedOrganizations: 0,
+            traversedHops: 0,
+            relationships: [],
+            chains: [],
+        },
         status: 'idle',
     };
 }

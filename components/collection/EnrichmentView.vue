@@ -179,16 +179,42 @@
 
             <v-window-item value="lineage">
                 <v-alert
-                    v-if="lineageInsights.length === 0 && !enrichmentLanguageLoading"
+                    v-if="lineageInvestigation.status === 'error'"
+                    type="error"
+                    variant="tonal"
+                >
+                    {{ lineageInvestigation.error || 'Lineage investigation failed.' }}
+                </v-alert>
+                <v-card
+                    v-else-if="lineageInvestigation.status === 'running'"
+                    variant="flat"
+                    rounded="lg"
+                >
+                    <v-card-text class="py-4">
+                        <div class="text-body-2 mb-2">
+                            Investigating relationship-backed corporate lineage...
+                        </div>
+                        <v-progress-linear indeterminate color="primary" rounded />
+                        <div class="text-caption text-medium-emphasis mt-2">
+                            Scanning schema relationship types and crawling organization transitions
+                            from document-rooted entities.
+                        </div>
+                    </v-card-text>
+                </v-card>
+                <v-alert
+                    v-else-if="
+                        lineageInvestigation.status === 'ready' && lineageResults.length === 0
+                    "
                     type="info"
                     variant="tonal"
                 >
-                    No lineage insights found in the curated one-hop graph.
+                    No relationship-backed corporate lineage was found for document-rooted
+                    organizations.
                 </v-alert>
                 <LineageResultList
                     v-else
                     :results="lineageResults"
-                    :loading="enrichmentLanguageLoading"
+                    :loading="lineageInvestigation.status === 'running'"
                 />
             </v-window-item>
 
@@ -430,9 +456,8 @@
         enrichmentComparison,
         enrichmentGraphEntities,
         enrichmentGraphRelationships,
-        lineageInsights,
         lineageResults,
-        enrichmentLanguageLoading,
+        lineageInvestigation,
         enrichmentNews,
         enrichmentNewsLoading,
         enrichmentNewsError,

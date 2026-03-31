@@ -4,6 +4,8 @@ import type {
     EntityRecord,
     EventRecord,
     LineageEvidenceMode,
+    LineageInvestigationRelationship,
+    LineageInvestigationResult,
     LineageResultViewModel,
     LineageSupportingDocument,
     RelationshipRecord,
@@ -158,13 +160,58 @@ export interface EnrichmentNewsGroup {
 }
 
 export interface FilteredNewsItem extends EnrichmentNewsItem {
+    canonicalArticleKey?: string;
     topics: string[];
+    rawTopics?: string[];
+    matchedCategories?: string[];
+    anchorNeid?: string;
+    matchedVia?: 'topic' | 'keyword';
+    snippetQuality?: 'summary' | 'citation' | 'fallback';
 }
 
 export interface FilteredNewsGroup {
     anchorNeid: string;
     items: FilteredNewsItem[];
     matchedCategories: string[];
+}
+
+export interface GraphMatchedEntity {
+    neid: string;
+    name: string;
+    isPrimary: boolean;
+}
+
+export type NewsSortMode =
+    | 'strongest_graph_connection'
+    | 'most_graph_entities'
+    | 'most_recent'
+    | 'highest_relevance';
+
+export type NewsViewMode = 'deduped' | 'grouped';
+
+export interface DedupedNewsArticle {
+    canonicalArticleKey: string;
+    articleNeid: string;
+    title?: string;
+    date?: string;
+    description?: string;
+    sourceName?: string;
+    url?: string;
+    urlHost?: string;
+    confidence?: number | null;
+    sentiment?: number | null;
+    citations: string[];
+    topics: string[];
+    matchedCategories: string[];
+    matchedVia: Array<'topic' | 'keyword'>;
+    snippetQuality: 'summary' | 'citation' | 'fallback';
+    primaryEntity: GraphMatchedEntity | null;
+    secondaryEntities: GraphMatchedEntity[];
+    matchedEntities: GraphMatchedEntity[];
+    uniqueGraphMentionCount: number;
+    alsoLinkedCount: number;
+    strongestMatchScore: number;
+    matchReason: string;
 }
 
 export interface EnrichableExtractedEntityGroup {
@@ -218,6 +265,27 @@ function normalizeRelationshipType(type: string): string {
 
 function countRecordProperties(record: { properties?: Record<string, unknown> }): number {
     return Object.keys(record.properties ?? {}).length;
+}
+
+function toCanonicalArticleKey(item: FilteredNewsItem): string {
+    if (item.canonicalArticleKey?.trim()) return item.canonicalArticleKey.trim().toLowerCase();
+    if (item.url?.trim()) return `url:${item.url.trim().toLowerCase()}`;
+    if (item.articleNeid?.trim()) return `neid:${item.articleNeid.trim().toLowerCase()}`;
+    const fallbackTitle = item.title?.trim().toLowerCase() || 'unknown-article';
+    return `fallback:${fallbackTitle}`;
+}
+
+function parseDateMs(value?: string): number | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.getTime();
+}
+
+function snippetQualityWeight(value?: 'summary' | 'citation' | 'fallback'): number {
+    if (value === 'summary') return 2;
+    if (value === 'citation') return 1;
+    return 0;
 }
 
 const INITIAL_STEPS: RebuildStep[] = [
@@ -298,6 +366,16 @@ const enrichmentWatchlistThemes = ref<WatchlistTheme[]>([]);
 const enrichmentWatchlistLoading = ref(false);
 const enrichmentWatchlistError = ref<string | null>(null);
 const enrichmentWatchlistGeneratedAt = ref<string | null>(null);
+const lineageInvestigation = ref<LineageInvestigationResult>({
+    status: 'idle',
+    roots: [],
+    scannedRelationshipTypes: [],
+    matchedRelationshipTypes: [],
+    scannedOrganizations: 0,
+    traversedHops: 0,
+    relationships: [],
+    chains: [],
+});
 const enrichmentLanguageByInsightId = ref<Record<string, EnrichmentLanguageCard>>({});
 const enrichmentLanguageLoading = ref(false);
 const enrichmentLanguageError = ref<string | null>(null);
@@ -307,6 +385,8 @@ const enrichmentNewsError = ref<string | null>(null);
 const filteredNews = ref<FilteredNewsGroup[]>([]);
 const filteredNewsCategories = ref<string[]>([]);
 const filteredNewsLoading = ref(false);
+const filteredNewsRefreshing = ref(false);
+const filteredNewsInitialized = ref(false);
 const filteredNewsError = ref<string | null>(null);
 const enrichmentEconomicSignals = ref<{
     micro: EnrichmentEconomicSignal[];
@@ -1246,33 +1326,17 @@ export function useCollectionWorkspace() {
             .map(({ rankScore: _, ...card }) => card);
     });
 
-    const lineageRelationshipsByPair = computed(() => {
-        const byPair = new Map<string, RelationshipRecord[]>();
-        for (const relationship of relationshipNeidPairs.value) {
-            if (
-                relationship.normalizedType !== 'successor_to' &&
-                relationship.normalizedType !== 'predecessor_of'
-            ) {
-                continue;
-            }
-            const source = entityByNeid.value.get(relationship.sourceNeid);
-            const target = entityByNeid.value.get(relationship.targetNeid);
-            if (!source || !target) continue;
-            if (source.flavor !== 'organization' || target.flavor !== 'organization') continue;
-            const predecessor = relationship.normalizedType === 'successor_to' ? target : source;
-            const successor = relationship.normalizedType === 'successor_to' ? source : target;
-            const pairKey = `${predecessor.neid}|${successor.neid}`;
-            const list = byPair.get(pairKey) ?? [];
-            list.push(relationship);
-            byPair.set(pairKey, list);
-        }
-        return byPair;
-    });
-
     const lineageRelationshipTypeText = (normalizedType: string | null): string => {
         if (!normalizedType) return 'Predecessor / successor';
         if (normalizedType === 'successor_to') return 'Successor organization';
         if (normalizedType === 'predecessor_of') return 'Predecessor organization';
+        if (normalizedType.includes('acquir') || normalizedType.includes('bought')) {
+            return 'Acquisition transition';
+        }
+        if (normalizedType.includes('merg')) return 'Merger transition';
+        if (normalizedType.includes('sold') || normalizedType.includes('sale')) {
+            return 'Sale transition';
+        }
         return normalizedType.replace(/_/g, ' ');
     };
 
@@ -1287,198 +1351,156 @@ export function useCollectionWorkspace() {
     const labelForEvidenceCount = (count: number): string =>
         `${count} source ${count === 1 ? 'document' : 'documents'}`;
 
+    const orientLineageRelationship = (
+        relationship: LineageInvestigationRelationship
+    ): {
+        sourceEntityNeid: string;
+        targetEntityNeid: string;
+        normalizedType: string;
+    } | null => {
+        const normalizedType = normalizeRelationshipType(relationship.type);
+        const sourceEntity = entityByNeid.value.get(relationship.sourceNeid);
+        const targetEntity = entityByNeid.value.get(relationship.targetNeid);
+        if (!sourceEntity || !targetEntity) return null;
+        if (sourceEntity.flavor !== 'organization' || targetEntity.flavor !== 'organization') {
+            return null;
+        }
+        if (normalizedType === 'successor_to') {
+            return {
+                sourceEntityNeid: relationship.targetNeid,
+                targetEntityNeid: relationship.sourceNeid,
+                normalizedType,
+            };
+        }
+        if (normalizedType === 'predecessor_of') {
+            return {
+                sourceEntityNeid: relationship.sourceNeid,
+                targetEntityNeid: relationship.targetNeid,
+                normalizedType,
+            };
+        }
+        if (
+            normalizedType.includes('acquire') ||
+            normalizedType.includes('acquisition') ||
+            normalizedType.includes('bought') ||
+            normalizedType.includes('purchase')
+        ) {
+            return {
+                sourceEntityNeid: relationship.targetNeid,
+                targetEntityNeid: relationship.sourceNeid,
+                normalizedType,
+            };
+        }
+        return {
+            sourceEntityNeid: relationship.sourceNeid,
+            targetEntityNeid: relationship.targetNeid,
+            normalizedType,
+        };
+    };
+
     const lineageResults = computed<LineageResultViewModel[]>(() =>
-        lineageInsights.value
-            .map((card) => {
-                if (card.relatedEntityNeids.length < 2) return null;
-                const sourceEntityNeid = card.relatedEntityNeids[0];
-                const targetEntityNeid = card.relatedEntityNeids[1];
+        Array.from(
+            lineageInvestigation.value.relationships
+                .reduce((map, relationship) => {
+                    const oriented = orientLineageRelationship(relationship);
+                    if (!oriented) return map;
+                    const key = `${oriented.sourceEntityNeid}|${oriented.targetEntityNeid}|${oriented.normalizedType}`;
+                    const list = map.get(key) ?? [];
+                    list.push(relationship);
+                    map.set(key, list);
+                    return map;
+                }, new Map<string, LineageInvestigationRelationship[]>())
+                .entries()
+        )
+            .map(([key, evidenceRows]) => {
+                const [sourceEntityNeid, targetEntityNeid, normalizedRelationshipType] =
+                    key.split('|');
                 const sourceEntity = entityByNeid.value.get(sourceEntityNeid);
                 const targetEntity = entityByNeid.value.get(targetEntityNeid);
+                if (!sourceEntity || !targetEntity) return null;
                 const sourceEntityName = entityDisplayName(sourceEntity) || sourceEntityNeid;
                 const targetEntityName = entityDisplayName(targetEntity) || targetEntityNeid;
                 const primaryStatement = `${sourceEntityName} -> ${targetEntityName}`;
-
-                const pairKey = `${sourceEntityNeid}|${targetEntityNeid}`;
-                const relationshipCandidates = lineageRelationshipsByPair.value.get(pairKey) ?? [];
-                const bestRelationship =
-                    relationshipCandidates.find((item) => hasStrictRelationshipEvidence(item)) ??
-                    relationshipCandidates[0];
-                const normalizedRelationshipType = bestRelationship
-                    ? normalizeRelationshipType(bestRelationship.type)
-                    : null;
-
-                const relatedEvents = card.relatedEventNeids
-                    .map((eventNeid) => eventByNeid.value.get(eventNeid))
-                    .filter((eventItem): eventItem is EventRecord => Boolean(eventItem));
-
-                const supportingDocumentNeids = new Set<string>();
-                const addDocumentNeids = (values: string[] | undefined) => {
-                    for (const value of values ?? []) {
-                        if (strictDocumentNeidSet.value.has(value)) {
-                            supportingDocumentNeids.add(value);
-                        }
-                    }
-                };
-                addDocumentNeids(sourceEntity?.sourceDocuments);
-                addDocumentNeids(targetEntity?.sourceDocuments);
-                if (bestRelationship?.sourceDocumentNeid) {
-                    addDocumentNeids([bestRelationship.sourceDocumentNeid]);
-                }
-                for (const eventItem of relatedEvents) {
-                    addDocumentNeids(eventItem.sourceDocuments);
-                }
-                const citationCount = bestRelationship?.citations?.length ?? 0;
-                const documentSupportCount = supportingDocumentNeids.size;
-                const eventSupportCount = relatedEvents.length;
-                const supportCount = Math.max(
-                    documentSupportCount,
-                    citationCount,
-                    eventSupportCount > 0 ? 1 : 0
-                );
-
-                const hasDocumentedRelationship = Boolean(
-                    bestRelationship && hasStrictRelationshipEvidence(bestRelationship)
-                );
-                const hasDocumentedEvent = relatedEvents.some((eventItem) =>
-                    hasStrictDocumentSource(eventItem.sourceDocuments)
-                );
-                const evidenceMode: LineageEvidenceMode =
-                    hasDocumentedRelationship && hasDocumentedEvent
-                        ? 'mixed'
-                        : hasDocumentedRelationship
-                          ? 'direct_document'
-                          : hasDocumentedEvent
-                            ? 'event_documented'
-                            : bestRelationship?.origin === 'enriched'
-                              ? 'graph_enriched'
-                              : 'inferred';
-                const confidenceLabel: LineageResultViewModel['confidenceLabel'] =
-                    (documentSupportCount >= 3 && hasDocumentedRelationship) ||
-                    (documentSupportCount >= 2 && evidenceMode === 'mixed')
-                        ? 'high'
-                        : documentSupportCount >= 1 ||
-                            citationCount >= 2 ||
-                            hasDocumentedRelationship ||
-                            hasDocumentedEvent
-                          ? 'medium'
-                          : 'low';
-                const confidenceReason =
-                    confidenceLabel === 'high'
-                        ? `High confidence from ${labelForEvidenceCount(documentSupportCount)} and corroborating lineage/event anchors.`
-                        : confidenceLabel === 'medium'
-                          ? documentSupportCount >= 1
-                              ? `Moderate confidence from ${labelForEvidenceCount(documentSupportCount)} with partial corroboration.`
-                              : 'Moderate confidence from citation and event-anchor support where direct source coverage is limited.'
-                          : 'Low confidence because this lineage is mostly inferred and has limited direct source evidence.';
-
-                const supportingDocuments: LineageSupportingDocument[] = Array.from(
-                    supportingDocumentNeids
-                ).map((docNeid) => {
-                    const doc = collection.value.documents.find((item) => item.neid === docNeid);
-                    return {
-                        neid: docNeid,
-                        title: doc?.title ?? docNeid,
-                        kind: doc?.kind,
-                        date: doc?.date,
-                    };
-                });
-
-                const eventAnchors = relatedEvents.map((eventItem) => {
-                    const signal = parseEventLineageSignal(eventItem);
-                    return {
-                        neid: eventItem.neid,
-                        title: eventItem.name,
-                        dateLabel: eventDateLabel(eventItem),
-                        anchorType:
-                            signal?.mode === 'bank_succession'
-                                ? 'bank_succession'
-                                : signal?.mode === 'beneficiary_change'
-                                  ? 'beneficiary_change'
-                                  : 'related_event',
-                        snippet: eventDescriptionSnippet(eventItem) ?? undefined,
-                    } as LineageResultViewModel['eventAnchors'][number];
-                });
-
-                const referencedParticipants = new Set<string>();
-                for (const eventItem of relatedEvents) {
-                    for (const participantNeid of eventItem.participantNeids) {
-                        if (
-                            participantNeid !== sourceEntityNeid &&
-                            participantNeid !== targetEntityNeid
-                        ) {
-                            referencedParticipants.add(participantNeid);
-                        }
-                    }
-                }
-                const referencedEntities: LineageResultViewModel['referencedEntities'] = [
-                    {
-                        neid: sourceEntityNeid,
-                        name: sourceEntityName,
-                        flavor: sourceEntity?.flavor ?? 'organization',
-                        role: 'source',
-                    },
-                    {
-                        neid: targetEntityNeid,
-                        name: targetEntityName,
-                        flavor: targetEntity?.flavor ?? 'organization',
-                        role: 'target',
-                    },
-                    ...Array.from(referencedParticipants)
-                        .map((neid) => entityByNeid.value.get(neid))
-                        .filter((entity): entity is EntityRecord => Boolean(entity))
-                        .slice(0, 8)
-                        .map((entity) => ({
-                            neid: entity.neid,
-                            name: entityDisplayName(entity),
-                            flavor: entity.flavor,
-                            role: 'participant' as const,
-                        })),
-                ];
-
                 const relationshipTypeLabel = lineageRelationshipTypeText(
-                    normalizedRelationshipType
+                    normalizedRelationshipType || null
                 );
                 const effectiveDateLabel =
-                    card.relationshipDateLabel ||
-                    (bestRelationship ? relationshipDateLabel(bestRelationship) : null) ||
-                    (relatedEvents.length ? eventDateRangeLabel(relatedEvents) : null);
-                const topEvidenceAnchors = [
-                    relationshipTypeLabel,
-                    ...eventAnchors.slice(0, 2).map((item) => item.title),
-                ].filter(Boolean);
-
+                    evidenceRows.map((row) => row.recordedAt).find((value) => Boolean(value)) ??
+                    null;
+                const sourceDocumentNeids = new Set<string>();
+                const addDocNeids = (values: string[]) => {
+                    for (const value of values) {
+                        const normalized = normalizeNeid(value);
+                        if (strictDocumentNeidSet.value.has(normalized))
+                            sourceDocumentNeids.add(normalized);
+                    }
+                };
+                addDocNeids(sourceEntity.sourceDocuments);
+                addDocNeids(targetEntity.sourceDocuments);
+                const citationCount = evidenceRows.reduce(
+                    (sum, row) => sum + (Array.isArray(row.citations) ? row.citations.length : 0),
+                    0
+                );
+                const supportCount = Math.max(
+                    sourceDocumentNeids.size,
+                    citationCount,
+                    evidenceRows.length
+                );
+                const evidenceMode: LineageEvidenceMode =
+                    sourceDocumentNeids.size > 0 || citationCount > 0
+                        ? 'direct_document'
+                        : 'graph_enriched';
+                const confidenceLabel: LineageResultViewModel['confidenceLabel'] =
+                    supportCount >= 4 ? 'high' : supportCount >= 2 ? 'medium' : 'low';
+                const confidenceReason =
+                    confidenceLabel === 'high'
+                        ? `High confidence from ${evidenceRows.length} corroborating relationship edges with strong support.`
+                        : confidenceLabel === 'medium'
+                          ? 'Moderate confidence from repeated relationship evidence.'
+                          : 'Low confidence because only a small number of lineage relationships were found.';
+                const supportingDocuments: LineageSupportingDocument[] = Array.from(
+                    sourceDocumentNeids
+                ).map((docNeid) => {
+                    const document = collection.value.documents.find(
+                        (item) => normalizeNeid(item.neid) === docNeid
+                    );
+                    return {
+                        neid: docNeid,
+                        title: document?.title ?? docNeid,
+                        kind: document?.kind,
+                        date: document?.date,
+                    };
+                });
+                const topEvidenceAnchors = [relationshipTypeLabel];
                 const supportLabel =
-                    documentSupportCount > 0
-                        ? `Supported by ${labelForEvidenceCount(documentSupportCount)}`
+                    sourceDocumentNeids.size > 0
+                        ? `Supported by ${labelForEvidenceCount(sourceDocumentNeids.size)}`
                         : citationCount > 0
                           ? `Supported by ${citationCount} citation${citationCount === 1 ? '' : 's'}`
-                          : eventSupportCount > 0
-                            ? `Supported by ${eventSupportCount} event anchor${eventSupportCount === 1 ? '' : 's'}`
-                            : 'Support is inferred from graph context';
-                const anchorSummary = topEvidenceAnchors.slice(1).join(', ');
-                const summarySentence = `${supportLabel}${anchorSummary ? `, including ${anchorSummary}.` : '.'}`;
-                const explanationSentence = `${relationshipTypeLabel}${effectiveDateLabel ? ` with date signal ${effectiveDateLabel}` : ''}. ${lineageEvidenceModeLabel(evidenceMode)}.`;
+                          : `Supported by ${evidenceRows.length} relationship edge${evidenceRows.length === 1 ? '' : 's'}`;
+                const summarySentence = `${supportLabel}.`;
+                const explanationSentence = `${relationshipTypeLabel}${effectiveDateLabel ? ` with date signal ${String(effectiveDateLabel).slice(0, 10)}` : ''}. ${lineageEvidenceModeLabel(evidenceMode)}.`;
                 const groundingNotes = [
-                    `Evidence mode: ${lineageEvidenceModeLabel(evidenceMode)}.`,
-                    bestRelationship
-                        ? `Relationship origin: ${bestRelationship.origin}.`
-                        : 'No normalized lineage edge was found; this item is assembled from event context.',
-                    effectiveDateLabel
-                        ? `Date signal: ${effectiveDateLabel}.`
-                        : 'Date signal: inferred from surrounding relationship and event context.',
-                    citationCount > 0 ? `Citation references: ${citationCount}.` : null,
-                ].filter((item): item is string => Boolean(item));
-
+                    `Investigation matched ${evidenceRows.length} relationship edge${evidenceRows.length === 1 ? '' : 's'} for this transition.`,
+                    `Relationship types scanned: ${lineageInvestigation.value.scannedRelationshipTypes.length}.`,
+                    lineageInvestigation.value.matchedRelationshipTypes.length
+                        ? `Matched lineage relationship families: ${lineageInvestigation.value.matchedRelationshipTypes
+                              .map((type) => normalizeRelationshipType(type))
+                              .slice(0, 5)
+                              .join(', ')}.`
+                        : 'No schema-matched lineage relationship families were reported.',
+                ];
                 return {
-                    id: card.id,
+                    id: `lineage-investigation:${sourceEntityNeid}:${targetEntityNeid}:${normalizedRelationshipType}`,
                     sourceEntityNeid,
                     targetEntityNeid,
                     sourceEntityName,
                     targetEntityName,
                     primaryStatement,
                     relationshipTypeLabel,
-                    effectiveDateLabel,
+                    effectiveDateLabel: effectiveDateLabel
+                        ? String(effectiveDateLabel).slice(0, 10)
+                        : null,
                     supportCount,
                     supportLabel,
                     confidenceLabel,
@@ -1487,16 +1509,30 @@ export function useCollectionWorkspace() {
                     evidenceModeLabel: lineageEvidenceModeLabel(evidenceMode),
                     summarySentence,
                     explanationSentence,
-                    relatedEntityNeids: card.relatedEntityNeids,
-                    relatedEventNeids: card.relatedEventNeids,
+                    relatedEntityNeids: [sourceEntityNeid, targetEntityNeid],
+                    relatedEventNeids: [],
                     topEvidenceAnchors,
                     supportingDocuments,
-                    eventAnchors,
-                    referencedEntities,
+                    eventAnchors: [],
+                    referencedEntities: [
+                        {
+                            neid: sourceEntityNeid,
+                            name: sourceEntityName,
+                            flavor: sourceEntity.flavor,
+                            role: 'source',
+                        },
+                        {
+                            neid: targetEntityNeid,
+                            name: targetEntityName,
+                            flavor: targetEntity.flavor,
+                            role: 'target',
+                        },
+                    ],
                     groundingNotes,
                 };
             })
             .filter((item): item is LineageResultViewModel => Boolean(item))
+            .sort((a, b) => b.supportCount - a.supportCount)
     );
 
     const broaderActivityInsights = computed<EnrichmentInsightCard[]>(() => {
@@ -2403,9 +2439,18 @@ export function useCollectionWorkspace() {
         try {
             const data = await $fetch<CollectionState>('/api/collection/bootstrap');
             collection.value = data;
+            if (data.lineageInvestigation) {
+                lineageInvestigation.value = data.lineageInvestigation;
+            }
             if (data.status === 'ready') {
-                await generateEnrichmentLanguage();
-                await loadEnrichmentContextData();
+                const hasReadyLineage =
+                    data.lineageInvestigation?.status === 'ready' &&
+                    (data.lineageInvestigation.relationships?.length ?? 0) > 0;
+                await Promise.all([
+                    generateEnrichmentLanguage(),
+                    loadEnrichmentContextData(),
+                    hasReadyLineage ? Promise.resolve() : runLineageInvestigation(),
+                ]);
             }
         } catch (e: any) {
             collection.value.error = e.message || 'Failed to bootstrap';
@@ -2540,6 +2585,47 @@ export function useCollectionWorkspace() {
             loadEnrichmentEconomicSignals(),
             loadEnrichmentRelatedDeals(),
         ]);
+    }
+
+    async function runLineageInvestigation(): Promise<void> {
+        if (collection.value.status !== 'ready') return;
+        lineageInvestigation.value = {
+            ...lineageInvestigation.value,
+            status: 'running',
+            startedAt: new Date().toISOString(),
+            completedAt: undefined,
+            error: undefined,
+        };
+        try {
+            const result = await $fetch<LineageInvestigationResult>(
+                '/api/collection/lineage-investigation',
+                {
+                    method: 'POST',
+                    body: {
+                        maxHops: 6,
+                        maxOrganizations: 250,
+                    },
+                }
+            );
+            lineageInvestigation.value = {
+                ...result,
+                status: 'ready',
+                startedAt: result.startedAt ?? lineageInvestigation.value.startedAt,
+                completedAt: result.completedAt ?? new Date().toISOString(),
+            };
+            collection.value.lineageInvestigation = lineageInvestigation.value;
+        } catch (error: any) {
+            lineageInvestigation.value = {
+                ...lineageInvestigation.value,
+                status: 'error',
+                completedAt: new Date().toISOString(),
+                error:
+                    error?.data?.statusMessage ||
+                    error?.message ||
+                    'Unable to run relationship-based lineage investigation.',
+            };
+            collection.value.lineageInvestigation = lineageInvestigation.value;
+        }
     }
 
     async function rebuild(): Promise<void> {
@@ -2723,6 +2809,9 @@ export function useCollectionWorkspace() {
         } finally {
             if (timeoutPoll) clearInterval(timeoutPoll);
             rebuilding.value = false;
+            if (collection.value.status === 'ready') {
+                void runLineageInvestigation();
+            }
         }
     }
 
@@ -2757,7 +2846,12 @@ export function useCollectionWorkspace() {
             }
             case 'state': {
                 const state = msg.state as CollectionState;
-                if (state) collection.value = state;
+                if (state) {
+                    collection.value = state;
+                    if (state.lineageInvestigation) {
+                        lineageInvestigation.value = state.lineageInvestigation;
+                    }
+                }
                 break;
             }
             case 'mcplog': {
@@ -3351,6 +3445,7 @@ export function useCollectionWorkspace() {
         enrichmentValueSummary,
         lineageInsights,
         lineageResults,
+        lineageInvestigation: computed(() => lineageInvestigation.value),
         broaderActivityInsights,
         eventTimelineInsights,
         peopleAffiliationInsights,

@@ -9,6 +9,7 @@ import {
 } from '~/server/utils/extractedSeedGraph';
 import { loadQuadOneHopAuditCounts } from '~/server/utils/quadSeedGraph';
 import { runEnrichmentExpansion } from '~/server/utils/enrichmentExpand';
+import { runCorporateLineageInvestigation } from '~/server/utils/lineageInvestigation';
 import {
     BNY_DOCUMENTS,
     HOP1_FLAVORS,
@@ -1188,7 +1189,7 @@ export default defineEventHandler(async (event) => {
         const events = mergeEvents(documentEvents, enrichmentResult.events);
         const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
         const relationships = Array.from(relationshipMap.values());
-        const state: CollectionState = {
+        const baseState: CollectionState = {
             meta: {
                 name: 'BNY Rebate Analysis Collection',
                 description:
@@ -1242,7 +1243,27 @@ export default defineEventHandler(async (event) => {
             propertySeries,
             status: 'ready',
         };
-
+        sendStep(6, 'working', 'Preparing Workspace', 'Running corporate lineage investigation...');
+        const lineageInvestigation = await runCorporateLineageInvestigation(baseState, {
+            maxHops: 6,
+            maxOrganizations: 250,
+        }).catch((error: any) => ({
+            status: 'error' as const,
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            roots: [],
+            scannedRelationshipTypes: [],
+            matchedRelationshipTypes: [],
+            scannedOrganizations: 0,
+            traversedHops: 0,
+            relationships: [],
+            chains: [],
+            error: error?.message || 'Lineage investigation failed during rebuild.',
+        }));
+        const state: CollectionState = {
+            ...baseState,
+            lineageInvestigation,
+        };
         const cachedState = await setCachedCollection(state);
 
         sendStep(

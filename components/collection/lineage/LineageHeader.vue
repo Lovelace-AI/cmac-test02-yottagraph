@@ -66,11 +66,13 @@
 <style scoped>
     .statement {
         line-height: 1.35;
+        letter-spacing: 0.01em;
     }
 
     .confidence-chip {
-        border-color: rgba(var(--v-theme-on-surface), 0.2);
+        border-color: rgba(var(--v-theme-on-surface), 0.28);
         color: rgb(var(--v-theme-on-surface));
+        background: rgba(var(--v-theme-surface), 0.65);
     }
 
     .confidence-dot {

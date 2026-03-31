@@ -21,6 +21,7 @@ import {
     type PropertySeriesRecord,
     type CollectionState,
 } from '~/utils/collectionTypes';
+import { runCorporateLineageInvestigation } from '~/server/utils/lineageInvestigation';
 
 // Relationship types to probe, each specifying source and target flavor.
 // Both endpoints must be in the document-derived entity set for the edge to be kept.
@@ -606,7 +607,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     const entities = mergeEntities(documentEntities, enrichmentResult.entities);
     const events = mergeEvents(documentEvents, enrichmentResult.events);
     const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
-    const state: CollectionState = {
+    const baseState: CollectionState = {
         meta: {
             name: 'BNY Rebate Analysis Collection',
             description:
@@ -657,6 +658,26 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
         events,
         propertySeries,
         status: 'ready',
+    };
+    const lineageInvestigation = await runCorporateLineageInvestigation(baseState, {
+        maxHops: 6,
+        maxOrganizations: 250,
+    }).catch((error: any) => ({
+        status: 'error' as const,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        roots: [],
+        scannedRelationshipTypes: [],
+        matchedRelationshipTypes: [],
+        scannedOrganizations: 0,
+        traversedHops: 0,
+        relationships: [],
+        chains: [],
+        error: error?.message || 'Lineage investigation failed during rebuild.',
+    }));
+    const state: CollectionState = {
+        ...baseState,
+        lineageInvestigation,
     };
 
     try {

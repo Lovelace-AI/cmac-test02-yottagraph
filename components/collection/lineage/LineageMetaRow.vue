@@ -3,7 +3,9 @@
         <span class="meta-pill">{{ relationshipTypeLabel }}</span>
         <span class="meta-separator">•</span>
         <span class="text-medium-emphasis">
-            {{ effectiveDateLabel ? `Effective date: ${effectiveDateLabel}` : 'Date: inferred' }}
+            {{
+                effectiveDateLabel ? `Effective date: ${effectiveDateLabel}` : 'Date: not reported'
+            }}
         </span>
         <span class="meta-separator">•</span>
         <span class="text-medium-emphasis">{{ supportLabel }}</span>
@@ -29,12 +31,12 @@
     .meta-pill {
         font-weight: 600;
         color: rgb(var(--v-theme-on-surface));
-        padding: 1px 6px;
+        padding: 2px 8px;
         border-radius: 999px;
-        background: rgba(var(--v-theme-on-surface), 0.06);
+        background: rgba(var(--v-theme-on-surface), 0.08);
     }
 
     .meta-separator {
-        color: rgba(var(--v-theme-on-surface), 0.35);
+        color: rgba(var(--v-theme-on-surface), 0.45);
     }
 </style>

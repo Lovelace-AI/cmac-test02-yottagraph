@@ -52,16 +52,16 @@
 
 <style scoped>
     .lineage-item {
-        border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-        background: rgba(var(--v-theme-surface), 0.85);
+        border: 1px solid rgba(var(--v-theme-on-surface), 0.14);
+        background: rgba(var(--v-theme-surface), 0.9);
         transition:
             border-color 140ms ease,
             background-color 140ms ease;
     }
 
     .lineage-item:hover {
-        border-color: rgba(var(--v-theme-on-surface), 0.2);
-        background: rgba(var(--v-theme-surface), 0.95);
+        border-color: rgba(var(--v-theme-on-surface), 0.26);
+        background: rgba(var(--v-theme-surface), 0.98);
     }
 
     .mode-compact .summary-text.clamped,

@@ -56,7 +56,7 @@
         </v-card>
 
         <v-alert v-if="loading" type="info" variant="tonal">
-            Building lineage summaries...
+            Investigating relationship-backed lineage...
         </v-alert>
         <v-alert v-else-if="!filteredAndSortedResults.length" type="info" variant="tonal">
             No lineage relationships match the selected filters.
@@ -96,10 +96,7 @@
     const evidenceModeOptions = [
         { title: 'All evidence modes', value: 'all' },
         { title: 'Direct document evidence', value: 'direct_document' },
-        { title: 'Document-derived event evidence', value: 'event_documented' },
         { title: 'Graph-enriched relationship', value: 'graph_enriched' },
-        { title: 'Direct + inferred evidence', value: 'mixed' },
-        { title: 'Inferred lineage', value: 'inferred' },
     ];
 
     const relationshipTypeOptions = computed(() => [
