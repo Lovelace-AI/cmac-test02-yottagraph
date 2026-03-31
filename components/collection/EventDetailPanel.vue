@@ -239,7 +239,7 @@
                 const normalized = normalizePropertyValue(value);
                 return {
                     key,
-                    label: key.replace(/_/g, ' '),
+                    label: formatEventPropertyLabel(key),
                     value: formatValue(normalized.value),
                     citation: normalized.citation,
                 };
@@ -284,7 +284,7 @@
         const propertyCitationInput: Record<string, { value: unknown; citation?: string }> = {};
         for (const [key, value] of Object.entries(selectedEvent.value.properties ?? {})) {
             const normalized = normalizePropertyValue(value);
-            propertyCitationInput[key] = {
+            propertyCitationInput[formatEventPropertyLabel(key)] = {
                 value: normalized.value,
                 citation: normalized.citation,
             };
@@ -341,6 +341,28 @@
         if (Array.isArray(value)) return value.map((item) => String(item)).join(', ');
         if (typeof value === 'object') return JSON.stringify(value);
         return String(value);
+    }
+
+    function formatEventPropertyLabel(key: string): string {
+        const normalizedKey = key.replace(/^schema::property::/, '');
+        const explicitLabels: Record<string, string> = {
+            event_category: 'Event category',
+            category: 'Event category',
+            event_date: 'Event date',
+            date: 'Event date',
+            event_description: 'Description',
+            description: 'Description',
+            event_likelihood: 'Confidence',
+            likelihood: 'Confidence',
+            event_type: 'Event type',
+            type: 'Event type',
+            event_status: 'Status',
+            status: 'Status',
+        };
+        const explicit = explicitLabels[normalizedKey];
+        if (explicit) return explicit;
+
+        return normalizedKey.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
     }
 
     function resolveEventDate(eventItem: typeof selectedEvent.value): string | undefined {

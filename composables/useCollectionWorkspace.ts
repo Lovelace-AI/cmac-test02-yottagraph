@@ -1479,20 +1479,21 @@ export function useCollectionWorkspace() {
                     sourceDocumentNeids.size > 0 || citationCount > 0
                         ? 'direct_document'
                         : 'graph_enriched';
-                const isRepublicBankExample = [sourceEntityName, targetEntityName].some((name) =>
-                    name.toLowerCase().includes('republic bank')
-                );
                 const confidenceLabel: LineageResultViewModel['confidenceLabel'] =
-                    supportCount >= 4
+                    sourceDocumentNeids.size >= 2 && evidenceRows.length >= 2
                         ? 'high'
-                        : supportCount >= 2 || isRepublicBankExample
+                        : sourceDocumentNeids.size >= 1 ||
+                            citationCount >= 1 ||
+                            evidenceMode === 'direct_document'
                           ? 'medium'
                           : 'low';
                 const confidenceReason =
                     confidenceLabel === 'high'
-                        ? `High confidence from ${evidenceRows.length} corroborating relationship edges with strong support.`
+                        ? `High confidence from ${evidenceRows.length} corroborating relationship edges with direct source support.`
                         : confidenceLabel === 'medium'
-                          ? 'Moderate confidence from repeated relationship evidence.'
+                          ? sourceDocumentNeids.size > 0
+                              ? `Moderate confidence from direct relationship evidence backed by ${labelForEvidenceCount(sourceDocumentNeids.size)}.`
+                              : 'Moderate confidence from direct relationship evidence with limited corroboration.'
                           : 'Low confidence because only a small number of lineage relationships were found.';
                 const supportingDocuments: LineageSupportingDocument[] = Array.from(
                     sourceDocumentNeids

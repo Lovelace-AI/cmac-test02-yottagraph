@@ -350,6 +350,7 @@
         relationshipsOverride?: RelationshipRecord[];
         showEnrichedEntities?: boolean;
         showEnrichedRelationships?: boolean;
+        isActive?: boolean;
         initialSourceBackedOnly?: boolean;
         initialIncludeContextEndpoints?: boolean;
         initialHiddenFlavors?: string[];
@@ -489,10 +490,23 @@
     }
     const tooltip = ref<TooltipState | null>(null);
 
-    const flavorColorEntries = computed(() => Object.entries(ENTITY_COLORS.value));
     const ENTITY_COLORS = computed<Record<string, string>>(() =>
         colorMode.value === 'dark' ? ENTITY_COLORS_DARK : ENTITY_COLORS_LIGHT
     );
+    const flavorColorEntries = computed(() => {
+        const flavors = new Set<string>([
+            ...Object.keys(ENTITY_COLORS.value),
+            ...Array.from(localFlavorCounts.value.keys()),
+        ]);
+        return Array.from(flavors)
+            .sort((a, b) => {
+                const countDelta =
+                    (localFlavorCounts.value.get(b) ?? 0) - (localFlavorCounts.value.get(a) ?? 0);
+                if (countDelta !== 0) return countDelta;
+                return a.localeCompare(b);
+            })
+            .map((flavor) => [flavor, getFlavorColor(flavor)] as const);
+    });
     const graphCanvasBackground = computed(() =>
         colorMode.value === 'dark'
             ? 'radial-gradient(120% 100% at 50% 10%, #1C2540 0%, #131A2E 52%, #0C1221 100%)'
@@ -815,6 +829,26 @@
                 : '#64748B';
     }
 
+    function flavorHash(input: string): number {
+        let hash = 0;
+        for (let i = 0; i < input.length; i += 1) {
+            hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+        }
+        return hash;
+    }
+
+    function dynamicFlavorColor(flavor: string): string {
+        const hash = flavorHash(flavor);
+        const hue = hash % 360;
+        const sat = colorMode.value === 'dark' ? 72 : 66;
+        const light = colorMode.value === 'dark' ? 62 : 42;
+        return `hsl(${hue} ${sat}% ${light}%)`;
+    }
+
+    function getFlavorColor(flavor: string): string {
+        return ENTITY_COLORS.value[flavor] ?? dynamicFlavorColor(flavor);
+    }
+
     function toggleFlavor(flavor: string): void {
         const s = new Set(hiddenFlavors.value);
         if (s.has(flavor)) s.delete(flavor);
@@ -895,7 +929,7 @@
                 )
             );
             if (entity.origin === 'enriched') size = Math.max(4.6, size * 0.82);
-            const baseColor = ENTITY_COLORS.value[entity.flavor] ?? '#9E9E9E';
+            const baseColor = getFlavorColor(entity.flavor);
             let color =
                 entity.origin === 'enriched'
                     ? hexAlpha(baseColor, colorMode.value === 'dark' ? 0.32 : 0.62)
@@ -1167,7 +1201,7 @@
             tooltip.value = {
                 name: attrs.label ?? node,
                 flavor: attrs.entity_type ?? '',
-                color: ENTITY_COLORS.value[attrs.entity_type] ?? attrs.color ?? '#9E9E9E',
+                color: getFlavorColor(String(attrs.entity_type ?? '')),
                 degree: g.degree(node),
                 events: attrs.eventCount ?? 0,
                 kind: (attrs.node_kind ?? 'entity') as 'entity' | 'event' | 'document',
@@ -1571,6 +1605,19 @@
     );
 
     watch(colorMode, () => buildGraph());
+    watch(
+        () => props.isActive,
+        (isActive) => {
+            if (isActive === false) return;
+            nextTick(() => {
+                if (!graphInstance || !sigmaInstance) {
+                    buildGraph();
+                    return;
+                }
+                queueSigmaReflow(true);
+            });
+        }
+    );
     watch(selectedEntityNeid, () => {
         nextTick(() => {
             applySelectedHighlight();
