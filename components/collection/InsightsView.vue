@@ -32,32 +32,6 @@
                         Ask a Question
                     </v-btn>
                 </div>
-
-                <div class="d-flex flex-wrap align-center ga-2 mt-2">
-                    <v-chip size="small" variant="outlined" color="primary">
-                        {{ answeredCount }} / {{ totalQuestions }} answered
-                    </v-chip>
-                    <v-chip
-                        v-if="cacheRestored"
-                        size="small"
-                        variant="outlined"
-                        color="info"
-                        prepend-icon="mdi-database-check-outline"
-                    >
-                        Restored from cache
-                    </v-chip>
-                    <v-chip
-                        size="small"
-                        variant="outlined"
-                        prepend-icon="mdi-counter"
-                        color="secondary"
-                    >
-                        {{ usageTotals.totalTokens.toLocaleString() }} tokens
-                    </v-chip>
-                    <v-chip size="small" variant="outlined" prepend-icon="mdi-currency-usd">
-                        ${{ usageTotals.costUsd.toFixed(4) }}
-                    </v-chip>
-                </div>
             </v-card-text>
         </v-card>
 
@@ -284,16 +258,12 @@
 
     const {
         categoriesWithStatus,
-        answeredCount,
-        totalQuestions,
         hasAnswers,
         answerFor,
         answerQuestion,
         answerAllQuestions,
         resetAnswers,
         bulkProgress,
-        cacheRestored,
-        usageTotals,
         initializeInsightsState,
         collectionFingerprint,
         insightNarrative,

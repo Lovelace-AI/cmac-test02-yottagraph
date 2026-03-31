@@ -131,11 +131,12 @@ export interface WatchlistTheme {
 
 export interface EnrichmentNewsItem {
     articleNeid: string;
-    title: string;
+    title?: string;
     date?: string;
     description?: string;
     sourceName?: string;
     url?: string;
+    urlHost?: string;
     confidence?: number | null;
     sentiment?: number | null;
     citations: string[];
@@ -179,9 +180,17 @@ export interface EnrichmentRelatedDealInsight {
     summary: string;
     anchorNeid?: string;
     anchorName?: string;
-    eventCount: number;
+    articleCount: number;
     relatedCusips: string[];
     evidence: string[];
+    articles: Array<{
+        articleNeid: string;
+        title?: string;
+        url?: string;
+        urlHost?: string;
+        sourceName?: string;
+        sentiment?: number | null;
+    }>;
 }
 
 function normalizeRelationshipType(type: string): string {
@@ -1650,21 +1659,7 @@ export function useCollectionWorkspace() {
     const recentCoverageAnchors = computed(() => {
         const anchorByNeid = new Map<string, EntityRecord>();
         const addAnchor = (entity: EntityRecord) => {
-            if (
-                ![
-                    'organization',
-                    'person',
-                    'financial_instrument',
-                    'fund_account',
-                    'location',
-                ].includes(entity.flavor)
-            )
-                return;
-            if (
-                entity.flavor === 'location' &&
-                !strictProjectLocationEntities.value.includes(entity)
-            )
-                return;
+            if (!['organization', 'person'].includes(entity.flavor)) return;
             anchorByNeid.set(entity.neid, entity);
         };
         const sortedDocumentEntities = documentEntities.value.slice().sort((a, b) => {
@@ -2235,7 +2230,7 @@ export function useCollectionWorkspace() {
     }
 
     async function loadEnrichmentRelatedDeals(): Promise<void> {
-        const anchors = enrichedEntities.value.map((entity) => entity.neid);
+        const anchors = recentCoverageAnchors.value.map((entity) => entity.neid);
         if (!anchors.length) {
             enrichmentRelatedDeals.value = [];
             return;
@@ -2247,7 +2242,7 @@ export function useCollectionWorkspace() {
                 '/api/collection/enrichment-related-deals',
                 {
                     method: 'POST',
-                    body: { entityNeids: anchors, maxAnchors: 10, eventsPerAnchor: 20 },
+                    body: { entityNeids: anchors, maxAnchors: 10, articlesPerAnchor: 20 },
                 }
             );
             enrichmentRelatedDeals.value = response.deals ?? [];

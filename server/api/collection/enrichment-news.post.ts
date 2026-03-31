@@ -8,11 +8,12 @@ interface NewsRequest {
 
 interface NewsItem {
     articleNeid: string;
-    title: string;
+    title?: string;
     date?: string;
     description?: string;
     sourceName?: string;
     url?: string;
+    urlHost?: string;
     confidence?: number | null;
     sentiment?: number | null;
     citations: string[];
@@ -39,6 +40,31 @@ function firstNumber(source: Record<string, any>, keys: string[]): number | null
     return null;
 }
 
+function attributeString(
+    source: Record<string, any>,
+    propertyKeys: string[],
+    attributeKeys: string[]
+): string | undefined {
+    for (const propertyKey of propertyKeys) {
+        const attributes = source[propertyKey]?.attributes as Record<string, unknown> | undefined;
+        if (!attributes) continue;
+        for (const attributeKey of attributeKeys) {
+            const value = attributes[attributeKey];
+            if (typeof value === 'string' && value.trim()) return value.trim();
+        }
+    }
+    return undefined;
+}
+
+function hostnameFromUrl(url?: string): string | undefined {
+    if (!url) return undefined;
+    try {
+        return new URL(url).hostname.replace(/^www\./i, '');
+    } catch {
+        return undefined;
+    }
+}
+
 export default defineEventHandler(async (event) => {
     const body = await readBody<NewsRequest>(event);
     const entityNeids = Array.isArray(body?.entityNeids) ? body.entityNeids : [];
@@ -58,16 +84,13 @@ export default defineEventHandler(async (event) => {
                     related_flavor: 'article',
                     relationship_types: ['appears_in'],
                     related_properties: [
-                        'url',
-                        'snippet',
-                        'summary',
-                        'source',
-                        'publisher',
+                        'title',
+                        'original_publication_name',
+                        'newsdata_id',
                         'date',
-                        'published_at',
-                        'published_date',
                         'sentiment',
-                        'confidence',
+                        'tone',
+                        'title_factuality',
                     ],
                     limit: articlesPerEntity * 3,
                     direction: 'both',
@@ -83,13 +106,25 @@ export default defineEventHandler(async (event) => {
                               (value: unknown): value is string => typeof value === 'string'
                           )
                         : [];
+                    const url =
+                        firstString(props, ['url', 'source_url', 'article_url']) ??
+                        attributeString(props, ['title', 'sentiment'], ['url']);
+                    const title = firstString(props, ['title']);
+                    const sourceName =
+                        firstString(props, [
+                            'original_publication_name',
+                            'source',
+                            'publisher',
+                            'source_name',
+                        ]) ?? hostnameFromUrl(url);
                     return {
                         articleNeid: String(article?.neid ?? ''),
-                        title: String(article?.name ?? 'Untitled article'),
+                        title,
                         date: firstString(props, ['published_at', 'published_date', 'date']),
                         description: firstString(props, ['snippet', 'summary', 'description']),
-                        sourceName: firstString(props, ['source', 'publisher', 'source_name']),
-                        url: firstString(props, ['url', 'source_url', 'article_url']),
+                        sourceName,
+                        url,
+                        urlHost: hostnameFromUrl(url),
                         confidence: firstNumber(props, [
                             'confidence',
                             'match_confidence',
@@ -101,12 +136,22 @@ export default defineEventHandler(async (event) => {
                         linkedEntityNames: [],
                     };
                 })
-                .filter((item) => Boolean(item.articleNeid))
+                .filter((item) => Boolean(item.articleNeid) && Boolean(item.title || item.url))
                 .sort((a, b) => {
                     const aDate = a.date ?? '';
                     const bDate = b.date ?? '';
                     if (aDate !== bDate) return bDate.localeCompare(aDate);
                     return (b.confidence ?? -Infinity) - (a.confidence ?? -Infinity);
+                })
+                .filter((item, index, array) => {
+                    const key = `${item.title ?? ''}|${item.url ?? ''}`.toLowerCase();
+                    return (
+                        array.findIndex((candidate) => {
+                            const candidateKey =
+                                `${candidate.title ?? ''}|${candidate.url ?? ''}`.toLowerCase();
+                            return candidateKey === key;
+                        }) === index
+                    );
                 })
                 .slice(0, articlesPerEntity);
 

@@ -3,7 +3,16 @@ import { mcpCallTool } from '~/server/utils/collectionConfig';
 interface RelatedDealsRequest {
     entityNeids: string[];
     maxAnchors?: number;
-    eventsPerAnchor?: number;
+    articlesPerAnchor?: number;
+}
+
+interface RelatedDealArticle {
+    articleNeid: string;
+    title?: string;
+    url?: string;
+    urlHost?: string;
+    sourceName?: string;
+    sentiment?: number | null;
 }
 
 interface RelatedDealInsight {
@@ -12,9 +21,10 @@ interface RelatedDealInsight {
     summary: string;
     anchorNeid?: string;
     anchorName?: string;
-    eventCount: number;
+    articleCount: number;
     relatedCusips: string[];
     evidence: string[];
+    articles: RelatedDealArticle[];
 }
 
 const JERSEY_CITY_KEYWORDS = [
@@ -27,6 +37,51 @@ const JERSEY_CITY_KEYWORDS = [
 
 function normalizeText(value: unknown): string {
     return String(value ?? '').trim();
+}
+
+function firstString(source: Record<string, any>, keys: string[]): string | undefined {
+    for (const key of keys) {
+        const value = source[key]?.value ?? source[key];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return undefined;
+}
+
+function attributeString(
+    source: Record<string, any>,
+    propertyKeys: string[],
+    attributeKeys: string[]
+): string | undefined {
+    for (const propertyKey of propertyKeys) {
+        const attributes = source[propertyKey]?.attributes as Record<string, unknown> | undefined;
+        if (!attributes) continue;
+        for (const attributeKey of attributeKeys) {
+            const value = attributes[attributeKey];
+            if (typeof value === 'string' && value.trim()) return value.trim();
+        }
+    }
+    return undefined;
+}
+
+function firstNumber(source: Record<string, any>, keys: string[]): number | null {
+    for (const key of keys) {
+        const value = source[key]?.value ?? source[key];
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (typeof value === 'string' && value.trim()) {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) return parsed;
+        }
+    }
+    return null;
+}
+
+function hostnameFromUrl(url?: string): string | undefined {
+    if (!url) return undefined;
+    try {
+        return new URL(url).hostname.replace(/^www\./i, '');
+    } catch {
+        return undefined;
+    }
 }
 
 function extractCusips(text: string): string[] {
@@ -45,79 +100,88 @@ export default defineEventHandler(async (event) => {
     if (!anchors.length) return { deals: [] as RelatedDealInsight[] };
 
     const maxAnchors = Math.max(1, Math.min(body?.maxAnchors ?? 8, 16));
-    const eventsPerAnchor = Math.max(1, Math.min(body?.eventsPerAnchor ?? 20, 40));
+    const articlesPerAnchor = Math.max(1, Math.min(body?.articlesPerAnchor ?? 20, 40));
     const selectedAnchors = anchors.slice(0, maxAnchors);
     const insights: RelatedDealInsight[] = [];
 
     for (const anchorNeid of selectedAnchors) {
-        const eventsResult = await mcpCallTool(
-            'elemental_get_events',
+        const articleResult = await mcpCallTool(
+            'elemental_get_related',
             {
                 entity_id: { id_type: 'neid', id: anchorNeid },
-                include_participants: true,
-                limit: eventsPerAnchor,
-                time_range: { after: '1990-01-01', before: '2026-12-31' },
+                related_flavor: 'article',
+                relationship_types: ['appears_in'],
+                related_properties: ['title', 'original_publication_name', 'sentiment'],
+                limit: articlesPerAnchor,
+                direction: 'both',
             },
             { timeoutMs: 15_000 }
-        ).catch(() => ({ events: [] as any[] }));
+        ).catch(() => ({ relationships: [] as any[] }));
 
-        const matchingEvents = (eventsResult?.events ?? []).filter((evt: any) => {
-            const props = evt?.properties ?? {};
+        const matchingArticles: RelatedDealArticle[] = (articleResult?.relationships ?? [])
+            .map((article: any) => {
+                const props = (article?.properties ?? {}) as Record<string, any>;
+                const url =
+                    firstString(props, ['url', 'source_url', 'article_url']) ??
+                    attributeString(props, ['title', 'sentiment'], ['url']);
+                return {
+                    articleNeid: normalizeText(article?.neid),
+                    title: firstString(props, ['title']),
+                    url,
+                    urlHost: hostnameFromUrl(url),
+                    sourceName:
+                        firstString(props, [
+                            'original_publication_name',
+                            'source',
+                            'publisher',
+                            'source_name',
+                        ]) ?? hostnameFromUrl(url),
+                    sentiment: firstNumber(props, ['sentiment', 'article_sentiment']),
+                };
+            })
+            .filter((article) => article.articleNeid && (article.title || article.url));
+
+        const relevantArticles = matchingArticles.filter((article) => {
             const corpus = [
-                normalizeText(evt?.name),
-                normalizeText(props.event_description?.value ?? props.description?.value),
-                normalizeText(props.event_category?.value ?? props.category?.value),
-                ...((evt?.participants ?? []).map((p: any) => normalizeText(p?.name)) as string[]),
+                normalizeText(article.title),
+                normalizeText(article.sourceName),
+                normalizeText(article.url),
             ].join(' ');
             return looksJerseyCityRelevant(corpus);
         });
-        if (!matchingEvents.length) continue;
+        if (!relevantArticles.length) continue;
 
-        const anchorName =
-            normalizeText(
-                matchingEvents[0]?.participants?.find((p: any) => p?.neid === anchorNeid)?.name
-            ) ||
-            normalizeText(matchingEvents[0]?.name) ||
-            anchorNeid;
+        const anchorName = normalizeText(articleResult?.resolved?.name) || anchorNeid;
         const relatedCusips = Array.from(
             new Set(
-                matchingEvents.flatMap((evt: any) => {
-                    const props = evt?.properties ?? {};
+                relevantArticles.flatMap((article) => {
                     const corpus = [
-                        normalizeText(evt?.name),
-                        normalizeText(props.event_description?.value ?? props.description?.value),
-                        ...((evt?.participants ?? []).map((p: any) =>
-                            normalizeText(p?.name)
-                        ) as string[]),
+                        normalizeText(article.title),
+                        normalizeText(article.url),
+                        normalizeText(article.sourceName),
                     ].join(' ');
                     return extractCusips(corpus);
                 })
             )
         ).slice(0, 6);
-        const evidence = matchingEvents
+        const evidence = relevantArticles
             .slice(0, 3)
-            .map((evt: any) => {
-                const props = evt?.properties ?? {};
-                const date = normalizeText(
-                    props.event_date?.value ?? props.date?.value ?? evt?.date
-                );
-                const title = normalizeText(evt?.name) || 'Untitled event';
-                return date ? `${date.slice(0, 10)}: ${title}` : title;
-            })
+            .map((article) => normalizeText(article.title || article.urlHost || article.url))
             .filter(Boolean);
 
         insights.push({
             id: `deal:${anchorNeid}`,
-            title: `${anchorName}: Jersey City related deal context`,
+            title: `${anchorName}: Jersey City deal coverage`,
             summary:
                 relatedCusips.length > 0
-                    ? `${matchingEvents.length} related events mention Jersey City context and surfaced ${relatedCusips.length} candidate CUSIP${relatedCusips.length === 1 ? '' : 's'} for follow-up.`
-                    : `${matchingEvents.length} related events mention Jersey City context. No explicit CUSIPs were extracted from these event summaries.`,
+                    ? `${relevantArticles.length} related articles mention Jersey City deal context and surfaced ${relatedCusips.length} candidate CUSIP${relatedCusips.length === 1 ? '' : 's'} for follow-up.`
+                    : `${relevantArticles.length} related articles mention Jersey City deal context.`,
             anchorNeid,
             anchorName,
-            eventCount: matchingEvents.length,
+            articleCount: relevantArticles.length,
             relatedCusips,
             evidence,
+            articles: relevantArticles.slice(0, 4),
         });
     }
 

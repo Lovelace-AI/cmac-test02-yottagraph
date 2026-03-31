@@ -312,7 +312,7 @@
                     variant="tonal"
                     class="mb-3"
                 >
-                    Loading recent article coverage...
+                    Loading recent MCP article coverage...
                 </v-alert>
                 <v-alert v-else-if="enrichmentNewsError" type="error" variant="tonal" class="mb-3">
                     {{ enrichmentNewsError }}
@@ -323,7 +323,8 @@
                     variant="tonal"
                     class="mb-3"
                 >
-                    No recent article coverage was found for the key extracted entities.
+                    No recent MCP article coverage was found for the selected document-graph
+                    entities.
                 </v-alert>
                 <div v-else class="d-flex flex-column ga-3">
                     <v-card v-for="group in enrichmentNews.slice(0, 6)" :key="group.anchorNeid">
@@ -355,20 +356,22 @@
                                         />
                                     </template>
                                     <v-card-title class="text-body-2">
-                                        {{ item.title }}
+                                        {{ item.title || item.urlHost || 'Headline unavailable' }}
                                     </v-card-title>
                                     <v-card-subtitle>
-                                        {{ item.date || 'Date unavailable' }}
-                                        <span v-if="item.sourceName">
-                                            • {{ item.sourceName }}
-                                        </span>
-                                        <span v-if="item.confidence != null">
-                                            • confidence {{ formatConfidence(item.confidence) }}
-                                        </span>
+                                        {{ formatArticleMeta(item) }}
                                     </v-card-subtitle>
                                 </v-card-item>
                                 <v-card-text class="text-body-2">
-                                    {{ truncate(item.description || 'No summary available.', 260) }}
+                                    {{
+                                        truncate(
+                                            item.description ||
+                                                (item.url
+                                                    ? 'Open the linked article to review the exact source text.'
+                                                    : 'No article summary available.'),
+                                            260
+                                        )
+                                    }}
                                     <div class="d-flex flex-wrap ga-1 mt-2">
                                         <v-chip
                                             v-if="item.sentiment != null"
@@ -384,7 +387,7 @@
                                             variant="tonal"
                                             color="primary"
                                         >
-                                            linked article
+                                            {{ item.urlHost || 'linked article' }}
                                         </v-chip>
                                     </div>
                                 </v-card-text>
@@ -401,7 +404,7 @@
                     variant="tonal"
                     class="mb-3"
                 >
-                    Loading Jersey City related deals and CUSIP context...
+                    Loading Jersey City deal coverage...
                 </v-alert>
                 <v-alert
                     v-else-if="enrichmentRelatedDealsError"
@@ -417,19 +420,71 @@
                     variant="tonal"
                     class="mb-3"
                 >
-                    No Jersey City-related deal context was surfaced from current enrichment
-                    anchors.
+                    No Jersey City-related deal coverage was surfaced from the current
+                    document-graph anchors.
                 </v-alert>
                 <div v-else class="d-flex flex-column ga-3">
                     <v-card v-for="deal in enrichmentRelatedDeals" :key="deal.id">
                         <v-card-item>
                             <v-card-title class="text-body-2">{{ deal.title }}</v-card-title>
                             <v-card-subtitle>
-                                {{ deal.eventCount }} relevant events
+                                {{ deal.articleCount }} relevant articles
                             </v-card-subtitle>
                         </v-card-item>
                         <v-card-text>
                             <div class="text-body-2 mb-2">{{ deal.summary }}</div>
+                            <div v-if="deal.articles.length" class="d-flex flex-column ga-2 mb-2">
+                                <v-card
+                                    v-for="article in deal.articles"
+                                    :key="`${deal.id}:${article.articleNeid}`"
+                                    variant="outlined"
+                                >
+                                    <v-card-item>
+                                        <template #append>
+                                            <v-btn
+                                                v-if="article.url"
+                                                size="x-small"
+                                                variant="text"
+                                                color="primary"
+                                                :href="article.url"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                icon="mdi-open-in-new"
+                                            />
+                                        </template>
+                                        <v-card-title class="text-body-2">
+                                            {{
+                                                article.title ||
+                                                article.urlHost ||
+                                                'Headline unavailable'
+                                            }}
+                                        </v-card-title>
+                                        <v-card-subtitle>
+                                            {{ article.sourceName || article.urlHost || '' }}
+                                        </v-card-subtitle>
+                                    </v-card-item>
+                                    <v-card-text class="pt-0">
+                                        <div class="d-flex flex-wrap ga-1">
+                                            <v-chip
+                                                v-if="article.sentiment != null"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="info"
+                                            >
+                                                sentiment {{ formatSentiment(article.sentiment) }}
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="article.urlHost"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="primary"
+                                            >
+                                                {{ article.urlHost }}
+                                            </v-chip>
+                                        </div>
+                                    </v-card-text>
+                                </v-card>
+                            </div>
                             <div v-if="deal.relatedCusips.length" class="mb-2">
                                 <div class="text-caption text-medium-emphasis mb-1">
                                     Candidate CUSIPs
@@ -502,6 +557,18 @@
             .replace(/^schema::flavor::/, '')
             .replace(/_/g, ' ')
             .replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    function formatArticleMeta(item: {
+        date?: string;
+        sourceName?: string;
+        confidence?: number | null;
+    }): string {
+        const parts: string[] = [];
+        if (item.date) parts.push(item.date);
+        if (item.sourceName) parts.push(item.sourceName);
+        if (item.confidence != null) parts.push(`confidence ${formatConfidence(item.confidence)}`);
+        return parts.join(' • ');
     }
 </script>
 

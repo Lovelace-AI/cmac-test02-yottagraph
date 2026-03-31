@@ -464,7 +464,8 @@
     const tabQuickActions = computed(() =>
         currentTab.value === 'graph' ||
         currentTab.value === 'insights' ||
-        currentTab.value === 'events'
+        currentTab.value === 'events' ||
+        currentTab.value === 'timeline'
             ? []
             : recommendedActions.value.filter((action) => action.tab === currentTab.value)
     );
