@@ -109,6 +109,15 @@ Details:
 - The rebuild pipeline explicitly hydrates flavor-specific core properties for
   resolved entities and events so the detail panel and agent context have
   access to canonical profile fields, not just relationship-derived context.
+- In Ask Yotta orchestration, treat deterministic collection context as
+  authoritative and only merge context-agent additions that pass NEID and row
+  shape validation.
+- For context-agent retrieval, once a valid NEID exists (from planner input,
+  fallback context, or prior tool call), reuse that NEID directly and do not
+  re-resolve by name unless identity verification is explicitly requested.
+- Context-agent profile evidence must be grounded to tool-returned
+  schema-backed scalar properties (for example, from
+  `get_entity_profile_record`), not synthesized placeholders.
 - All data is normalized into stable models: documents, entities, relationships, events, and property series with explicit origin labels.
 - Property reporting distinguishes broad extracted/latest entity properties from narrower historical property-series coverage.
 - `composables/useCollectionWorkspace.ts` manages all client state.

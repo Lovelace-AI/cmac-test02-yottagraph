@@ -88,6 +88,15 @@ export interface ContextRelationshipRow {
     sourceDocumentNeid?: string;
 }
 
+export interface ContextProfileEvidenceRow {
+    neid: string;
+    name: string;
+    flavor: string;
+    resolution: 'provided_neid' | 'name_search';
+    properties: Record<string, string[]>;
+    missingProperties: string[];
+}
+
 export interface ContextAgentOutput {
     collectionName: string;
     question: string;
@@ -95,6 +104,7 @@ export interface ContextAgentOutput {
     topEntities: ContextEntityRow[];
     topEvents: ContextEventRow[];
     relationships: ContextRelationshipRow[];
+    profileEvidence?: ContextProfileEvidenceRow[];
     evidenceLines: string[];
     stats: {
         documentCount: number;
