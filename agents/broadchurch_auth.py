@@ -21,7 +21,7 @@ Local dev:  set ELEMENTAL_API_URL and ELEMENTAL_API_TOKEN env vars.
 Production: routes through the Broadchurch Portal gateway proxy, which
             handles QS authentication via Auth0 M2M tokens. The agent
             authenticates to the proxy with a per-tenant API key from
-            broadchurch.yaml.
+            QS_API_KEY (preferred) or broadchurch.yaml (legacy fallback).
 """
 
 import os
@@ -59,20 +59,20 @@ def _uses_gateway_proxy() -> bool:
         return False
     config = _load_config()
     gw = config.get("gateway", {})
-    return bool(gw.get("url") and gw.get("qs_api_key"))
+    return bool(gw.get("url") and _gateway_api_key())
 
 
 def _gateway_api_key() -> str:
     """Return the QS API key for the gateway proxy."""
-    return _load_config().get("gateway", {}).get("qs_api_key", "")
+    return os.environ.get("QS_API_KEY") or _load_config().get("gateway", {}).get("qs_api_key", "")
 
 
 def get_elemental_url() -> str:
     """Return the Elemental API base URL (no trailing slash).
 
     When the gateway proxy is available (broadchurch.yaml has gateway.url,
-    tenant.org_id, and gateway.qs_api_key), routes through the portal
-    proxy. Otherwise falls back to the direct QS URL.
+    tenant.org_id, and QS_API_KEY or gateway.qs_api_key is set), routes
+    through the portal proxy. Otherwise falls back to the direct QS URL.
     """
     url = os.environ.get("ELEMENTAL_API_URL")
     if url:
@@ -82,7 +82,7 @@ def get_elemental_url() -> str:
     gw = config.get("gateway", {})
     gw_url = gw.get("url", "")
     org_id = config.get("tenant", {}).get("org_id", "")
-    qs_api_key = gw.get("qs_api_key", "")
+    qs_api_key = _gateway_api_key()
 
     if gw_url and org_id and qs_api_key:
         return f"{gw_url.rstrip('/')}/api/qs/{org_id}"

@@ -8,15 +8,10 @@ export default defineNuxtPlugin(() => {
     const serverAddress = config.public.queryServerAddress as string;
     const gatewayUrl = (config.public as any).gatewayUrl as string;
     const tenantOrgId = (config.public as any).tenantOrgId as string;
-    const qsApiKey = (config.public as any).qsApiKey as string;
     const { accessToken } = useUserState();
 
-    const useProxy = !!(gatewayUrl && tenantOrgId && qsApiKey);
-    const baseUrl = useProxy
-        ? `${gatewayUrl}/api/qs/${tenantOrgId}`
-        : serverAddress
-          ? formatUrl(serverAddress)
-          : '';
+    const useProxy = !!(gatewayUrl && tenantOrgId);
+    const baseUrl = useProxy ? '/api/qs' : serverAddress ? formatUrl(serverAddress) : '';
 
     configureElementalClient({
         baseUrl,
@@ -27,9 +22,7 @@ export default defineNuxtPlugin(() => {
                 ...((options?.headers as Record<string, string>) || {}),
             };
 
-            if (useProxy) {
-                headers['X-Api-Key'] = qsApiKey;
-            } else if (accessToken.value) {
+            if (!useProxy && accessToken.value) {
                 headers['Authorization'] = `Bearer ${accessToken.value}`;
             }
 

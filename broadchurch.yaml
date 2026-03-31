@@ -14,7 +14,7 @@ tenant:
 
 gateway:
   url: "https://broadchurch-portal-194773164895.us-central1.run.app"
-  qs_api_key: "e4add31e1027b5278bf45e98b009c9fd5bbbb139467ff669a853ea17b61e3e27"
+  qs_api_key: ""
 
 query_server:
   url: "https://query.pip.stg.g.lovelace.ai"
