@@ -74,6 +74,88 @@ const BOND_HISTORY_PROPERTIES = [
     'uses_of_funds_total_uses:_total',
 ] as const;
 
+const CORE_ENTITY_PROPERTIES_BY_FLAVOR: Record<string, readonly string[]> = {
+    organization: [
+        'name',
+        'alias',
+        'company_cik',
+        'ticker',
+        'ein',
+        'lei',
+        'address',
+        'mailing_address',
+        'physical_address',
+        'headquarters_address',
+        'legal_address',
+        'wikibase_shortdesc',
+        'wikipedia_summary',
+        'wikipedia_extended_summary',
+        'notes',
+        'jurisdiction',
+        'legal_entity_status',
+        'entity_creation_date',
+        'registered_as',
+        'legal_form_code',
+        'business_phone',
+        'website',
+        'industry',
+        'sector',
+        'sic_code',
+        'sic_description',
+        'state_of_incorporation',
+        'headquarters_country',
+        'legal_address_country',
+    ],
+    person: [
+        'name',
+        'alias',
+        'person_cik',
+        'position',
+        'change_type',
+        'birth_date',
+        'nationality',
+        'notes',
+        'job_title',
+        'wikibase_shortdesc',
+        'wikipedia_summary',
+        'wikipedia_extended_summary',
+    ],
+    financial_instrument: [
+        'name',
+        'alias',
+        'ticker_symbol',
+        'company_name',
+        'security_type',
+        'exchange',
+        'cusip_number',
+        'instrument_type',
+        'put_call',
+        'sector',
+        'industry',
+        'position_value',
+        'shares_held',
+        'voting_authority_sole',
+        'voting_authority_shared',
+        'voting_authority_none',
+    ],
+    location: [
+        'name',
+        'alias',
+        'wikibase_shortdesc',
+        'wikipedia_summary',
+        'wikipedia_extended_summary',
+    ],
+    fund_account: [
+        'name',
+        'current_fund_status',
+        'computation_date_valuation',
+        'gross_earnings',
+        'internal_rate_of_return',
+        'excess_earnings',
+    ],
+    event: ['name', 'alias', 'category', 'likelihood', 'date', 'description'],
+};
+
 const EVENT_TIME_WINDOWS: Array<{
     label: string;
     time_range?: { after?: string; before?: string };
@@ -106,6 +188,10 @@ function stringProperty(
         if (value) return value;
     }
     return undefined;
+}
+
+function corePropertiesForFlavor(flavor: string): readonly string[] {
+    return CORE_ENTITY_PROPERTIES_BY_FLAVOR[flavor] ?? [];
 }
 
 function isStrictDocumentNeid(neid: string | undefined): boolean {
@@ -837,27 +923,44 @@ export default defineEventHandler(async (event) => {
 
         // ─── Phase 5: Property coverage ───────────────────────────────
         t0 = Date.now();
-        sendStep(5, 'working', 'Loading Property History', 'Loading property history...');
+        sendStep(
+            5,
+            'working',
+            'Loading Property History',
+            'Hydrating core profiles and property history...'
+        );
 
-        // First, get latest properties for all resolved entity NEIDs so
-        // the extracted entity set has broad property coverage.
-        const resolvedEntityNeids = [
-            ...new Set(
-                Array.from(entityByKey.values())
-                    .map((entity) => normalizeNeid(entity.neid))
-                    .filter((neid) => !neid.startsWith('seed:'))
-            ),
-        ];
+        // First, get latest core properties for all resolved entity NEIDs so
+        // the extracted entity set has canonical IDs, addresses, descriptions,
+        // and other flavor-specific profile fields in app state.
+        const resolvedEntityTargets = Array.from(
+            Array.from(entityByKey.values())
+                .reduce((acc, entity) => {
+                    if (entity.neid.startsWith('seed:')) return acc;
+                    const neid = normalizeNeid(entity.neid);
+                    if (!acc.has(neid)) {
+                        acc.set(neid, { neid, flavor: entity.flavor });
+                    }
+                    return acc;
+                }, new Map<string, { neid: string; flavor: string }>())
+                .values()
+        );
         let phase4EntitySuccess = 0;
         await pMap(
-            resolvedEntityNeids,
-            async (neid) => {
+            resolvedEntityTargets,
+            async ({ neid, flavor }) => {
                 try {
+                    const requestedProperties = corePropertiesForFlavor(flavor);
                     const result = await callToolWithRetry<any>(
                         'elemental_get_entity',
-                        {
-                            entity_id: { id_type: 'neid', id: neid },
-                        },
+                        requestedProperties.length > 0
+                            ? {
+                                  entity_id: { id_type: 'neid', id: neid },
+                                  properties: [...requestedProperties],
+                              }
+                            : {
+                                  entity_id: { id_type: 'neid', id: neid },
+                              },
                         { timeoutMs: 45_000, attempts: 2 }
                     );
                     const entity = result?.entity ?? result;
@@ -874,6 +977,56 @@ export default defineEventHandler(async (event) => {
                     phase4EntitySuccess += 1;
                 } catch (error: any) {
                     console.error(`Phase 5: get_entity failed neid=${neid}:`, error?.message);
+                }
+            },
+            4
+        );
+
+        const resolvedEventNeids = [
+            ...new Set(
+                Array.from(eventByKey.values())
+                    .map((eventItem) => eventItem.neid)
+                    .filter((neid) => !neid.startsWith('seed:'))
+                    .map((neid) => normalizeNeid(neid))
+            ),
+        ];
+        let phase4EventSuccess = 0;
+        await pMap(
+            resolvedEventNeids,
+            async (neid) => {
+                try {
+                    const result = await callToolWithRetry<any>(
+                        'elemental_get_entity',
+                        {
+                            entity_id: { id_type: 'neid', id: neid },
+                            properties: [...corePropertiesForFlavor('event')],
+                        },
+                        { timeoutMs: 45_000, attempts: 2 }
+                    );
+                    const entity = result?.entity ?? result;
+                    const target = Array.from(eventByKey.values()).find(
+                        (item) => normalizeNeid(item.neid) === neid
+                    );
+                    if (!target) return;
+                    const props = (entity?.properties as Record<string, unknown> | undefined) ?? {};
+                    target.name = (entity?.name as string | undefined) ?? target.name;
+                    target.mcpConfirmed = true;
+                    target.category =
+                        stringProperty(props, ['category', 'event_category']) ?? target.category;
+                    target.date = stringProperty(props, ['date', 'event_date']) ?? target.date;
+                    target.description =
+                        stringProperty(props, ['description', 'event_description']) ??
+                        target.description;
+                    target.likelihood =
+                        stringProperty(props, ['likelihood', 'event_likelihood']) ??
+                        target.likelihood;
+                    target.properties = {
+                        ...(target.properties ?? {}),
+                        ...props,
+                    };
+                    phase4EventSuccess += 1;
+                } catch (error: any) {
+                    console.error(`Phase 5: get_entity event failed neid=${neid}:`, error?.message);
                 }
             },
             4
@@ -954,7 +1107,7 @@ export default defineEventHandler(async (event) => {
             5,
             'completed',
             'Loading Property History',
-            `Loaded ${formatCount(propertySeries.length)} historical property series.`,
+            `Hydrated ${formatCount(phase4EntitySuccess)} entity profiles, ${formatCount(phase4EventSuccess)} event profiles, and loaded ${formatCount(propertySeries.length)} historical property series.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();

@@ -178,12 +178,18 @@
                     <div class="text-subtitle-2 mb-1 panel-subtitle">
                         Key properties
                         <v-chip size="x-small" variant="tonal" class="ml-1">
-                            {{ displayProperties.length }}
+                            {{ keyPropertyRows.length }}
                         </v-chip>
                     </div>
-                    <div v-if="displayProperties.length" class="property-table">
+                    <div
+                        v-if="!rawDisplayProperties.length && keyPropertyRows.length"
+                        class="text-caption text-medium-emphasis mb-2"
+                    >
+                        Derived from linked relationships and events.
+                    </div>
+                    <div v-if="keyPropertyRows.length" class="property-table">
                         <div
-                            v-for="prop in displayProperties"
+                            v-for="prop in keyPropertyRows"
                             :key="prop.key"
                             class="property-row py-2 d-flex justify-space-between ga-2"
                         >
@@ -713,7 +719,7 @@
         [...selectedEntityEvents.value].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
     );
 
-    const displayProperties = computed(() => {
+    const rawDisplayProperties = computed(() => {
         if (!selectedEntity.value) return [];
         const ignoredPrefixes = ['_', 'internal_', 'debug_', 'embedding', 'vector'];
         const ignoredExact = new Set(['eid', 'neid', 'id', 'pid']);
@@ -733,6 +739,107 @@
             })
             .slice(0, 40);
     });
+    const derivedDisplayProperties = computed(() => {
+        if (!selectedEntity.value)
+            return [] as Array<{
+                key: string;
+                label: string;
+                value: string;
+                citation?: string;
+            }>;
+
+        const groupedRelationships = new Map<
+            string,
+            {
+                label: string;
+                names: Set<string>;
+                relationshipCount: number;
+            }
+        >();
+        const selectedNeid = selectedEntity.value.neid;
+        const excludedRelationshipTypes = new Set(['appears_in', 'participant']);
+
+        for (const relationship of selectedEntityRelationships.value) {
+            const rawType = relationship.type.replace(/schema::relationship::/, '');
+            if (excludedRelationshipTypes.has(rawType)) continue;
+
+            const outgoing = relationship.sourceNeid === selectedNeid;
+            const otherNeid = outgoing ? relationship.targetNeid : relationship.sourceNeid;
+            const otherName = resolveEntityName(otherNeid);
+            if (!otherName || otherName === selectedEntity.value.name) continue;
+
+            const label = directionalRelationshipLabel(rawType, outgoing);
+            const bucket = groupedRelationships.get(label) ?? {
+                label,
+                names: new Set<string>(),
+                relationshipCount: 0,
+            };
+            bucket.names.add(otherName);
+            bucket.relationshipCount += 1;
+            groupedRelationships.set(label, bucket);
+        }
+
+        const relationshipRows = Array.from(groupedRelationships.values())
+            .sort((a, b) => {
+                const priorityDelta =
+                    relationshipLabelPriority(b.label) - relationshipLabelPriority(a.label);
+                if (priorityDelta !== 0) return priorityDelta;
+                if (b.names.size !== a.names.size) return b.names.size - a.names.size;
+                return a.label.localeCompare(b.label);
+            })
+            .map((group) => ({
+                key: `derived-${group.label}`,
+                label: group.label,
+                value: formatListPreview(Array.from(group.names)),
+                citation: `${group.relationshipCount} linked relationship${
+                    group.relationshipCount === 1 ? '' : 's'
+                }`,
+            }));
+
+        const rows = relationshipRows.slice(0, 6);
+
+        if (selectedEntityEvents.value.length > 0) {
+            rows.push({
+                key: 'derived-event-participation',
+                label: 'Event participation',
+                value: formatListPreview(
+                    selectedEntityEvents.value
+                        .map((eventItem) => {
+                            const dateLabel = eventItem.date?.slice(0, 10);
+                            return dateLabel
+                                ? `${eventItem.name} (${dateLabel})`
+                                : eventItem.name || 'Event';
+                        })
+                        .filter(Boolean)
+                ),
+                citation: `${selectedEntityEvents.value.length} linked event${
+                    selectedEntityEvents.value.length === 1 ? '' : 's'
+                }`,
+            });
+        }
+
+        if (rows.length === 0 && selectedEntity.value.sourceDocuments.length > 0) {
+            rows.push({
+                key: 'derived-source-documents',
+                label: 'Document support',
+                value: formatListPreview(
+                    selectedEntity.value.sourceDocuments.map((docNeid) =>
+                        resolveEntityName(docNeid)
+                    )
+                ),
+                citation: `${selectedEntity.value.sourceDocuments.length} source document${
+                    selectedEntity.value.sourceDocuments.length === 1 ? '' : 's'
+                }`,
+            });
+        }
+
+        return rows;
+    });
+    const keyPropertyRows = computed(() =>
+        rawDisplayProperties.value.length > 0
+            ? rawDisplayProperties.value
+            : derivedDisplayProperties.value
+    );
 
     const relationshipPostureSummary = computed(() => {
         if (!selectedEntity.value) return '';
@@ -821,6 +928,48 @@
         return type.replace(/schema::relationship::/, '').replace(/_/g, ' ');
     }
 
+    function directionalRelationshipLabel(type: string, outgoing: boolean): string {
+        const labels: Record<string, { outgoing: string; incoming: string }> = {
+            advisor_to: { outgoing: 'Advisor to', incoming: 'Advised by' },
+            advises: { outgoing: 'Advises', incoming: 'Advised by' },
+            located_at: { outgoing: 'Located at', incoming: 'Location of' },
+            located_in: { outgoing: 'Located in', incoming: 'Location of' },
+            headquartered_in: { outgoing: 'Headquartered in', incoming: 'Headquarters of' },
+            is_headquartered_in: { outgoing: 'Headquartered in', incoming: 'Headquarters of' },
+            is_headquartered_at: { outgoing: 'Headquartered at', incoming: 'Headquarters of' },
+            predecessor_of: { outgoing: 'Predecessor to', incoming: 'Successor to' },
+            successor_to: { outgoing: 'Successor to', incoming: 'Predecessor to' },
+            party_to: { outgoing: 'Party to', incoming: 'Has party' },
+            trustee_of: { outgoing: 'Trustee of', incoming: 'Trustee' },
+            issuer_of: { outgoing: 'Issuer of', incoming: 'Issued by' },
+            borrower_of: { outgoing: 'Borrower of', incoming: 'Borrower' },
+            beneficiary_of: { outgoing: 'Beneficiary of', incoming: 'Beneficiary' },
+        };
+        const mapped = labels[type];
+        if (mapped) return outgoing ? mapped.outgoing : mapped.incoming;
+        const normalized = normalizeRelationshipType(type);
+        return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    }
+
+    function relationshipLabelPriority(label: string): number {
+        const priorities: Record<string, number> = {
+            'Headquartered in': 110,
+            'Headquartered at': 108,
+            'Located at': 106,
+            'Located in': 104,
+            'Advisor to': 100,
+            Advises: 98,
+            'Party to': 94,
+            'Trustee of': 92,
+            'Issuer of': 90,
+            'Borrower of': 88,
+            'Beneficiary of': 86,
+            'Successor to': 84,
+            'Predecessor to': 82,
+        };
+        return priorities[label] ?? 50;
+    }
+
     function normalizePropertyValue(value: unknown): { value: unknown; citation?: string } {
         if (value && typeof value === 'object' && !Array.isArray(value)) {
             const obj = value as Record<string, unknown>;
@@ -845,6 +994,16 @@
 
     function formatCount(value: number): string {
         return value.toLocaleString();
+    }
+
+    function formatListPreview(values: string[], maxItems = 3): string {
+        const uniqueValues = Array.from(
+            new Set(values.map((value) => value.trim()).filter(Boolean))
+        );
+        if (uniqueValues.length === 0) return '—';
+        const preview = uniqueValues.slice(0, maxItems).join(', ');
+        const remaining = uniqueValues.length - maxItems;
+        return remaining > 0 ? `${preview} +${remaining} more` : preview;
     }
 
     function readPropertyRaw(...keys: string[]): unknown {

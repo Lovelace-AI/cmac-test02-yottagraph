@@ -12,7 +12,7 @@ documents.
 **Created:** 2026-03-25  
 **App ID:** cmac-test02  
 **Description:** Document Collection Intelligence workspace  
-**Last updated:** 2026-03-31 (overview corpus narrative upgraded with richer relationship/property grounding; enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, and Graph & Entities header cleanup)
+**Last updated:** 2026-03-31 (overview corpus narrative upgraded with richer relationship/property grounding; enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, Graph & Entities header cleanup; rebuild pipeline now hydrates flavor-specific core entity/event properties and context-agent guidance documents explicit schema-to-PID property retrieval)
 
 ## Vision
 
@@ -56,6 +56,17 @@ Build a collection-first intelligence app that:
 - Use traversal NEIDs as the source of truth. Do not rely on name lookup for verification once a NEID has been discovered.
 - Expect events to live at **hop 2**, not hop 1, for document-derived graphs like the BNY dataset.
 - For full property history, use raw `POST /elemental/entities/properties` through the tenant gateway. MCP wrappers typically expose only the latest property value.
+- For canonical entity profiles, do not assume a default entity lookup returns
+  hard IDs, addresses, aliases, or descriptions. Explicitly request
+  flavor-specific core property names, map those names to PIDs from
+  `GET /elemental/metadata/schema`, and then fetch values via
+  `POST /elemental/entities/properties`.
+- Maintain a curated core-property set per flavor
+  (`organization`, `person`, `financial_instrument`, `location`,
+  `fund_account`, `event`) so the app and agents consistently ask for
+  company IDs, address fields, summaries, and other canonical metadata.
+- Treat relationships and events as supporting context when scalar properties
+  are absent, not as a substitute for schema-backed entity profiles.
 - For app design, separate:
     - entity discovery
     - event discovery
@@ -95,6 +106,9 @@ Details:
 - App shell supports both dark mode and light mode, with a header toggle and settings control for switching.
 - Dark mode polish pass introduced layered charcoal/slate surfaces, stronger card hierarchy, improved narrative readability, and consistent pill styling across overview and analysis surfaces.
 - Server routes under `/api/collection/` handle bootstrap, rebuild (MCP traversal + event discovery), entity detail, property history (raw QS), enrichment, agent actions, insight language summaries, and insight export assembly.
+- The rebuild pipeline explicitly hydrates flavor-specific core properties for
+  resolved entities and events so the detail panel and agent context have
+  access to canonical profile fields, not just relationship-derived context.
 - All data is normalized into stable models: documents, entities, relationships, events, and property series with explicit origin labels.
 - Property reporting distinguishes broad extracted/latest entity properties from narrower historical property-series coverage.
 - `composables/useCollectionWorkspace.ts` manages all client state.
