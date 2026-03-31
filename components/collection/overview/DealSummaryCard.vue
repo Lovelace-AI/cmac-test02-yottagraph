@@ -4,31 +4,6 @@
             <v-card-title class="section-title">Deal Summary</v-card-title>
         </v-card-item>
         <v-card-text class="pt-0 pb-4">
-            <div v-if="hasSummary" class="summary-grid">
-                <div v-for="field in visibleFields" :key="field.label" class="summary-cell">
-                    <div class="text-caption text-medium-emphasis text-uppercase">
-                        {{ field.label }}
-                    </div>
-                    <div class="summary-value">{{ field.value }}</div>
-                </div>
-            </div>
-            <div v-else class="empty-state">
-                <p class="empty-copy">
-                    Analysis has not produced a transaction summary yet. Run extraction to populate
-                    issuer, structure, parties, and closing details.
-                </p>
-                <v-btn
-                    size="x-small"
-                    color="primary"
-                    variant="tonal"
-                    prepend-icon="mdi-play-circle-outline"
-                    :disabled="status === 'processing'"
-                    @click="$emit('run-analysis')"
-                >
-                    Run Initial Analysis
-                </v-btn>
-            </div>
-
             <div class="narrative-section">
                 <div class="d-flex align-center justify-space-between ga-2 mb-2">
                     <div class="text-caption text-medium-emphasis text-uppercase">
@@ -69,6 +44,36 @@
                     Run analysis to generate a short plain-language description of what this corpus
                     is about.
                 </p>
+            </div>
+
+            <div class="summary-section">
+                <div class="text-caption text-medium-emphasis text-uppercase mb-2">
+                    Deal Summary
+                </div>
+                <div v-if="hasSummary" class="summary-grid">
+                    <div v-for="field in visibleFields" :key="field.label" class="summary-cell">
+                        <div class="text-caption text-medium-emphasis text-uppercase">
+                            {{ field.label }}
+                        </div>
+                        <div class="summary-value">{{ field.value }}</div>
+                    </div>
+                </div>
+                <div v-else class="empty-state">
+                    <p class="empty-copy">
+                        Analysis has not produced a transaction summary yet. Run extraction to
+                        populate issuer, structure, parties, and closing details.
+                    </p>
+                    <v-btn
+                        size="x-small"
+                        color="primary"
+                        variant="tonal"
+                        prepend-icon="mdi-play-circle-outline"
+                        :disabled="status === 'processing'"
+                        @click="$emit('run-analysis')"
+                    >
+                        Run Initial Analysis
+                    </v-btn>
+                </div>
             </div>
         </v-card-text>
     </v-card>
@@ -153,6 +158,10 @@
     }
 
     .narrative-section {
+        margin-top: 4px;
+    }
+
+    .summary-section {
         margin-top: 12px;
         padding-top: 10px;
         border-top: 1px solid var(--app-divider);

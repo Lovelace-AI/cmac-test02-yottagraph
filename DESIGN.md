@@ -12,7 +12,7 @@ documents.
 **Created:** 2026-03-25  
 **App ID:** cmac-test02  
 **Description:** Document Collection Intelligence workspace  
-**Last updated:** 2026-03-31 (enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, and Graph & Entities header cleanup)
+**Last updated:** 2026-03-31 (overview corpus narrative upgraded with richer relationship/property grounding; enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, and Graph & Entities header cleanup)
 
 ## Vision
 
@@ -79,6 +79,7 @@ Details:
 
 - Single-page workspace with task-oriented tabs: overview, graph & entities, events, insights, timeline, agreements, trust & coverage, ask yotta, enrichment.
 - Overview is an executive intelligence briefing with a collection header, synthesized deal summary, extraction stats, a narrative case-study card without cross-tab jumps, a streamlined source-documents table, and launch cards into deeper tabs.
+- Overview corpus narrative generation now includes relationship-type patterns, concrete relationship evidence samples, entity property highlights, and historical property-series coverage so the corpus description reads as graph-grounded intelligence rather than metadata-only summary.
 - Overview supports complete, pending, and partial extraction states with intentional product copy and guided placeholders instead of empty analytics panels.
 - Graph tab now supports analytical view modes, relationship filters, evidence-focused toggles, and shortest-path inspection between entities.
 - Timeline tab emphasizes significance and confidence, supports richer filtering (domain, confidence, participant, source document, date), and keeps table/episode/timeline views aligned.
