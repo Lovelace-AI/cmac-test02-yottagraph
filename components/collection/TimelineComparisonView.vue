@@ -92,37 +92,20 @@
                 </v-card-text>
             </v-card>
 
-            <v-card>
-                <v-card-item>
-                    <v-card-title class="text-body-1">Notable Changes</v-card-title>
-                </v-card-item>
-                <v-card-text>
-                    <v-alert v-if="!notableChanges.length" type="info" variant="tonal">
-                        No notable cross-document value changes detected for this entity.
-                    </v-alert>
-                    <v-list v-else density="compact" class="pa-0">
-                        <v-list-item
-                            v-for="change in notableChanges"
-                            :key="change.key"
-                            class="px-0"
-                        >
-                            <v-list-item-title>
-                                {{ change.propertyName }}: {{ change.fromValue }} ->
-                                {{ change.toValue }}
-                            </v-list-item-title>
-                            <v-list-item-subtitle>
-                                {{ change.fromDocument }} -> {{ change.toDocument }}
-                            </v-list-item-subtitle>
-                        </v-list-item>
-                    </v-list>
-                </v-card-text>
-            </v-card>
+            <NotableChangesSection
+                :changes="temporalChangesModel.changes"
+                :grouped="temporalChangesModel.grouped"
+                :summary="temporalChangesModel.summary"
+                :narrative-payload="notableNarrativePayload"
+                :enable-narrative="true"
+            />
         </template>
     </div>
 </template>
 
 <script setup lang="ts">
     import type { PropertyPoint } from '~/utils/collectionTypes';
+    import { buildTemporalChangesModel } from '~/utils/temporalChanges';
 
     const { documentEntities: entities, documents, propertySeries } = useCollectionWorkspace();
 
@@ -223,33 +206,35 @@
         }>;
     });
 
-    const notableChanges = computed(() => {
-        const changes: Array<{
-            key: string;
-            propertyName: string;
-            fromValue: string;
-            toValue: string;
-            fromDocument: string;
-            toDocument: string;
-        }> = [];
-        for (const row of comparisonRows.value) {
-            for (let i = 1; i < sortedDocuments.value.length; i += 1) {
-                const prevDoc = sortedDocuments.value[i - 1];
-                const nextDoc = sortedDocuments.value[i];
-                const fromValue = row[prevDoc.neid] ?? '';
-                const toValue = row[nextDoc.neid] ?? '';
-                if (fromValue === toValue || fromValue === '' || toValue === '') continue;
-                changes.push({
-                    key: `${row.propertyName}-${prevDoc.neid}-${nextDoc.neid}`,
-                    propertyName: row.propertyName,
-                    fromValue,
-                    toValue,
-                    fromDocument: prevDoc.title,
-                    toDocument: nextDoc.title,
-                });
-            }
-        }
-        return changes.slice(0, 12);
+    const temporalChangesModel = computed(() =>
+        buildTemporalChangesModel(selectedSeries.value, sortedDocuments.value)
+    );
+
+    const notableNarrativePayload = computed(() => {
+        const topChanges = temporalChangesModel.value.changes.slice(0, 10);
+        return {
+            changes: topChanges.map((change) => ({
+                metricLabel: change.metricLabel,
+                deltaDisplay: change.deltaDisplay,
+                fromDisplay: change.fromDisplay,
+                toDisplay: change.toDisplay,
+                periodLabel: change.periodLabel,
+                severity: change.severity,
+                interpretation: change.interpretation,
+            })),
+            summary: {
+                totalChanges: temporalChangesModel.value.summary.totalChanges,
+                metricsChanged: temporalChangesModel.value.summary.metricsChanged,
+                largestIncrease:
+                    temporalChangesModel.value.summary.largestIncrease?.deltaDisplay ?? null,
+                largestDecrease:
+                    temporalChangesModel.value.summary.largestDecrease?.deltaDisplay ?? null,
+                mostVolatileMetric:
+                    temporalChangesModel.value.summary.mostVolatileMetric?.metricLabel ?? null,
+                mostRecentComparison:
+                    temporalChangesModel.value.summary.mostRecentComparison?.periodLabel ?? null,
+            },
+        };
     });
 
     function valueAtDate(points: PropertyPoint[], date?: string): string {
