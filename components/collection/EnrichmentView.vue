@@ -1,77 +1,5 @@
 <template>
     <div class="enrichment-layout d-flex flex-column ga-3">
-        <v-card class="world-graph-shell" variant="outlined">
-            <v-card-item>
-                <v-card-title class="text-body-1">What The World Graph Adds</v-card-title>
-                <v-card-subtitle>
-                    These signals are not explicitly extracted from your source documents. They are
-                    revealed by linking extracted entities to 1-hop external reference, market,
-                    regulatory, and risk context.
-                </v-card-subtitle>
-            </v-card-item>
-            <v-card-text class="pt-1">
-                <v-row>
-                    <v-col
-                        v-for="card in worldGraphCards"
-                        :key="card.id"
-                        cols="12"
-                        md="6"
-                        lg="4"
-                        class="d-flex"
-                    >
-                        <v-card class="world-graph-card flex-grow-1" variant="flat">
-                            <v-card-item>
-                                <template #prepend>
-                                    <v-avatar :color="card.color" variant="tonal" size="30">
-                                        <v-icon size="16">{{ card.icon }}</v-icon>
-                                    </v-avatar>
-                                </template>
-                                <v-card-title class="text-body-2">
-                                    {{ card.title }}
-                                </v-card-title>
-                                <v-card-subtitle>{{ card.subtitle }}</v-card-subtitle>
-                            </v-card-item>
-                            <v-card-text class="pt-0">
-                                <div class="text-body-2 mb-2">
-                                    {{ card.summary }}
-                                </div>
-                                <div class="d-flex align-center justify-space-between ga-2 mb-2">
-                                    <span class="text-caption text-medium-emphasis">
-                                        {{ card.statLabel }}
-                                    </span>
-                                    <v-chip size="x-small" variant="tonal" :color="card.color">
-                                        {{ card.statValue }}
-                                    </v-chip>
-                                </div>
-                                <div class="d-flex flex-wrap ga-1 mb-2">
-                                    <v-chip
-                                        v-for="evidence in card.evidence.slice(0, 3)"
-                                        :key="`${card.id}:${evidence}`"
-                                        size="x-small"
-                                        variant="outlined"
-                                    >
-                                        {{ evidence }}
-                                    </v-chip>
-                                </div>
-                                <div class="text-caption text-medium-emphasis mb-2">
-                                    {{ card.mapping }}
-                                </div>
-                                <v-btn
-                                    size="x-small"
-                                    variant="text"
-                                    color="primary"
-                                    prepend-icon="mdi-robot-outline"
-                                    @click="emit('open-chat', card.askPrompt)"
-                                >
-                                    Ask Yotta
-                                </v-btn>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                </v-row>
-            </v-card-text>
-        </v-card>
-
         <v-tabs v-model="activeSubtab" density="compact" color="primary" class="mb-1">
             <v-tab value="comparison">
                 <v-icon start size="small">mdi-scale-balance</v-icon>
@@ -190,39 +118,92 @@
                             {{ formatNumber(meta.enrichmentCaps?.maxRelationships ?? 0) }}, events
                             {{ formatNumber(meta.enrichmentCaps?.maxEvents ?? 0) }}).
                         </v-alert>
-                        <v-card>
+                        <v-card class="world-graph-shell" variant="outlined">
                             <v-card-item>
-                                <v-card-title class="text-body-2">
-                                    Top Connected Extracted Entities
+                                <v-card-title class="text-body-1">
+                                    What The World Graph Adds
                                 </v-card-title>
                                 <v-card-subtitle>
-                                    Ranked by total relationships and events in the knowledge graph.
+                                    These signals are not explicitly extracted from your source
+                                    documents. They are revealed by linking extracted entities to
+                                    1-hop external reference, market, regulatory, and risk context.
                                 </v-card-subtitle>
                             </v-card-item>
-                            <v-card-text>
-                                <v-alert
-                                    v-if="!topConnectedExtractedEntities.length"
-                                    type="info"
-                                    variant="tonal"
-                                    density="comfortable"
-                                >
-                                    No linked extracted entities were found yet.
-                                </v-alert>
-                                <div v-else class="d-flex flex-wrap ga-2">
-                                    <v-chip
-                                        v-for="entity in topConnectedExtractedEntities"
-                                        :key="`top-connected:${entity.neid}`"
-                                        size="small"
-                                        variant="tonal"
+                            <v-card-text class="pt-1">
+                                <v-row>
+                                    <v-col
+                                        v-for="card in worldGraphCards"
+                                        :key="card.id"
+                                        cols="12"
+                                        md="6"
+                                        lg="4"
+                                        class="d-flex"
                                     >
-                                        {{ entity.name }}
-                                        <span class="text-medium-emphasis ml-1">
-                                            ({{ formatFlavor(entity.flavor) }} ·
-                                            {{ entity.relationshipCount }} rels ·
-                                            {{ entity.eventCount }} events)
-                                        </span>
-                                    </v-chip>
-                                </div>
+                                        <v-card class="world-graph-card flex-grow-1" variant="flat">
+                                            <v-card-item>
+                                                <template #prepend>
+                                                    <v-avatar
+                                                        :color="card.color"
+                                                        variant="tonal"
+                                                        size="30"
+                                                    >
+                                                        <v-icon size="16">{{ card.icon }}</v-icon>
+                                                    </v-avatar>
+                                                </template>
+                                                <v-card-title class="text-body-2">
+                                                    {{ card.title }}
+                                                </v-card-title>
+                                                <v-card-subtitle>{{
+                                                    card.subtitle
+                                                }}</v-card-subtitle>
+                                            </v-card-item>
+                                            <v-card-text class="pt-0">
+                                                <div class="text-body-2 mb-2">
+                                                    {{ card.summary }}
+                                                </div>
+                                                <div
+                                                    class="d-flex align-center justify-space-between ga-2 mb-2"
+                                                >
+                                                    <span class="text-caption text-medium-emphasis">
+                                                        {{ card.statLabel }}
+                                                    </span>
+                                                    <v-chip
+                                                        size="x-small"
+                                                        variant="tonal"
+                                                        :color="card.color"
+                                                    >
+                                                        {{ card.statValue }}
+                                                    </v-chip>
+                                                </div>
+                                                <div class="d-flex flex-wrap ga-1 mb-2">
+                                                    <v-chip
+                                                        v-for="evidence in card.evidence.slice(
+                                                            0,
+                                                            3
+                                                        )"
+                                                        :key="`${card.id}:${evidence}`"
+                                                        size="x-small"
+                                                        variant="outlined"
+                                                    >
+                                                        {{ evidence }}
+                                                    </v-chip>
+                                                </div>
+                                                <div class="text-caption text-medium-emphasis mb-2">
+                                                    {{ card.mapping }}
+                                                </div>
+                                                <v-btn
+                                                    size="x-small"
+                                                    variant="text"
+                                                    color="primary"
+                                                    prepend-icon="mdi-robot-outline"
+                                                    @click="emit('open-chat', card.askPrompt)"
+                                                >
+                                                    Ask Yotta
+                                                </v-btn>
+                                            </v-card-text>
+                                        </v-card>
+                                    </v-col>
+                                </v-row>
                             </v-card-text>
                         </v-card>
                     </v-col>
@@ -367,7 +348,6 @@
         dedupedFilteredNewsArticles,
         loadFilteredNews,
         sortDedupedNewsArticles,
-        topConnectedExtractedEntities,
     } = useCollectionWorkspace();
 
     const activeSubtab = ref<'comparison' | 'graph' | 'lineage' | 'news'>('comparison');

@@ -221,16 +221,6 @@ export interface EnrichableExtractedEntityGroup {
     entities: EntityRecord[];
 }
 
-export interface TopConnectedExtractedEntity {
-    neid: string;
-    name: string;
-    flavor: string;
-    linkedEntityCount: number;
-    relationshipCount: number;
-    eventCount: number;
-    sourceCount: number;
-}
-
 export interface EnrichmentEconomicSignal {
     eventNeid: string;
     title: string;
@@ -1866,86 +1856,6 @@ export function useCollectionWorkspace() {
         outsideEventCount: outsideEvents.value.length,
         takeawayBullets: enrichmentTakeawayBullets.value,
     }));
-    const topConnectedExtractedEntities = computed<TopConnectedExtractedEntity[]>(() => {
-        const documentNeids = new Set(documentEntities.value.map((entity) => entity.neid));
-        const neighborByEntity = new Map<string, Set<string>>();
-        const fallbackRelationshipCountByEntity = new Map<string, number>();
-        const fallbackEventCountByEntity = new Map<string, number>();
-        const kgCountsByEntity = new Map(
-            (collection.value.meta.kgPerEntity ?? []).map((entry) => [entry.neid, entry] as const)
-        );
-
-        const addNeighbor = (source: string, target: string) => {
-            if (!neighborByEntity.has(source)) neighborByEntity.set(source, new Set());
-            neighborByEntity.get(source)!.add(target);
-        };
-        const increment = (counts: Map<string, number>, neid: string) => {
-            counts.set(neid, (counts.get(neid) ?? 0) + 1);
-        };
-
-        for (const relationship of documentRelationships.value) {
-            if (
-                !documentNeids.has(relationship.sourceNeid) ||
-                !documentNeids.has(relationship.targetNeid)
-            ) {
-                continue;
-            }
-            addNeighbor(relationship.sourceNeid, relationship.targetNeid);
-            addNeighbor(relationship.targetNeid, relationship.sourceNeid);
-            increment(fallbackRelationshipCountByEntity, relationship.sourceNeid);
-            increment(fallbackRelationshipCountByEntity, relationship.targetNeid);
-        }
-
-        for (const eventItem of documentEvents.value) {
-            const participants = Array.from(
-                new Set(eventItem.participantNeids.filter((neid) => documentNeids.has(neid)))
-            );
-            for (const participantNeid of participants) {
-                increment(fallbackEventCountByEntity, participantNeid);
-            }
-            for (let index = 0; index < participants.length; index += 1) {
-                for (let inner = index + 1; inner < participants.length; inner += 1) {
-                    const source = participants[index];
-                    const target = participants[inner];
-                    addNeighbor(source, target);
-                    addNeighbor(target, source);
-                }
-            }
-        }
-
-        return documentEntities.value
-            .map((entity) => ({
-                neid: entity.neid,
-                name: entity.name,
-                flavor: entity.flavor,
-                linkedEntityCount: neighborByEntity.get(entity.neid)?.size ?? 0,
-                relationshipCount:
-                    kgCountsByEntity.get(entity.neid)?.relationshipCount ??
-                    fallbackRelationshipCountByEntity.get(entity.neid) ??
-                    0,
-                eventCount:
-                    kgCountsByEntity.get(entity.neid)?.eventCount ??
-                    fallbackEventCountByEntity.get(entity.neid) ??
-                    0,
-                sourceCount: entity.sourceDocuments.length,
-            }))
-            .filter(
-                (entity) =>
-                    entity.linkedEntityCount > 0 ||
-                    entity.relationshipCount > 0 ||
-                    entity.eventCount > 0
-            )
-            .sort((a, b) => {
-                const relationshipDelta = b.relationshipCount - a.relationshipCount;
-                if (relationshipDelta !== 0) return relationshipDelta;
-                const eventDelta = b.eventCount - a.eventCount;
-                if (eventDelta !== 0) return eventDelta;
-                const linkedDelta = b.linkedEntityCount - a.linkedEntityCount;
-                if (linkedDelta !== 0) return linkedDelta;
-                return a.name.localeCompare(b.name);
-            })
-            .slice(0, 12);
-    });
     const strictProjectLocationEntities = computed(() =>
         collection.value.entities.filter((entity) => {
             if (entity.flavor !== 'location') return false;
@@ -3723,7 +3633,6 @@ export function useCollectionWorkspace() {
         enrichmentLanguageError: computed(() => enrichmentLanguageError.value),
         enrichmentCounts,
         enrichmentComparison,
-        topConnectedExtractedEntities,
         strictProjectLocationEntities,
         recentCoverageAnchors,
         keyQuestionEntities,

@@ -101,7 +101,7 @@ Details:
 - Ask Yotta surfaces evidence-used lines alongside each answer so users can see what collection grounding informed the response instead of only seeing a final narrative.
 - Ask Yotta tab offers contextual prompts, confidence framing, and evidence-linked outputs grounded in entities/events/documents.
 - Insights tab now provides a curated multi-category question deck, per-question execution, cache restoration, citation-first answer panels, entity pivots, and Markdown/HTML export with PDF graceful fallback.
-- Enrichment now opens with an Enriched Graph comparison view that separates document truth from live 1-degree and 2-degree context, and it breaks out enrichable entities/events by type.
+- Enrichment now opens with an Enriched Graph comparison view that separates document truth from live 1-degree and 2-degree context, and it presents the "What The World Graph Adds" signal cards directly below the comparison metrics.
 - Corporate Lineage in enrichment now uses a compact conclusion-first list with structured metadata (relationship type, date, support, confidence) and expandable evidence sections (documents, event anchors, referenced entities, grounding notes) instead of chip-heavy narrative cards.
 - Full 2-hop enrichment context is loaded during the main rebuild pipeline so enrichment views are available immediately after analysis, while primary tabs remain strict document-backed projections.
 - The enrichment Graph tab now renders the full curated 1-degree entity/event neighborhood without the previous collapsed simplified default, while lineage remains available as its own subview.
