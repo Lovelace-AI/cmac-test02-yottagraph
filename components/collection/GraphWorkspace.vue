@@ -575,9 +575,14 @@
         }
         return connected;
     });
-    const visibleEntities = computed(() =>
-        filteredEntities.value.filter((entity) => connectedEntityNeids.value.has(entity.neid))
-    );
+    const visibleEntities = computed(() => {
+        if (props.entitiesOverride || props.relationshipsOverride) {
+            return filteredEntities.value;
+        }
+        return filteredEntities.value.filter((entity) =>
+            connectedEntityNeids.value.has(entity.neid)
+        );
+    });
     const eventNeidSet = computed(() => new Set(events.value.map((eventItem) => eventItem.neid)));
     const documentNeidSet = computed(() => new Set(documents.value.map((doc) => doc.neid)));
 
