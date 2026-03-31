@@ -167,6 +167,7 @@ const ENRICHMENT_MAX_ENTITIES = 50_000;
 const ENRICHMENT_MAX_RELATIONSHIPS = 200_000;
 const ENRICHMENT_MAX_EVENTS = 50_000;
 const ENRICHMENT_MAX_EVENT_HUBS = 250;
+const PHASE3_DEADLINE_MS = 150_000;
 let strictDocumentNeidSet = new Set(BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid)));
 
 function propertyValueFromRecord(record: unknown): unknown {
@@ -337,9 +338,16 @@ export default defineEventHandler(async (event) => {
         'X-Accel-Buffering': 'no',
     });
 
+    let clientDisconnected = false;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
     const send = (type: string, data: Record<string, unknown>) => {
-        const payload = JSON.stringify({ type, ...data });
-        event.node.res.write(`data: ${payload}\n\n`);
+        if (clientDisconnected || event.node.res.destroyed || event.node.res.writableEnded) return;
+        try {
+            const payload = JSON.stringify({ type, ...data });
+            event.node.res.write(`data: ${payload}\n\n`);
+        } catch {
+            clientDisconnected = true;
+        }
     };
 
     const sendStep = (
@@ -356,9 +364,13 @@ export default defineEventHandler(async (event) => {
     };
 
     // Keep SSE connection active in deployed environments that enforce idle timeouts.
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
         send('heartbeat', { ts: new Date().toISOString() });
     }, 10_000);
+    event.node.res.on('close', () => {
+        clientDisconnected = true;
+        if (heartbeat) clearInterval(heartbeat);
+    });
 
     resetMcpSession();
 
@@ -586,6 +598,8 @@ export default defineEventHandler(async (event) => {
         let phase3ReturnedEvents = 0;
         let phase3ProcessedHubs = 0;
         let phase3ProcessedEvents = 0;
+        const phase3StartedAt = Date.now();
+        let phase3DeadlineReached = false;
         const activeHubLabels = new Set<string>();
         const activeHubSummary = () => {
             const labels = Array.from(activeHubLabels);
@@ -599,6 +613,11 @@ export default defineEventHandler(async (event) => {
         await pMap(
             strictEventHubNeids,
             async (hubNeid) => {
+                if (clientDisconnected) return;
+                if (Date.now() - phase3StartedAt > PHASE3_DEADLINE_MS) {
+                    phase3DeadlineReached = true;
+                    return;
+                }
                 const hubLabel = getEntityByNeid(hubNeid)?.name || hubNeid;
                 activeHubLabels.add(hubLabel);
                 sendStep(
@@ -610,6 +629,11 @@ export default defineEventHandler(async (event) => {
                 try {
                     const eventsByNeid = new Map<string, any>();
                     for (const window of EVENT_TIME_WINDOWS) {
+                        if (clientDisconnected) return;
+                        if (Date.now() - phase3StartedAt > PHASE3_DEADLINE_MS) {
+                            phase3DeadlineReached = true;
+                            break;
+                        }
                         const result = await callToolWithRetry<any>(
                             'elemental_get_events',
                             {
@@ -620,7 +644,7 @@ export default defineEventHandler(async (event) => {
                             },
                             // Keep the streaming path responsive. The fallback rebuild already
                             // handles slow or flaky MCP hubs without pinning the UI indefinitely.
-                            { timeoutMs: 20_000, attempts: 1 }
+                            { timeoutMs: 25_000, attempts: 2 }
                         );
                         const rows = result?.events ?? [];
                         phase3ReturnedEvents += rows.length;
@@ -630,6 +654,11 @@ export default defineEventHandler(async (event) => {
                         }
                     }
                     for (const evt of eventsByNeid.values()) {
+                        if (clientDisconnected) return;
+                        if (Date.now() - phase3StartedAt > PHASE3_DEADLINE_MS) {
+                            phase3DeadlineReached = true;
+                            break;
+                        }
                         const eventNeid = normalizeNeid(String(evt.neid));
                         const eventKey = seedKeyFromNameAndFlavor(
                             (evt.name as string) || '',
@@ -705,7 +734,7 @@ export default defineEventHandler(async (event) => {
                                         direction: 'both',
                                         limit: 100,
                                     },
-                                    { timeoutMs: 12_000, attempts: 1 }
+                                    { timeoutMs: 15_000, attempts: 2 }
                                 );
                                 const rows = eventDocResult?.relationships ?? [];
                                 appearsInDocNeids = [
@@ -826,6 +855,14 @@ export default defineEventHandler(async (event) => {
         console.log(
             `[Phase3] event resolution stats: hubs=${strictEventHubNeids.length}, returned=${phase3ReturnedEvents}, matchedRows=${phase3MatchedEvents}`
         );
+        if (phase3DeadlineReached) {
+            sendStep(
+                3,
+                'working',
+                'Loading Document Events',
+                `Event loading hit the ${Math.round(PHASE3_DEADLINE_MS / 1000)}s phase budget; continuing with ${formatCount(phase3ProcessedEvents)} document-backed events.`
+            );
+        }
 
         sendStep(
             3,
@@ -1123,6 +1160,7 @@ export default defineEventHandler(async (event) => {
 
         const documentEntities = Array.from(entityByKey.values());
         const documentEvents = Array.from(eventByKey.values());
+        const documentRelationshipCount = relationshipMap.size;
         const enrichmentResult = await runEnrichmentExpansion(
             {
                 anchorNeids: documentEntities.map((entity) => entity.neid),
@@ -1173,7 +1211,7 @@ export default defineEventHandler(async (event) => {
                     document: {
                         entityCount: documentEntities.length,
                         eventCount: documentEvents.length,
-                        relationshipCount: documentRelationships.length,
+                        relationshipCount: documentRelationshipCount,
                         propertyCount: baselineExtractedPropertyCount,
                     },
                     raw1Degree: {
@@ -1226,7 +1264,9 @@ export default defineEventHandler(async (event) => {
         sendMcpLogSnapshot();
         send('done', {});
     } finally {
-        clearInterval(heartbeat);
-        event.node.res.end();
+        if (heartbeat) clearInterval(heartbeat);
+        if (!event.node.res.writableEnded && !event.node.res.destroyed) {
+            event.node.res.end();
+        }
     }
 });
