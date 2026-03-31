@@ -1216,7 +1216,9 @@
             tooltip.value = null;
         });
 
-        fitCameraToGraphBounds(g);
+        if (props.entitiesOverride || props.relationshipsOverride) {
+            fitCameraToGraphBounds(g);
+        }
         applySelectedHighlight();
         queueSigmaReflow();
     }
