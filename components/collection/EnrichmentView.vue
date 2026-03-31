@@ -178,31 +178,18 @@
             </v-window-item>
 
             <v-window-item value="lineage">
-                <v-alert v-if="lineageInsights.length === 0" type="info" variant="tonal">
+                <v-alert
+                    v-if="lineageInsights.length === 0 && !enrichmentLanguageLoading"
+                    type="info"
+                    variant="tonal"
+                >
                     No lineage insights found in the curated one-hop graph.
                 </v-alert>
-                <div v-else class="d-flex flex-column ga-3">
-                    <v-card v-for="insight in lineageInsights" :key="insight.id">
-                        <v-card-item>
-                            <v-card-title class="text-body-2">{{ insight.title }}</v-card-title>
-                            <v-card-subtitle>{{ insight.subtitle }}</v-card-subtitle>
-                        </v-card-item>
-                        <v-card-text>
-                            <div class="text-body-2 mb-2">{{ insight.plainSummary }}</div>
-                            <div class="d-flex flex-wrap ga-1">
-                                <v-chip
-                                    v-for="line in insight.evidence.slice(0, 3)"
-                                    :key="`${insight.id}:${line}`"
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                >
-                                    {{ line }}
-                                </v-chip>
-                            </div>
-                        </v-card-text>
-                    </v-card>
-                </div>
+                <LineageResultList
+                    v-else
+                    :results="lineageResults"
+                    :loading="enrichmentLanguageLoading"
+                />
             </v-window-item>
 
             <v-window-item value="news">
@@ -567,6 +554,8 @@
         enrichmentGraphEntities,
         enrichmentGraphRelationships,
         lineageInsights,
+        lineageResults,
+        enrichmentLanguageLoading,
         enrichmentNews,
         enrichmentNewsLoading,
         enrichmentNewsError,

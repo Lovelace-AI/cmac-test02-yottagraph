@@ -136,6 +136,62 @@ export interface CollectionState {
     error?: string;
 }
 
+export type LineageConfidenceLabel = 'high' | 'medium' | 'low';
+export type LineageEvidenceMode =
+    | 'direct_document'
+    | 'graph_enriched'
+    | 'event_documented'
+    | 'inferred'
+    | 'mixed';
+
+export interface LineageSupportingDocument {
+    neid: string;
+    title: string;
+    kind?: string;
+    date?: string;
+    snippet?: string;
+}
+
+export interface LineageEventAnchor {
+    neid: string;
+    title: string;
+    dateLabel?: string | null;
+    anchorType: 'bank_succession' | 'beneficiary_change' | 'related_event';
+    snippet?: string;
+}
+
+export interface LineageReferencedEntity {
+    neid: string;
+    name: string;
+    flavor: string;
+    role: 'source' | 'target' | 'participant';
+}
+
+export interface LineageResultViewModel {
+    id: string;
+    sourceEntityNeid: string;
+    targetEntityNeid: string;
+    sourceEntityName: string;
+    targetEntityName: string;
+    primaryStatement: string;
+    relationshipTypeLabel: string;
+    effectiveDateLabel: string | null;
+    supportCount: number;
+    supportLabel: string;
+    confidenceLabel: LineageConfidenceLabel;
+    evidenceMode: LineageEvidenceMode;
+    evidenceModeLabel: string;
+    summarySentence: string;
+    explanationSentence: string;
+    relatedEntityNeids: string[];
+    relatedEventNeids: string[];
+    topEvidenceAnchors: string[];
+    supportingDocuments: LineageSupportingDocument[];
+    eventAnchors: LineageEventAnchor[];
+    referencedEntities: LineageReferencedEntity[];
+    groundingNotes: string[];
+}
+
 export type WorkspaceTab =
     | 'overview'
     | 'graph'

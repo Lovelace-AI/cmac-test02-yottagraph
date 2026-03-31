@@ -3,6 +3,9 @@ import type {
     CollectionState,
     EntityRecord,
     EventRecord,
+    LineageEvidenceMode,
+    LineageResultViewModel,
+    LineageSupportingDocument,
     RelationshipRecord,
     PropertySeriesRecord,
     WorkspaceTab,
@@ -10,7 +13,11 @@ import type {
 import { emptyCollectionState } from '~/utils/collectionTypes';
 import { mapCollectionToOverviewViewModel } from '~/utils/overviewBriefing';
 import { projectCollapsedOrganizationLineage } from '~/utils/enrichmentLineage';
-import type { AskYottaPipelineResponse, AgentPipelineStep } from '~/utils/agentPipeline';
+import type {
+    AskYottaHistoryTurn,
+    AskYottaPipelineResponse,
+    AgentPipelineStep,
+} from '~/utils/agentPipeline';
 
 export interface RebuildStep {
     step: number;
@@ -269,6 +276,18 @@ const agentLoading = ref(false);
 type AgentAnswerResult = AskYottaPipelineResponse;
 const agentResult = ref<AgentAnswerResult | null>(null);
 const agentStepsLive = ref<AgentPipelineStep[] | null>(null);
+type AskYottaAnswerResult = AskYottaPipelineResponse;
+interface AskYottaThreadTurn {
+    id: string;
+    question: string;
+    answer: AskYottaAnswerResult | null;
+    status: 'loading' | 'completed' | 'error';
+    steps: AgentPipelineStep[];
+    askedAt: string;
+    completedAt?: string;
+}
+const askYottaLoading = ref(false);
+const askYottaThread = ref<AskYottaThreadTurn[]>([]);
 const mcpLog = ref<McpLogEntry[]>([]);
 const geminiLog = ref<GeminiUsageEntry[]>([]);
 let _geminiIdCounter = 0;
@@ -302,7 +321,7 @@ function gatewayPromptForAction(
     resolveName?: (neid: string) => string
 ): string {
     if (action === 'summarize_collection') {
-        return 'Summarize this collection in plain English. Highlight the most central entities and significant events. Do not include recommendations or suggested next steps.';
+        return 'Give me a grounded executive brief of this collection in plain English. Explain the core process or deal, the most consequential organizations, instruments, and events, and why they matter. Do not just enumerate entities or dates. Do not include recommendations or suggested next steps.';
     }
     if (action === 'explain_entity' && params?.entityNeid) {
         if (params?.question?.trim()) return params.question.trim();
@@ -328,6 +347,17 @@ function gatewayPromptForAction(
         );
     }
     return params?.question?.trim() || 'Provide a grounded analysis of this collection.';
+}
+
+function mapAskYottaHistory(thread: AskYottaThreadTurn[], limit = 3): AskYottaHistoryTurn[] {
+    return thread
+        .filter((turn) => turn.answer?.output?.trim())
+        .slice(-limit)
+        .flatMap((turn) => [
+            { role: 'user' as const, text: turn.question.trim() },
+            { role: 'assistant' as const, text: turn.answer?.output?.trim() || '' },
+        ])
+        .filter((turn) => turn.text);
 }
 
 export function useCollectionWorkspace() {
@@ -1212,6 +1242,233 @@ export function useCollectionWorkspace() {
             .sort((a, b) => b.rankScore - a.rankScore)
             .map(({ rankScore: _, ...card }) => card);
     });
+
+    const lineageRelationshipsByPair = computed(() => {
+        const byPair = new Map<string, RelationshipRecord[]>();
+        for (const relationship of relationshipNeidPairs.value) {
+            if (
+                relationship.normalizedType !== 'successor_to' &&
+                relationship.normalizedType !== 'predecessor_of'
+            ) {
+                continue;
+            }
+            const source = entityByNeid.value.get(relationship.sourceNeid);
+            const target = entityByNeid.value.get(relationship.targetNeid);
+            if (!source || !target) continue;
+            if (source.flavor !== 'organization' || target.flavor !== 'organization') continue;
+            const predecessor = relationship.normalizedType === 'successor_to' ? target : source;
+            const successor = relationship.normalizedType === 'successor_to' ? source : target;
+            const pairKey = `${predecessor.neid}|${successor.neid}`;
+            const list = byPair.get(pairKey) ?? [];
+            list.push(relationship);
+            byPair.set(pairKey, list);
+        }
+        return byPair;
+    });
+
+    const lineageRelationshipTypeText = (normalizedType: string | null): string => {
+        if (!normalizedType) return 'Predecessor / successor';
+        if (normalizedType === 'successor_to') return 'Successor organization';
+        if (normalizedType === 'predecessor_of') return 'Predecessor organization';
+        return normalizedType.replace(/_/g, ' ');
+    };
+
+    const lineageEvidenceModeLabel = (mode: LineageEvidenceMode): string => {
+        if (mode === 'direct_document') return 'Direct document evidence';
+        if (mode === 'event_documented') return 'Document-derived event evidence';
+        if (mode === 'graph_enriched') return 'Graph-enriched relationship';
+        if (mode === 'mixed') return 'Direct + inferred evidence';
+        return 'Inferred lineage';
+    };
+
+    const labelForEvidenceCount = (count: number): string =>
+        `${count} source ${count === 1 ? 'document' : 'documents'}`;
+
+    const lineageResults = computed<LineageResultViewModel[]>(() =>
+        lineageInsights.value
+            .map((card) => {
+                if (card.relatedEntityNeids.length < 2) return null;
+                const sourceEntityNeid = card.relatedEntityNeids[0];
+                const targetEntityNeid = card.relatedEntityNeids[1];
+                const sourceEntity = entityByNeid.value.get(sourceEntityNeid);
+                const targetEntity = entityByNeid.value.get(targetEntityNeid);
+                const sourceEntityName = entityDisplayName(sourceEntity) || sourceEntityNeid;
+                const targetEntityName = entityDisplayName(targetEntity) || targetEntityNeid;
+                const primaryStatement = `${sourceEntityName} -> ${targetEntityName}`;
+
+                const pairKey = `${sourceEntityNeid}|${targetEntityNeid}`;
+                const relationshipCandidates = lineageRelationshipsByPair.value.get(pairKey) ?? [];
+                const bestRelationship =
+                    relationshipCandidates.find((item) => hasStrictRelationshipEvidence(item)) ??
+                    relationshipCandidates[0];
+                const normalizedRelationshipType = bestRelationship
+                    ? normalizeRelationshipType(bestRelationship.type)
+                    : null;
+
+                const relatedEvents = card.relatedEventNeids
+                    .map((eventNeid) => eventByNeid.value.get(eventNeid))
+                    .filter((eventItem): eventItem is EventRecord => Boolean(eventItem));
+
+                const supportingDocumentNeids = new Set<string>();
+                const addDocumentNeids = (values: string[] | undefined) => {
+                    for (const value of values ?? []) {
+                        if (strictDocumentNeidSet.value.has(value)) {
+                            supportingDocumentNeids.add(value);
+                        }
+                    }
+                };
+                addDocumentNeids(sourceEntity?.sourceDocuments);
+                addDocumentNeids(targetEntity?.sourceDocuments);
+                if (bestRelationship?.sourceDocumentNeid) {
+                    addDocumentNeids([bestRelationship.sourceDocumentNeid]);
+                }
+                for (const eventItem of relatedEvents) {
+                    addDocumentNeids(eventItem.sourceDocuments);
+                }
+                const citationCount = bestRelationship?.citations?.length ?? 0;
+                const supportCount = supportingDocumentNeids.size || citationCount;
+
+                const hasDocumentedRelationship = Boolean(
+                    bestRelationship && hasStrictRelationshipEvidence(bestRelationship)
+                );
+                const hasDocumentedEvent = relatedEvents.some((eventItem) =>
+                    hasStrictDocumentSource(eventItem.sourceDocuments)
+                );
+                const evidenceMode: LineageEvidenceMode =
+                    hasDocumentedRelationship && hasDocumentedEvent
+                        ? 'mixed'
+                        : hasDocumentedRelationship
+                          ? 'direct_document'
+                          : hasDocumentedEvent
+                            ? 'event_documented'
+                            : bestRelationship?.origin === 'enriched'
+                              ? 'graph_enriched'
+                              : 'inferred';
+                const confidenceLabel: LineageResultViewModel['confidenceLabel'] =
+                    supportCount >= 4 || evidenceMode === 'mixed'
+                        ? 'high'
+                        : supportCount >= 2 || evidenceMode === 'direct_document'
+                          ? 'medium'
+                          : 'low';
+
+                const supportingDocuments: LineageSupportingDocument[] = Array.from(
+                    supportingDocumentNeids
+                ).map((docNeid) => {
+                    const doc = collection.value.documents.find((item) => item.neid === docNeid);
+                    return {
+                        neid: docNeid,
+                        title: doc?.title ?? docNeid,
+                        kind: doc?.kind,
+                        date: doc?.date,
+                    };
+                });
+
+                const eventAnchors = relatedEvents.map((eventItem) => {
+                    const signal = parseEventLineageSignal(eventItem);
+                    return {
+                        neid: eventItem.neid,
+                        title: eventItem.name,
+                        dateLabel: eventDateLabel(eventItem),
+                        anchorType:
+                            signal?.mode === 'bank_succession'
+                                ? 'bank_succession'
+                                : signal?.mode === 'beneficiary_change'
+                                  ? 'beneficiary_change'
+                                  : 'related_event',
+                        snippet: eventDescriptionSnippet(eventItem) ?? undefined,
+                    } as LineageResultViewModel['eventAnchors'][number];
+                });
+
+                const referencedParticipants = new Set<string>();
+                for (const eventItem of relatedEvents) {
+                    for (const participantNeid of eventItem.participantNeids) {
+                        if (
+                            participantNeid !== sourceEntityNeid &&
+                            participantNeid !== targetEntityNeid
+                        ) {
+                            referencedParticipants.add(participantNeid);
+                        }
+                    }
+                }
+                const referencedEntities: LineageResultViewModel['referencedEntities'] = [
+                    {
+                        neid: sourceEntityNeid,
+                        name: sourceEntityName,
+                        flavor: sourceEntity?.flavor ?? 'organization',
+                        role: 'source',
+                    },
+                    {
+                        neid: targetEntityNeid,
+                        name: targetEntityName,
+                        flavor: targetEntity?.flavor ?? 'organization',
+                        role: 'target',
+                    },
+                    ...Array.from(referencedParticipants)
+                        .map((neid) => entityByNeid.value.get(neid))
+                        .filter((entity): entity is EntityRecord => Boolean(entity))
+                        .slice(0, 8)
+                        .map((entity) => ({
+                            neid: entity.neid,
+                            name: entityDisplayName(entity),
+                            flavor: entity.flavor,
+                            role: 'participant' as const,
+                        })),
+                ];
+
+                const relationshipTypeLabel = lineageRelationshipTypeText(
+                    normalizedRelationshipType
+                );
+                const effectiveDateLabel =
+                    card.relationshipDateLabel ||
+                    (bestRelationship ? relationshipDateLabel(bestRelationship) : null) ||
+                    (relatedEvents.length ? eventDateRangeLabel(relatedEvents) : null);
+                const topEvidenceAnchors = [
+                    relationshipTypeLabel,
+                    ...eventAnchors.slice(0, 2).map((item) => item.title),
+                ].filter(Boolean);
+
+                const summarySentence =
+                    card.plainSummary ||
+                    `${primaryStatement} is supported by ${labelForEvidenceCount(supportCount)}.`;
+                const explanationSentence = `Supported by ${labelForEvidenceCount(supportCount)} with ${lineageEvidenceModeLabel(evidenceMode).toLowerCase()}.`;
+                const groundingNotes = [
+                    `Evidence mode: ${lineageEvidenceModeLabel(evidenceMode)}.`,
+                    bestRelationship
+                        ? `Relationship origin: ${bestRelationship.origin}.`
+                        : 'No normalized lineage edge was found; this item is assembled from event context.',
+                    effectiveDateLabel
+                        ? `Date signal: ${effectiveDateLabel}.`
+                        : 'Date signal: inferred from surrounding relationship and event context.',
+                    citationCount > 0 ? `Citation references: ${citationCount}.` : null,
+                ].filter((item): item is string => Boolean(item));
+
+                return {
+                    id: card.id,
+                    sourceEntityNeid,
+                    targetEntityNeid,
+                    sourceEntityName,
+                    targetEntityName,
+                    primaryStatement,
+                    relationshipTypeLabel,
+                    effectiveDateLabel,
+                    supportCount,
+                    supportLabel: `Supported by ${labelForEvidenceCount(supportCount)}`,
+                    confidenceLabel,
+                    evidenceMode,
+                    evidenceModeLabel: lineageEvidenceModeLabel(evidenceMode),
+                    summarySentence,
+                    explanationSentence,
+                    relatedEntityNeids: card.relatedEntityNeids,
+                    relatedEventNeids: card.relatedEventNeids,
+                    topEvidenceAnchors,
+                    supportingDocuments,
+                    eventAnchors,
+                    referencedEntities,
+                    groundingNotes,
+                };
+            })
+            .filter((item): item is LineageResultViewModel => Boolean(item))
+    );
 
     const broaderActivityInsights = computed<EnrichmentInsightCard[]>(() => {
         const cards: Array<EnrichmentInsightCard & { rankScore: number; dedupeKey: string }> = [];
@@ -2803,6 +3060,146 @@ export function useCollectionWorkspace() {
         }
     }
 
+    async function runAskYottaAction(
+        action: 'summarize_collection' | 'answer_question',
+        prompt: string
+    ): Promise<void> {
+        const question = prompt.trim();
+        if (!question || askYottaLoading.value) return;
+
+        const history = mapAskYottaHistory(askYottaThread.value);
+        const turn: AskYottaThreadTurn = {
+            id: crypto.randomUUID(),
+            question,
+            answer: null,
+            status: 'loading',
+            steps: [
+                {
+                    step: 1,
+                    status: 'working',
+                    label: 'Planning Agent',
+                    detail: 'Interpreting your question and selecting a retrieval strategy...',
+                },
+                {
+                    step: 2,
+                    status: 'pending',
+                    label: 'Context Agent',
+                    detail: 'Gathering grounded evidence from collection and graph context...',
+                },
+                {
+                    step: 3,
+                    status: 'pending',
+                    label: 'Composition Agent',
+                    detail: 'Composing a concise grounded answer...',
+                },
+            ],
+            askedAt: new Date().toISOString(),
+        };
+        askYottaThread.value.push(turn);
+        askYottaLoading.value = true;
+
+        try {
+            const response = await fetch('/api/collection/agent-orchestrator', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action,
+                    question,
+                    conversationHistory: history,
+                }),
+            });
+
+            if (!response.ok || !response.body) {
+                const text = await response.text();
+                turn.answer = {
+                    output: text || 'Agent action failed',
+                    citations: [],
+                };
+                turn.status = 'error';
+                turn.completedAt = new Date().toISOString();
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                let boundary = buffer.indexOf('\n\n');
+                while (boundary !== -1) {
+                    const chunk = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+
+                    const eventMatch = chunk.match(/^event:\s*(.+)/m);
+                    const dataMatch = chunk.match(/^data:\s*(.+)/m);
+                    if (!eventMatch || !dataMatch) {
+                        boundary = buffer.indexOf('\n\n');
+                        continue;
+                    }
+
+                    const eventType = eventMatch[1].trim();
+                    let payload: any;
+                    try {
+                        payload = JSON.parse(dataMatch[1]);
+                    } catch {
+                        boundary = buffer.indexOf('\n\n');
+                        continue;
+                    }
+
+                    if (eventType === 'steps') {
+                        turn.steps = (payload as AgentPipelineStep[]).map((step) => ({ ...step }));
+                    } else if (eventType === 'result') {
+                        const result = payload as AskYottaAnswerResult;
+                        turn.answer = {
+                            output: result?.output?.trim() || 'Agent returned no text response.',
+                            citations: result?.citations ?? [],
+                            generationSource: result?.generationSource ?? 'fallback',
+                            generationNote: result?.generationNote,
+                            usage: result?.usage,
+                            agentSteps: (result?.agentSteps ?? []) as AgentPipelineStep[],
+                            evidenceLines: result?.evidenceLines ?? [],
+                        };
+                        if (result?.agentSteps?.length) {
+                            turn.steps = result.agentSteps.map((step) => ({ ...step }));
+                        }
+                        if (result?.usage) {
+                            addGeminiUsage({
+                                model: result.usage.model,
+                                promptTokens: result.usage.promptTokens,
+                                completionTokens: result.usage.completionTokens,
+                                totalTokens: result.usage.totalTokens,
+                                costUsd: result.usage.costUsd,
+                                latencyMs: result.usage.latencyMs ?? 0,
+                                timestamp: new Date().toISOString(),
+                                label: `collection_answer:${action}`,
+                            });
+                        }
+                        turn.status =
+                            result?.generationSource === 'fallback' && !result?.output?.trim()
+                                ? 'error'
+                                : 'completed';
+                        turn.completedAt = new Date().toISOString();
+                    }
+
+                    boundary = buffer.indexOf('\n\n');
+                }
+            }
+        } catch (e: any) {
+            turn.answer = {
+                output: e.data?.statusMessage || e.message || 'Agent action failed',
+                citations: [],
+            };
+            turn.status = 'error';
+            turn.completedAt = new Date().toISOString();
+        } finally {
+            askYottaLoading.value = false;
+        }
+    }
+
     function selectEntity(neid: string | null): void {
         selectedEntityNeid.value = neid;
     }
@@ -2843,6 +3240,8 @@ export function useCollectionWorkspace() {
         agentLoading: computed(() => agentLoading.value),
         agentResult: computed(() => agentResult.value),
         agentStepsLive: computed(() => agentStepsLive.value),
+        askYottaLoading: computed(() => askYottaLoading.value),
+        askYottaThread: computed(() => askYottaThread.value),
         mcpLog: computed(() => mcpLog.value),
         geminiLog: computed(() => geminiLog.value),
         documents,
@@ -2883,6 +3282,7 @@ export function useCollectionWorkspace() {
         enrichmentTakeawayBullets,
         enrichmentValueSummary,
         lineageInsights,
+        lineageResults,
         broaderActivityInsights,
         eventTimelineInsights,
         peopleAffiliationInsights,
@@ -2937,6 +3337,7 @@ export function useCollectionWorkspace() {
         generateEnrichmentWatchlist,
         fetchPropertyHistory,
         runAgentAction,
+        runAskYottaAction,
         addGeminiUsage,
         selectEntity,
         setTab,
