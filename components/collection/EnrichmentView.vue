@@ -215,6 +215,7 @@
                     key="enrichment-graph-workspace"
                     :entities-override="entities"
                     :relationships-override="relationships"
+                    :is-active="activeSubtab === 'graph'"
                     :initial-include-context-endpoints="true"
                     :initial-hidden-flavors="[]"
                     :initial-analysis-mode="'centrality'"
