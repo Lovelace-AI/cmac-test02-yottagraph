@@ -113,8 +113,8 @@ const MAX_RELATIONSHIPS_PER_CALL = 500;
 const MAX_HOPS = 1;
 const DEFAULT_MAX_EVENT_HUBS = 250;
 const MAX_EVENTS_PER_HUB = 500;
-const DEFAULT_MAX_ENTITIES = 50_000;
-const DEFAULT_MAX_RELATIONSHIPS = 200_000;
+const DEFAULT_MAX_ENTITIES = 100_000;
+const DEFAULT_MAX_RELATIONSHIPS = 100_000;
 const DEFAULT_MAX_EVENTS = 50_000;
 const RELATED_TOOL_TIMEOUT_MS = 8_000;
 const EVENTS_TOOL_TIMEOUT_MS = 8_000;
@@ -263,10 +263,10 @@ export async function runEnrichmentExpansion(
 ): Promise<EnrichmentExpandResult> {
     const hops = 1;
     const includeEvents = body.includeEvents !== false;
-    const maxEntities = Math.max(1, Math.min(body.maxEntities ?? DEFAULT_MAX_ENTITIES, 50000));
+    const maxEntities = Math.max(1, Math.min(body.maxEntities ?? DEFAULT_MAX_ENTITIES, 100000));
     const maxRelationships = Math.max(
         1,
-        Math.min(body.maxRelationships ?? DEFAULT_MAX_RELATIONSHIPS, 200000)
+        Math.min(body.maxRelationships ?? DEFAULT_MAX_RELATIONSHIPS, 100000)
     );
     const maxEvents = Math.max(1, Math.min(body.maxEvents ?? DEFAULT_MAX_EVENTS, 50000));
     const maxEventHubs = Math.max(1, Math.min(body.maxEventHubs ?? DEFAULT_MAX_EVENT_HUBS, 1000));
