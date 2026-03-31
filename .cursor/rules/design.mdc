@@ -40,6 +40,8 @@ Feature docs are used as working documents to help a user and agent collaborate 
 
 When a user starts working on implementing a change, if they are using a feature doc, read the relevant feature doc before starting work. Then update the feature doc with every change you make. Be sure to create checklists as you plan work, and check off the checklists as the work is completed. Document design choices and open questions.
 
-If the user is implementing a change that has no feature doc, encourage them to work with you to create one before starting work. A new feature doc should be created by copying `design/feature_template.md` to a new file in `design`, giving it an appropriate name, and editing it from there. 
+If the user is implementing a change that has no feature doc, encourage them to work with you to create one before starting work. A new feature doc should be created by copying `design/feature_template.md` to a new file in `design`, giving it an appropriate name, and editing it from there.
+
+**Exception for initial app builds:** When building a new app from scratch via `/build_my_app`, skip per-page feature docs. They add overhead during greenfield builds where the entire app is being created at once. Start using feature docs once the initial app is built and you're iterating on individual features.
 
 It is a good practice to close out one feature doc and start a new one as the focus of the work shifts. It is acceptable to be working with multiple feature docs at once, if the user is working on multiple unconnected or loosely connected features. The sections of the feature doc are flexible and you should add or remove sections to fit the needs of the project.

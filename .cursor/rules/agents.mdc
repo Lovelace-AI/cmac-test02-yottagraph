@@ -88,9 +88,9 @@ dev (`agents/` on sys.path → absolute import) and Agent Engine runtime
 
 Key endpoints:
 - `GET /elemental/metadata/schema` — entity types and properties
-- `POST /elemental/find` — search for entities
+- `POST /elemental/find` — search for entities by expression
+- `POST /entities/search` — search for entities by name (batch, scored)
 - `POST /elemental/entities/properties` — get entity property values
-- `GET /entities/lookup?q=<name>` — look up entity by name
 
 Requirements for agents using the Elemental API (add to `requirements.txt`):
 ```
@@ -352,6 +352,31 @@ for await (const { event, data } of readSSE(res)) {
 The `done` event always includes the final extracted text, so you don't
 need to track text deltas yourself.
 
+## useAgentChat Gotcha — Vue Reactivity
+
+When building a chat UI with `useAgentChat`, do NOT hold a local reference
+to a message object after pushing it into the `messages` array. Vue's
+reactivity only tracks mutations made through the reactive Proxy — writes
+to the original plain object are invisible to the template.
+
+```typescript
+// WRONG — local ref bypasses Vue's reactivity, UI won't update:
+const msg: ChatMessage = { id: '...', role: 'agent', text: '', streaming: true };
+messages.value.push(msg);
+msg.text = 'hello';        // data changes, but Vue doesn't know
+msg.streaming = false;     // template still shows typing indicator
+
+// CORRECT — access through the reactive array:
+messages.value.push({ id: '...', role: 'agent', text: '', streaming: true });
+const idx = messages.value.length - 1;
+messages.value[idx].text = 'hello';        // Vue detects this
+messages.value[idx].streaming = false;     // template re-renders
+```
+
+The `useAgentChat` composable uses the correct pattern internally (via an
+`updateAgent()` helper that writes through the array index). If you build a
+custom chat composable or modify `sendMessage`, follow the same approach.
+
 ## Agent Design Guidelines
 
 - Keep agents focused: one agent per domain or task type
@@ -359,3 +384,127 @@ need to track text deltas yourself.
 - Tool docstrings are critical: they're the LLM's API documentation
 - Handle errors gracefully in tools: return error messages, don't raise exceptions
 - Use `get_schema` as a discovery tool so the agent can learn about entity types at runtime
+
+## Agent Tool Design
+
+LLMs are better at parsing prose than nested JSON. The difference between
+a tool that works reliably and one that confuses the agent often comes down
+to how the tool formats its output. Follow these principles:
+
+### Return formatted strings, not raw JSON
+
+This applies to ADK agent tools, where the LLM reads tool output directly.
+MCP server tools follow different conventions (structured dicts/lists) — see
+the `mcp-servers` rule.
+
+The agent's LLM will try to interpret whatever the tool returns. Raw API
+responses with nested dicts, numeric IDs, and arrays of unlabeled values
+create unnecessary interpretation burden.
+
+```python
+# BAD — raw API response overwhelms the LLM:
+def lookup_entity(name: str) -> dict:
+    resp = elemental_client.get(f"/entities/lookup?entityName={name}&maxResults=5")
+    resp.raise_for_status()
+    return resp.json()  # {"results": [{"neid": "00416400910670863867", ...}]}
+
+# GOOD — formatted string the LLM can immediately use:
+def lookup_entity(name: str) -> str:
+    """Look up an entity by name. Returns entity name, ID, and type."""
+    try:
+        resp = elemental_client.get(f"/entities/lookup?entityName={name}&maxResults=5")
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results", [])
+        if not results:
+            return f"No entities found matching '{name}'."
+        lines = []
+        for r in results[:5]:
+            lines.append(f"- {r.get('name', 'Unknown')} (ID: {r.get('neid', '?')}, Type: {r.get('type', '?')})")
+        return f"Found {len(results)} result(s) for '{name}':\n" + "\n".join(lines)
+    except Exception as e:
+        return f"Error looking up '{name}': {e}"
+```
+
+### Catch all exceptions — never let errors propagate
+
+`raise_for_status()` without a try/catch will crash the tool and produce an
+opaque error in the agent's event stream. Always catch exceptions and return
+a descriptive error string.
+
+```python
+# BAD — unhandled exception kills the tool call:
+def get_data(neid: str) -> dict:
+    resp = elemental_client.post("/elemental/entities/properties", data={...})
+    resp.raise_for_status()
+    return resp.json()
+
+# GOOD — agent gets a useful error message it can relay to the user:
+def get_data(neid: str) -> str:
+    """Get properties for an entity by its NEID."""
+    try:
+        resp = elemental_client.post("/elemental/entities/properties", data={...})
+        resp.raise_for_status()
+        # ... format results ...
+        return formatted_output
+    except Exception as e:
+        return f"Error fetching data for {neid}: {e}"
+```
+
+### Pre-resolve known entities for focused agents
+
+If your agent tracks specific companies, people, or assets, hardcode their
+NEIDs instead of requiring a lookup step. This eliminates a fragile
+search-then-resolve flow.
+
+```python
+TRACKED_COMPANIES = {
+    "Apple": "00416400910670863867",
+    "Tesla": "00508379502570440213",
+    "Microsoft": "00112855504880632635",
+}
+
+def get_company_info(company_name: str) -> str:
+    """Get current information about a tracked company.
+    Available companies: Apple, Tesla, Microsoft."""
+    neid = TRACKED_COMPANIES.get(company_name)
+    if not neid:
+        return f"Unknown company '{company_name}'. Available: {', '.join(TRACKED_COMPANIES)}"
+    # ... fetch and format properties using the known NEID ...
+```
+
+### Combine multi-step API flows into single tools
+
+The fewer tools the agent needs to chain together, the more reliably it
+operates. If every query requires lookup → get properties → format, combine
+those steps into a single tool.
+
+```python
+# BAD — agent must chain 3 tools correctly:
+#   1. lookup_entity("Apple") → get NEID
+#   2. get_schema() → find property PIDs
+#   3. get_property_values(neid, pids) → parse values array
+
+# GOOD — one tool does the full flow:
+def get_company_summary(name: str) -> str:
+    """Get a summary of a company including name, country, and industry."""
+    try:
+        neid = resolve_entity(name)
+        if not neid:
+            return f"Could not find entity '{name}'."
+        props = fetch_properties(neid, [NAME_PID, COUNTRY_PID, INDUSTRY_PID])
+        return format_company_summary(neid, props)
+    except Exception as e:
+        return f"Error getting summary for '{name}': {e}"
+```
+
+### Two agent archetypes
+
+**General explorer** — uses `get_schema` + `find_entities` +
+`get_property_values` with runtime discovery. Good for open-ended
+exploration but requires more tool calls and is more error-prone.
+
+**Focused domain agent** — pre-resolves entity IDs, hardcodes relevant PIDs,
+returns formatted strings. Fewer tools, more reliable, better for production
+use cases. **Prefer this pattern** unless the agent genuinely needs to
+explore arbitrary entity types.

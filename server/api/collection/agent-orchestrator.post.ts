@@ -6,6 +6,7 @@ import {
 } from '~/server/utils/agentGateway';
 import type {
     AskYottaHistoryTurn,
+    AgentTraceEntry,
     AskYottaPipelineResponse,
     AgentRunDetails,
     CompositionAgentInput,
@@ -117,9 +118,13 @@ function completeStep(steps: AgentPipelineStep[], step: number, startedAt: numbe
     if (!current) return startedAt;
     const finishedAt = nowMs();
     current.status = 'completed';
-    current.durationMs = Math.max(1, finishedAt - startedAt);
+    const phaseStartedAt = current.startedAtMs ?? startedAt;
+    current.durationMs = Math.max(1, finishedAt - phaseStartedAt);
     const next = steps.find((item) => item.step === step + 1);
-    if (next) next.status = 'working';
+    if (next) {
+        next.status = 'working';
+        next.startedAtMs = finishedAt;
+    }
     return finishedAt;
 }
 
@@ -770,8 +775,43 @@ export default defineEventHandler(async (event) => {
             const send = (eventType: string, data: unknown) => {
                 controller.enqueue(new TextEncoder().encode(sseEvent(eventType, data)));
             };
+            const makeTrace = (
+                agent: AgentTraceEntry['agent'],
+                status: AgentTraceEntry['status'],
+                message: string,
+                elapsedMs?: number
+            ): AgentTraceEntry => ({
+                id: `${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+                agent,
+                status,
+                message,
+                timestamp: new Date().toISOString(),
+                elapsedMs,
+            });
+            const sendTrace = (
+                agent: AgentTraceEntry['agent'],
+                status: AgentTraceEntry['status'],
+                message: string,
+                elapsedMs?: number
+            ) => send('trace', makeTrace(agent, status, message, elapsedMs));
+            const startTraceHeartbeat = (agent: AgentTraceEntry['agent'], message: string) => {
+                const startedAtMs = nowMs();
+                sendTrace(agent, 'working', message, 0);
+                const heartbeat = setInterval(() => {
+                    sendTrace(agent, 'working', message, nowMs() - startedAtMs);
+                }, 1200);
+                return {
+                    stop: () => clearInterval(heartbeat),
+                    startedAtMs,
+                };
+            };
 
             send('steps', steps);
+            sendTrace(
+                'system',
+                'info',
+                'Pipeline started. Initializing planning, context retrieval, and composition stages.'
+            );
 
             try {
                 const planningInput: PlanningAgentInput = {
@@ -781,10 +821,19 @@ export default defineEventHandler(async (event) => {
                     conversationHistory,
                     collection: summarizeCollection(collection),
                 };
+                sendTrace(
+                    'planning',
+                    'info',
+                    'Preparing plan input from question, conversation context, and collection summary.'
+                );
+                const planningHeartbeat = startTraceHeartbeat(
+                    'planning',
+                    'Planning agent is interpreting intent and selecting answer style...'
+                );
                 const planningResult = await callAgentQuery({
                     agentId: agentIds.planningAgentId!,
                     message: buildPlanningPrompt(planningInput),
-                });
+                }).finally(() => planningHeartbeat.stop());
                 const planning = normalizePlanningOutput({
                     action,
                     question,
@@ -793,6 +842,12 @@ export default defineEventHandler(async (event) => {
                 });
                 startedAt = completeStep(steps, 1, startedAt);
                 send('steps', steps);
+                sendTrace(
+                    'planning',
+                    'completed',
+                    `Planning complete. Selected "${planning.answerStyle}" style with ${planning.requestedEvidence.length} evidence targets.`,
+                    Math.max(1, nowMs() - planningHeartbeat.startedAtMs)
+                );
                 const planningDetail: AgentRunDetails['planning'] = {
                     agent: 'planning',
                     intent: planning.intent,
@@ -811,6 +866,15 @@ export default defineEventHandler(async (event) => {
                     planning.answerStyle,
                     conversationHistory
                 );
+                sendTrace(
+                    'context',
+                    'info',
+                    'Preparing deterministic fallback context and retrieval instructions for graph-grounded search.'
+                );
+                const contextHeartbeat = startTraceHeartbeat(
+                    'context',
+                    'Context agent is querying graph tools (schema, entity search, properties, profile evidence)...'
+                );
                 const contextResult = await callAgentQuery({
                     agentId: agentIds.contextAgentId!,
                     message: buildContextPrompt({
@@ -820,13 +884,19 @@ export default defineEventHandler(async (event) => {
                         fallbackContext,
                         conversationHistory,
                     }),
-                });
+                }).finally(() => contextHeartbeat.stop());
                 const context = mergeContextOutput(
                     fallbackContext,
                     parseAgentJson<ContextAgentOutput>(contextResult.text)
                 );
                 startedAt = completeStep(steps, 2, startedAt);
                 send('steps', steps);
+                sendTrace(
+                    'context',
+                    'completed',
+                    `Context retrieval complete. ${context.stats.entityCount} entities, ${context.stats.eventCount} events, ${context.stats.relationshipCount} relationships assembled.`,
+                    Math.max(1, nowMs() - contextHeartbeat.startedAtMs)
+                );
                 const contextDetail: AgentRunDetails['context'] = {
                     agent: 'context',
                     stats: context.stats,
@@ -857,17 +927,39 @@ export default defineEventHandler(async (event) => {
                     plan: planning,
                     context,
                 };
+                sendTrace(
+                    'composition',
+                    'info',
+                    'Passing plan + context bundle to composition agent for grounded synthesis.'
+                );
+                const compositionHeartbeat = startTraceHeartbeat(
+                    'composition',
+                    `Assembling answer for "${question.slice(0, 90)}${question.length > 90 ? '…' : ''}" using ${context.stats.entityCount} entities, ${context.stats.eventCount} events, and ${context.stats.relationshipCount} relationships.`
+                );
                 const compositionResult = await callAgentQuery({
                     agentId: agentIds.compositionAgentId!,
                     message: buildCompositionPrompt(compositionInput),
-                });
+                }).finally(() => compositionHeartbeat.stop());
                 const composition = parseAgentJson<CompositionAgentOutput>(compositionResult.text);
                 const output = String(composition?.output ?? compositionResult.text ?? '').trim();
                 const citations = sanitizeCitations(composition?.citations);
                 completeStep(steps, 3, startedAt);
                 send('steps', steps);
+                sendTrace(
+                    'composition',
+                    'completed',
+                    `Composition complete. Generated ${output.length} characters with ${citations.length} citations.`,
+                    Math.max(1, nowMs() - compositionHeartbeat.startedAtMs)
+                );
                 const compositionDetail: AgentRunDetails['composition'] = {
                     agent: 'composition',
+                    question,
+                    assembledFrom: {
+                        entityCount: context.stats.entityCount,
+                        eventCount: context.stats.eventCount,
+                        relationshipCount: context.stats.relationshipCount,
+                        evidenceLineCount: context.evidenceLines.length,
+                    },
                     citationCount: citations.length,
                     outputLength: output.length,
                     generationSource: 'gateway',
@@ -876,6 +968,11 @@ export default defineEventHandler(async (event) => {
                 send('agent-detail', compositionDetail);
 
                 if (!output || /^agent returned no text response\.?$/i.test(output)) {
+                    sendTrace(
+                        'system',
+                        'info',
+                        'Composition returned empty output. Falling back to deterministic answer path.'
+                    );
                     try {
                         const fallback = await $fetch<AskYottaPipelineResponse>(
                             '/api/collection/answer',
@@ -893,6 +990,11 @@ export default defineEventHandler(async (event) => {
                                 fallback.generationNote ||
                                 'Composition agent returned empty text; served deterministic fallback answer.',
                         });
+                        sendTrace(
+                            'system',
+                            'completed',
+                            'Fallback answer generated from collection answer route.'
+                        );
                     } catch {
                         const fbContext = contextFallbackBundle(
                             collection,
@@ -915,6 +1017,11 @@ export default defineEventHandler(async (event) => {
                             agentSteps: steps,
                             evidenceLines: fbContext.evidenceLines.slice(0, 10),
                         });
+                        sendTrace(
+                            'system',
+                            'completed',
+                            'Local deterministic fallback answer generated.'
+                        );
                     }
                 } else {
                     send('result', {
@@ -924,8 +1031,18 @@ export default defineEventHandler(async (event) => {
                         agentSteps: steps,
                         evidenceLines: context.evidenceLines.slice(0, 10),
                     } satisfies AskYottaPipelineResponse);
+                    sendTrace(
+                        'system',
+                        'completed',
+                        'Pipeline completed with gateway agent output.'
+                    );
                 }
             } catch (error: any) {
+                sendTrace(
+                    'system',
+                    'info',
+                    'Three-agent orchestration failed. Attempting fallback answer route.'
+                );
                 try {
                     const fallback = await $fetch<AskYottaPipelineResponse>(
                         '/api/collection/answer',
@@ -944,6 +1061,11 @@ export default defineEventHandler(async (event) => {
                             fallback.generationNote ||
                             'Three-agent orchestration failed; served response from fallback route.',
                     });
+                    sendTrace(
+                        'system',
+                        'completed',
+                        'Fallback answer returned after orchestration failure.'
+                    );
                 } catch {
                     send('result', {
                         output: 'Agent action failed. Please try again.',
@@ -956,6 +1078,11 @@ export default defineEventHandler(async (event) => {
                         agentSteps: steps,
                         evidenceLines: historyEvidenceLines(conversationHistory),
                     } satisfies AskYottaPipelineResponse);
+                    sendTrace(
+                        'system',
+                        'completed',
+                        'Both orchestration and fallback failed. Returned terminal error response.'
+                    );
                 }
             }
 

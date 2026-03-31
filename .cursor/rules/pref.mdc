@@ -46,12 +46,24 @@ The backing store auto-initializes on first use — no need to call
 
 ## Local Development
 
-KV credentials are only available in deployed builds (Vercel auto-injects
-them at runtime). In local dev, `getRedis()` returns `null` and KV routes
-return `undefined` for reads and silently skip writes. `Pref<T>` still
-works with its default value but won't persist across page refreshes.
+KV credentials (`KV_REST_API_URL`, `KV_REST_API_TOKEN`) are only available
+in deployed builds (Vercel auto-injects them at runtime). In local dev,
+`getRedis()` returns `null` and KV routes return `undefined` for reads and
+silently skip writes. `Pref<T>` still works with its default value but
+won't persist across page refreshes.
 
 This is expected — push to `main` and test persistence on the deployed build.
+
+For local-only persistence, use `localStorage` as a lightweight alternative:
+
+```typescript
+const saved = localStorage.getItem('watchlist');
+const watchlist = ref<string[]>(saved ? JSON.parse(saved) : []);
+watch(watchlist, (val) => localStorage.setItem('watchlist', JSON.stringify(val)), { deep: true });
+```
+
+Use `Pref<T>` for production persistence and `localStorage` for local-only
+development when KV isn't available.
 
 **Auth dependency:** All `/api/kv/*` routes call `unsealCookie(event)` to
 identify the user. In dev mode (no `NUXT_PUBLIC_AUTH0_CLIENT_SECRET` set),
@@ -106,22 +118,6 @@ function useMyFeaturePrefs() {
   calling the KV API routes
 - **Key format**: `prefs:users:{userId}:apps:{appId}:settings:general`
   (doc-style paths converted to colon-separated Redis keys)
-
-## Local Development Without KV
-
-When KV credentials (`KV_REST_API_URL`, `KV_REST_API_TOKEN`) aren't configured,
-`Pref<T>` still works with its default value but won't persist across page
-refreshes. For local dev, use `localStorage` directly as a lightweight
-alternative:
-
-```typescript
-const saved = localStorage.getItem('watchlist');
-const watchlist = ref<string[]>(saved ? JSON.parse(saved) : []);
-watch(watchlist, (val) => localStorage.setItem('watchlist', JSON.stringify(val)), { deep: true });
-```
-
-Use `Pref<T>` for production persistence and `localStorage` for local-only
-development when KV isn't available.
 
 ## Scope Guidance
 

@@ -54,7 +54,11 @@
 
         <section>
             <div class="section-title mb-2">Agent Workflow Architecture</div>
-            <AgentWorkflowPipeline :steps="pipelineSteps" :run-details="agentRunDetails" />
+            <AgentWorkflowPipeline
+                :steps="pipelineSteps"
+                :run-details="agentRunDetails"
+                :trace-entries="agentTraceLive"
+            />
         </section>
 
         <section>
@@ -147,6 +151,7 @@
         agentResult,
         agentStepsLive,
         agentRunDetails,
+        agentTraceLive,
         entities,
         events,
         relationships,

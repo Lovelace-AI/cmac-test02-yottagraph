@@ -378,7 +378,7 @@ properties:
     description: "Fiscal period focus from DEI cover page (FY, Q1, Q2, Q3)"
     display_name: "Fiscal Period Focus"
     mergeability: not_mergeable
-    domain_flavors: ["organization"]
+    domain_flavors: ["organization", "sec::10_k", "sec::10_q"]
     passive: true
 
   - name: "entity_incorporation_state_dei"

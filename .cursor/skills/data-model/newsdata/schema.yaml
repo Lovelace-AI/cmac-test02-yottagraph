@@ -62,12 +62,14 @@ flavors:
     description: "A news article or press release being processed"
     display_name: "Article"
     mergeability: not_mergeable
+    strong_id_properties: ["newsdata_id"]
     passive: true
 
   - name: "publication"
     description: "A news publication or media outlet identified by its home URL"
     display_name: "Publication"
     mergeability: not_mergeable
+    strong_id_properties: ["homeUrl"]
     passive: true
 
 # =============================================================================
@@ -385,6 +387,14 @@ properties:
     type: string
     description: "A topic associated with an article, derived from event categories"
     display_name: "Topic"
+    mergeability: not_mergeable
+    domain_flavors: ["article"]
+    passive: true
+
+  - name: "newsdata_id"
+    type: string
+    description: "Unique article identifier from the NewsData API"
+    display_name: "NewsData ID"
     mergeability: not_mergeable
     domain_flavors: ["article"]
     passive: true

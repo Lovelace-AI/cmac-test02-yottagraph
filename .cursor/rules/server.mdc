@@ -158,6 +158,110 @@ export function getDb(): NeonQueryFunction | null {
 }
 ```
 
+## Calling the Elemental API from Server Routes
+
+Server routes can call the Elemental API through the Portal Gateway proxy,
+just like client-side code does. The gateway URL, tenant org ID, and API key
+are available via `useRuntimeConfig()`.
+
+**NEVER use `readFileSync('broadchurch.yaml')` in server routes.** The YAML
+file is read at build time by `nuxt.config.ts` and its values flow into
+`runtimeConfig`. Nitro serverless functions (Vercel) don't bundle arbitrary
+project files — `readFileSync` will crash with ENOENT in production even
+though it works locally.
+
+```typescript
+export default defineEventHandler(async (event) => {
+  const { public: config } = useRuntimeConfig();
+
+  const gatewayUrl = config.gatewayUrl;   // Portal Gateway base URL
+  const orgId = config.tenantOrgId;       // Tenant org ID (path segment)
+  const apiKey = config.qsApiKey;         // API key for X-Api-Key header
+
+  if (!gatewayUrl || !orgId) {
+    throw createError({ statusCode: 503, statusMessage: 'Gateway not configured' });
+  }
+
+  const res = await $fetch(`${gatewayUrl}/api/qs/${orgId}/entities/search`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey && { 'X-Api-Key': apiKey }),
+    },
+    body: { queries: [{ queryId: 1, query: 'Microsoft' }], maxResults: 5 },
+  });
+
+  return res;
+});
+```
+
+Available runtime config keys (all under `runtimeConfig.public`):
+
+| Key | Source | Purpose |
+|---|---|---|
+| `gatewayUrl` | `broadchurch.yaml` → `gateway.url` | Portal Gateway base URL |
+| `tenantOrgId` | `broadchurch.yaml` → `tenant.org_id` | Tenant ID for API path |
+| `qsApiKey` | `broadchurch.yaml` → `gateway.qs_api_key` | API key sent as `X-Api-Key` |
+| `queryServerAddress` | `broadchurch.yaml` → `query_server.url` | Direct QS URL (prefer gateway) |
+
+Build the request URL as `{gatewayUrl}/api/qs/{tenantOrgId}/{endpoint}`.
+See the `api` rule for endpoint reference and response shapes.
+
+## Neon Postgres: Handle Missing Tables in GET Routes
+
+Tables created by POST/setup routes won't exist on a fresh deployment.
+**Every GET route that queries a table must handle the case where the table
+doesn't exist yet.** Without this, fresh deploys will 500 on every page load
+until the setup route runs.
+
+```typescript
+export default defineEventHandler(async () => {
+  const sql = getDb();
+  if (!sql) throw createError({ statusCode: 503, statusMessage: 'Database not configured' });
+
+  try {
+    const rows = await sql`SELECT * FROM companies ORDER BY updated_at DESC`;
+    return rows;
+  } catch (err: any) {
+    if (err.message?.includes('does not exist')) {
+      return [];
+    }
+    throw err;
+  }
+});
+```
+
+Alternatively, ensure tables exist before querying by calling
+`CREATE TABLE IF NOT EXISTS` at the top of each GET route, or by calling a
+shared setup function:
+
+```typescript
+// server/utils/ensure-tables.ts
+import { getDb } from '~/server/utils/neon';
+
+let _initialized = false;
+
+export async function ensureTables() {
+  if (_initialized) return;
+  const sql = getDb();
+  if (!sql) return;
+
+  await sql`CREATE TABLE IF NOT EXISTS companies (
+    id SERIAL PRIMARY KEY,
+    neid TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    data JSONB DEFAULT '{}',
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
+
+  _initialized = true;
+}
+```
+
+Then call `await ensureTables()` at the start of any route that reads the
+table. The `_initialized` flag makes it a no-op after the first call within
+the same serverless invocation.
+
 ## Key Differences from Client-Side Code
 
 - Server routes run on the server (Node.js), not in the browser

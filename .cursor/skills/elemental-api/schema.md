@@ -12,27 +12,28 @@ The schema defines the data model: what **entity types** (flavors) exist and wha
 ## Key Concepts
 
 - **Flavors** = Entity types. Each entity belongs to exactly one flavor.
-    - Examples: "ship" (FID 1), "organization" (FID 10), "person" (FID 9)
+    - Examples: "organization" (FID 10), "person" (FID 9), "financial_instrument" (FID 3)
     - Identified by a Flavor ID (FID) — a small integer
 - **Properties** = Attributes that entities can have. Each property has:
     - A Property ID (PID) — a small integer
     - A name (e.g., "name", "length", "mailing_address", "acquires")
     - A data type (e.g., "data_cat" for text, "data_float" for numbers)
     - Domain flavors — which entity types can have this property
+- **Attribute Types** = Metadata that can be attached to property values (e.g., sentiment scores, URLs, snippets). When `getPropertyValues` returns `include_attributes=true`, the attribute keys are numeric strings representing Attribute IDs (AIDs). **AIDs are a separate namespace from PIDs** — for example, PID 15 is "industry" but AID 15 is "sentiment". Use the schema `attributes` array to resolve these.
 
 ## Choosing a Schema Endpoint
 
 There are two schema endpoints with different levels of detail:
 
-| Endpoint                         | Flavors include                             | Properties include                                                          |
-| -------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------- |
-| `GET /schema`                    | findex, name, singular/plural display names | pid, name, display_name, unit, value_type, domain_findexes, target_findexes |
-| `GET /elemental/metadata/schema` | fid, name only                              | pid, name, type only                                                        |
+| Endpoint                         | Flavors include                             | Properties include                                                          | Attributes include                                   |
+| -------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `GET /schema`                    | findex, name, singular/plural display names | pid, name, display_name, unit, value_type, domain_findexes, target_findexes | aid, name, atype, applicable_properties, description |
+| `GET /elemental/metadata/schema` | fid, name only                              | pid, name, type only                                                        | aid, name, atype, applicable_properties, description |
 
 **Use `/schema`** (recommended) when you need:
 
-- Human-readable display names (e.g., "Ship" vs "ship")
-- Units of measurement (e.g., "m", "kg", "knots")
+- Human-readable display names (e.g., "Organization" vs "organization")
+- Units of measurement (e.g., "m", "kg")
 - Which flavors a property applies to (`domain_findexes`)
 
 **Use `/elemental/metadata/schema`** when you just need basic FID/PID to name mappings.
@@ -40,36 +41,35 @@ There are two schema endpoints with different levels of detail:
 ## Tips
 
 - Many API responses return only FIDs and PIDs (not names) — use the schema to translate these to human-readable names
+- When `getPropertyValues` returns attributes with numeric keys (e.g., `"15": -0.3`), look up the key in the schema `attributes` array by `aid` to find the name (e.g., `aid: 15` → "sentiment")
 - Cache schema results; the data model changes infrequently
 - Use `/elemental/metadata/properties/{pid}/summary` to understand value distributions before filtering
+
+### Flavor ID field names: `findex` vs `fid`
+
+The flavor identifier field has **different names** depending on the endpoint:
+
+| Endpoint                         | Field name | Example                             |
+| -------------------------------- | ---------- | ----------------------------------- |
+| `GET /schema`                    | `findex`   | `{"findex": 12, "name": "article"}` |
+| `GET /elemental/metadata/schema` | `fid`      | `{"fid": 12, "name": "article"}`    |
+
+These contain the same value — just different keys. When writing code that
+consumes schema responses, always handle both:
+
+```typescript
+const articleFlavor = flavors.find((f) => f.name === 'article');
+const articleFid = articleFlavor?.fid ?? articleFlavor?.findex ?? null;
+```
+
+The `is_type` expression in `find.md` always uses `fid` regardless of which
+schema endpoint you used to discover the value.
 
 ## Common Workflow
 
 1. **Get the schema** → `GET /schema` to learn available flavors and properties
 2. **Find entities of a type** → `POST /elemental/find` with `is_type` expression
 3. **Get property values** → `POST /elemental/entities/properties` to fetch values for those entities
-
-## Common Properties by Entity Type
-
-This is a quick-reference for writing first-pass code. **The schema endpoint
-is the source of truth** — always call `GET /schema` to get actual PIDs and
-confirm which properties exist in a given deployment. Property availability
-varies by dataset.
-
-| Entity Type                | Common Properties                                                                                                                                    |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **organization**           | `name`, `country`, `ticker`, `industry`, `business_sector`, `sic_code`, `state_of_incorporation`, `mailing_address`, `business_phone`, `company_cik` |
-| **person**                 | `name`, `country`, `nationality`, `birth_date`, `position`, `person_cik`, `job_title`                                                                |
-| **financial_instrument**   | `name`, `ticker`, `security_type`, `instrument_type`, `cusip_number`                                                                                 |
-| **document** (SEC filings) | `name`, `title`, `form_type`, `filing_date`, `report_date`, `accession_number`, `form_type_detail`                                                   |
-| **article**                | `name`, `title`, `sentiment`                                                                                                                         |
-| **event**                  | `name`, `category`, `date`, `description`, `likelihood`                                                                                              |
-| **location**               | `name`, `fixedLatitude`, `fixedLongitude`                                                                                                            |
-
-**Relationship properties** (type `data_nindex`) link entities to each other.
-Common ones for organizations: `acquires`, `owns`, `competes_with`,
-`partnered_with`, `does_business_with`, `is_part_of`, `issues`, `has_subsidiary`.
-For people: `works_at`, `head_of`, `is_director`, `is_officer`, `is_colleague_of`.
 
 <!-- BEGIN GENERATED CONTENT -->
 
@@ -79,11 +79,11 @@ For people: `works_at`, `head_of`, `is_director`, `is_officer`, `is_colleague_of
 
 `GET /schema`
 
-Returns detailed schema information including entity types (flavors) with display names and properties with display names, units, and domain/target relationships. This endpoint provides more detail than /elemental/metadata/schema.
+Returns detailed schema information including entity types (flavors) with display names, properties with display names, units, and domain/target relationships, and quad attribute types. This endpoint provides more detail than /elemental/metadata/schema.
 
 #### Guidance
 
-This endpoint returns richer metadata than /elemental/metadata/schema, including display names, units, and relationship domains. Use this when you need human-readable names or property metadata.
+This endpoint returns richer metadata than /elemental/metadata/schema, including display names, units, relationship domains, and attribute type definitions. Use this when you need human-readable names or property metadata. The attributes array maps numeric attribute IDs (AIDs) to names — use it to resolve the numeric keys returned by getPropertyValues with include_attributes=true.
 
 #### Responses
 
@@ -106,10 +106,10 @@ GET /schema
 {
     "flavors": [
         {
-            "findex": 1,
-            "name": "ship",
-            "singular_display_name": "Ship",
-            "plural_display_name": "Ships"
+            "findex": 9,
+            "name": "person",
+            "singular_display_name": "Person",
+            "plural_display_name": "People"
         },
         {
             "findex": 10,
@@ -120,12 +120,15 @@ GET /schema
     ],
     "properties": [
         { "pid": 8, "name": "name", "display_name": "Name", "value_type": "data_cat" },
+        { "pid": 15, "name": "industry", "display_name": "Industry", "value_type": "data_cat" }
+    ],
+    "attributes": [
         {
-            "pid": 22,
-            "name": "length",
-            "display_name": "Length",
-            "unit": "m",
-            "value_type": "data_float"
+            "aid": 15,
+            "name": "sentiment",
+            "atype": "float",
+            "applicable_properties": ["appears_in", "participant", "sentiment"],
+            "description": "A sentiment score in [-1, +1]."
         }
     ]
 }
@@ -251,7 +254,7 @@ Returns comprehensive schema information including all entity types (flavors), p
 
 #### Guidance
 
-Response is wrapped in a 'schema' container object. Access flavors and properties via response.schema.flavors and response.schema.properties. Flavors contain: fid (unique identifier), name (e.g., 'ship', 'aircraft'). Properties contain: pid (unique identifier), name (e.g., 'latitude', 'name'), type (e.g., 'data_float', 'data_int', 'data_cat', 'data_nindex').
+Response is wrapped in a 'schema' container object. Access flavors and properties via response.schema.flavors and response.schema.properties. Flavors contain: fid (unique identifier), name (e.g., 'organization', 'person'). Properties contain: pid (unique identifier), name (e.g., 'name', 'industry'), type (e.g., 'data_float', 'data_int', 'data_cat', 'data_nindex').
 
 #### Responses
 
@@ -277,13 +280,13 @@ GET /elemental/metadata/schema
     "follow_up": false,
     "schema": {
         "flavors": [
-            { "fid": 1, "name": "ship" },
-            { "fid": 2, "name": "handset" },
-            { "fid": 10, "name": "organization" }
+            { "fid": 9, "name": "person" },
+            { "fid": 10, "name": "organization" },
+            { "fid": 3, "name": "financial_instrument" }
         ],
         "properties": [
-            { "pid": 1, "name": "mmsi", "type": "data_cat" },
-            { "pid": 8, "name": "name", "type": "data_cat" }
+            { "pid": 8, "name": "name", "type": "data_cat" },
+            { "pid": 15, "name": "industry", "type": "data_cat" }
         ]
     }
 }
@@ -333,16 +336,29 @@ GET /elemental/metadata/properties/8/summary
 
 ## Types
 
+### SchemaAttribute
+
+Quad attribute type used as keys in property value attributes
+
+| Field                 | Type     | Description                                                                                          |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| aid                   | integer  | Unique attribute type identifier. Appears as a string key (e.g., "15") in property value attributes. |
+| applicable_properties | string[] | Property names that commonly carry this attribute (e.g., ["appears_in", "participant"])              |
+| atype                 | string   | Attribute data type: "float", "int", "bool", or "blob" (string values)                               |
+| description           | string   | Semantic description of what this attribute represents                                               |
+| name                  | string   | Attribute name (e.g., "sentiment", "url", "snippet")                                                 |
+
 ### SchemaFlavor
 
 Entity type (flavor) with human-readable display names
 
 | Field                 | Type    | Description                                               |
 | --------------------- | ------- | --------------------------------------------------------- |
+| description           | string  | Semantic description of what this flavor represents       |
 | findex                | integer | Unique flavor identifier (same as fid in other endpoints) |
 | name                  | string  | Flavor name (internal identifier)                         |
-| plural_display_name   | string  | Human-readable plural name (e.g., "Ships")                |
-| singular_display_name | string  | Human-readable singular name (e.g., "Ship")               |
+| plural_display_name   | string  | Human-readable plural name (e.g., "People")               |
+| singular_display_name | string  | Human-readable singular name (e.g., "Person")             |
 
 ### SchemaProperty
 
@@ -350,6 +366,7 @@ Property with display name, unit, and domain information
 
 | Field           | Type      | Description                                                                                           |
 | --------------- | --------- | ----------------------------------------------------------------------------------------------------- |
+| description     | string    | Semantic description of what this property represents                                                 |
 | display_name    | string    | Human-readable property name                                                                          |
 | domain_findexes | integer[] | Flavor IDs (findexes) that can have this property                                                     |
 | name            | string    | Property name (internal identifier)                                                                   |
@@ -360,12 +377,13 @@ Property with display name, unit, and domain information
 
 ### SchemaResponse
 
-Detailed schema response with entity types (flavors) and properties including display names, units, and domains
+Detailed schema response with entity types (flavors), properties, and quad attribute types
 
-| Field      | Type               | Description                                                           |
-| ---------- | ------------------ | --------------------------------------------------------------------- |
-| flavors    | `SchemaFlavor`[]   | Array of entity types (flavors) with display names                    |
-| properties | `SchemaProperty`[] | Array of properties with display names, units, and domain information |
+| Field      | Type                | Description                                                                                                                                                                |
+| ---------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| attributes | `SchemaAttribute`[] | Array of quad attribute types that appear as keys in property value attributes (when include_attributes=true). These use a separate ID namespace (AID) from property PIDs. |
+| flavors    | `SchemaFlavor`[]    | Array of entity types (flavors) with display names                                                                                                                         |
+| properties | `SchemaProperty`[]  | Array of properties with display names, units, and domain information                                                                                                      |
 
 ### FindResponse
 
@@ -404,10 +422,21 @@ Detailed schema response with entity types (flavors) and properties including di
 
 ### SchemaData
 
-| Field          | Type         | Description                                             |
-| -------------- | ------------ | ------------------------------------------------------- |
-| **flavors**    | `Flavor`[]   | Array of entity types (flavors) available in the system |
-| **properties** | `Property`[] | Array of properties available in the system             |
+| Field          | Type          | Description                                                                                                                                                                                      |
+| -------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **flavors**    | `Flavor`[]    | Array of entity types (flavors) available in the system                                                                                                                                          |
+| **properties** | `Property`[]  | Array of properties available in the system                                                                                                                                                      |
+| attributes     | `Attribute`[] | Array of quad attribute types. These map the numeric keys in property value attributes (from include_attributes=true) to human-readable names. AIDs are a separate namespace from property PIDs. |
+
+### Attribute
+
+| Field                 | Type     | Description                                                                                          |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| **aid**               | integer  | Unique attribute type identifier. Appears as a string key (e.g., "15") in property value attributes. |
+| **name**              | string   | Attribute name                                                                                       |
+| **atype**             | string   | Attribute data type. Values: `float`, `int`, `bool`, `blob`                                          |
+| applicable_properties | string[] | Property names that commonly carry this attribute                                                    |
+| description           | string   | Semantic description of what this attribute represents                                               |
 
 ### Flavor
 

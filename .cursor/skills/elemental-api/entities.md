@@ -2,6 +2,10 @@
 
 Entities are the core objects in the Knowledge Graph: companies, people, organizations, products, and other named things that appear in the news. Each entity has a unique **Named Entity ID (NEID)**.
 
+NEIDs are stable and can be persisted long-term, but may occasionally change if the database is rebuilt or the application switches databases. When an NEID becomes invalid (e.g., resolution returns no results), re-resolve the entity using its canonical name from the previous query result, then redo any downstream operations that depended on it. NEIDs should NEVER be hardcoded in source code.
+
+**Looking for property-based search?** To search for entities by type, property values, or relationships using the expression language, see [find.md](find.md).
+
 ## When to Use
 
 - You have an entity name and need to find its NEID
@@ -16,137 +20,28 @@ Entities are the core objects in the Knowledge Graph: companies, people, organiz
     - Example: `00416400910670863867`
     - Always pad with leading zeros to exactly 20 characters when normalizing
 - **EID**: The term EID is sometimes used interchangeably with NEID.
+- **nindex**: The term nindex is sometimes used interchangeably with NEID.
 - **Entity Resolution**: The same real-world entity may have multiple names (e.g., "Apple", "Apple Inc.", "AAPL"). The API resolves these to a single NEID.
-- **Entity Types (Flavors)**: Each entity has a type identified by a Flavor ID (FID) (ex. type "ship" is FID 1).
+- **Flavors (Entity Types)**: Each entity has a type identified by a Flavor ID (FID).
 
 ## Tips
 
 - Always start by searching for the entity to get the correct NEID
-- After resolving an entity to an NEID, it's best to display the canonical entity name to the user to help them identify if something went wrong with the resolution.
+- After resolving an entity to an NEID, save and use the the canonical entity name going forward.
 - It's typically safe to resolve an entity to the top matching NEID. However, sometimes a useful pattern is to let the user give input that the resolution was incorrect, show them a longer list of matches, and let them choose a different resolution.
 - Entity names are case-insensitive
 
 ## Key Endpoints
 
-| What you need                       | Endpoint                              | Client method         | Returns                                      |
-| ----------------------------------- | ------------------------------------- | --------------------- | -------------------------------------------- |
-| Find entities by expression         | `POST /elemental/find`                | `findEntities()`      | Entity IDs matching expression               |
-| Find entity by name (simple lookup) | `GET /entities/lookup`                | `getNEID()`           | NEIDs matching a single name query           |
-| Basic info (name, aliases, type)    | `GET /entities/{neid}`                | —                     | Quick summary for display                    |
-| Full property values                | `POST /elemental/entities/properties` | `getPropertyValues()` | All properties with PIDs, values, timestamps |
-
-**`findEntities()` vs `getNEID()` for entity search**:
-
-- **`findEntities()`** → `POST /elemental/find` — expression-based search. Supports filtering by type, property value, relationship, and complex nested queries. See `find.md` for the expression language. **Use this for filtered or batch searches.**
-- **`getNEID()`** → `GET /entities/lookup` — simple single-entity name lookup via query parameters (`entityName`, `maxResults`). Best for resolving one company/person name quickly.
-
-**Important**: When a user asks for "entity properties," clarify which they mean:
-
-- Basic info/metadata → use `/entities/{neid}`
-- Detailed property data (like relationships, addresses, financial data) → use `/elemental/entities/properties`
-
-## Searching for Entities
-
-### Batch name search (direct HTTP only)
-
-`POST /entities/search`
-
-Search for entities by name with scored ranking and optional disambiguation. Supports batch queries (multiple entities in one request). Content-Type must be `application/json`.
-
-**Note:** This endpoint is not exposed through the generated TypeScript client (`useElementalClient()`). For client-side entity search, use `findEntities()` (`POST /elemental/find`) or `getNEID()` (`GET /entities/lookup`).
-
-### Request Body
-
-| Field          | Type          | Required | Description                                            |
-| -------------- | ------------- | -------- | ------------------------------------------------------ |
-| queries        | SearchQuery[] | yes      | Array of search queries                                |
-| minScore       | number        | no       | Minimum match score, 0.0-1.0 (default: 0.8)            |
-| maxResults     | integer       | no       | Maximum results per query (default: 10)                |
-| includeNames   | boolean       | no       | Include entity names in response (default: true)       |
-| includeAliases | boolean       | no       | Include entity aliases in response (default: false)    |
-| includeFlavors | boolean       | no       | Include entity type/flavor in response (default: true) |
-| includeScores  | boolean       | no       | Include match scores in response (default: true)       |
-
-### SearchQuery
-
-| Field            | Type     | Required | Description                                                         |
-| ---------------- | -------- | -------- | ------------------------------------------------------------------- |
-| queryId          | integer  | yes      | User-provided ID for matching queries to results                    |
-| query            | string   | yes      | Entity name or strong ID to search for                              |
-| snippet          | string   | no       | Free-text snippet for disambiguating entities with similar names    |
-| flavors          | string[] | no       | Limit results to these entity types (e.g., `["organization"]`)      |
-| contextType      | string   | no       | Resolution context: `namedEntity` (default), `event`, or `strongId` |
-| strongIdProperty | string   | no       | Property name to use as strong ID (when contextType is `strongId`)  |
-
-### Response
-
-The response contains a `results` array with one entry per query:
-
-| Field               | Type    | Description                          |
-| ------------------- | ------- | ------------------------------------ |
-| results[].queryId   | integer | Matches the queryId from the request |
-| results[].matches[] | Match[] | Matches sorted by decreasing score   |
-
-Each Match contains:
-
-| Field   | Type     | Description                                               |
-| ------- | -------- | --------------------------------------------------------- |
-| neid    | string   | 20-character entity ID                                    |
-| name    | string   | Entity display name (when includeNames is true)           |
-| aliases | string[] | Other names for this entity (when includeAliases is true) |
-| flavor  | string   | Entity type name (when includeFlavors is true)            |
-| score   | number   | Match confidence 0.0-1.0 (when includeScores is true)     |
-
-### Example
-
-**Request:**
-
-```json
-{
-    "queries": [
-        { "queryId": 1, "query": "Apple" },
-        { "queryId": 2, "query": "MSFT", "flavors": ["financial_instrument"] }
-    ],
-    "maxResults": 3
-}
-```
-
-**Response:**
-
-```json
-{
-    "results": [
-        {
-            "queryId": 1,
-            "matches": [
-                {
-                    "neid": "00416400910670863867",
-                    "name": "Apple",
-                    "flavor": "organization",
-                    "score": 0.95
-                },
-                {
-                    "neid": "07437212020357111309",
-                    "name": "AAPL",
-                    "flavor": "financial_instrument",
-                    "score": 0.82
-                }
-            ]
-        },
-        {
-            "queryId": 2,
-            "matches": [
-                {
-                    "neid": "03016672914748108965",
-                    "name": "MSFT",
-                    "flavor": "financial_instrument",
-                    "score": 0.98
-                }
-            ]
-        }
-    ]
-}
-```
+| What you need                       | Endpoint                              | Returns                                      |
+| ----------------------------------- | ------------------------------------- | -------------------------------------------- |
+| Find entity by name (batch, scored) | `POST /entities/search`               | Ranked matches with NEIDs and scores         |
+| Get entity display name             | `GET /entities/{neid}/name`           | Canonical name (`{"name": "..."}`)           |
+| Get entity aliases                  | `GET /entities/{neid}/aliases`        | All known names (`{"aliases": [...]}`)       |
+| Batch name lookup                   | `POST /entities/names`                | Map of NEID → name                           |
+| Batch alias lookup                  | `POST /entities/aliases`              | Map of NEID → aliases                        |
+| Resolve merged entities             | `POST /entities/redirect`             | Canonical NEIDs for merges                   |
+| Full property values                | `POST /elemental/entities/properties` | All properties with PIDs, values, timestamps |
 
 ## Form-Encoded JSON Parameters
 
@@ -177,154 +72,277 @@ The same pattern applies to the `expression` parameter on `POST /elemental/find`
 
 For understanding entity types (flavors), properties, and the data model, see **schema.md**. You'll need the schema because many API responses return only FIDs and PIDs — use it to translate these to human-readable names.
 
+## Properties Return Multiple Timestamped Values
+
+`getPropertyValues` returns **all** recorded values for a property, not just the latest. A single entity and property (e.g. Apple's `company_cik`) may return dozens of rows with different `recorded_at` timestamps — one per filing or data ingestion event. For display, take the first (or latest) value and deduplicate by PID:
+
+```typescript
+const byPid = new Map<number, string>();
+for (const v of values) {
+    if (!byPid.has(v.pid)) byPid.set(v.pid, v.value);
+}
+```
+
+## `include_attributes` Parameter
+
+`getPropertyValues` accepts an `include_attributes` parameter (set to `'true'` as a string) that returns additional metadata on each value. This is essential for relationship properties like `appears_in`, where attributes carry entity-level sentiment scores and article URLs.
+
+**Note:** The generated TypeScript client types don't include `include_attributes` in the parameter type. Pass it as an extra property — the API accepts it:
+
+```typescript
+const res = await client.getPropertyValues({
+    eids: JSON.stringify([neid]),
+    pids: JSON.stringify([appearsInPid]),
+    include_attributes: 'true', // Not in TS types, but API accepts it
+} as any);
+```
+
+**Important:** Attribute keys are **quad attribute type IDs (AIDs)**, NOT property PIDs. These are a separate numeric namespace. For example, property PID 15 is "industry", but attribute key "15" is "sentiment". To resolve attribute keys to names, use the `attributes` array from `GET /schema` (see schema.md).
+
 <!-- BEGIN GENERATED CONTENT -->
 
 ## Endpoints
 
-### Get entity details
+### Batch entity alias lookup
 
-`GET /entities/{neid}`
+`POST /entities/aliases`
 
-Get details about a named entity including name, aliases, and type. This is an alias for /reports/{neid}. Response is cached for 5 minutes.
-
-#### Guidance
-
-Response is wrapped in a 'report' container object. Access entity data via response.report.
-
-#### Parameters
-
-| Name | Type   | Required | Description     |
-| ---- | ------ | -------- | --------------- |
-| neid | string | yes      | Named Entity ID |
-
-#### Responses
-
-| Status | Description                                     |
-| ------ | ----------------------------------------------- |
-| 200    | Entity details (`GetNamedEntityReportResponse`) |
-| 400    | Invalid NEID (`Error`)                          |
-| 404    | Entity not found (`Error`)                      |
-| 500    | Internal server error (`Error`)                 |
-
-#### Example
-
-**Request:**
-
-```
-GET /entities/00416400910670863867
-```
-
-**Response:**
-
-```json
-{
-    "report": {
-        "neid": "00416400910670863867",
-        "name": "Apple",
-        "aliases": ["AAPL", "APPLE", "APPLE INC", "Apple Inc"],
-        "type": "organization"
-    }
-}
-```
-
----
-
-### Get entity report
-
-`GET /reports/{neid}`
-
-Get a report about a named entity including name, aliases, and type. Response is cached for 5 minutes.
-
-#### Guidance
-
-Response is wrapped in a 'report' container object. Access entity data via response.report.
-
-#### Parameters
-
-| Name | Type   | Required | Description     |
-| ---- | ------ | -------- | --------------- |
-| neid | string | yes      | Named Entity ID |
-
-#### Responses
-
-| Status | Description                                    |
-| ------ | ---------------------------------------------- |
-| 200    | Entity report (`GetNamedEntityReportResponse`) |
-| 400    | Invalid NEID (`Error`)                         |
-| 404    | Entity not found (`Error`)                     |
-| 500    | Internal server error (`Error`)                |
-
-#### Example
-
-**Request:**
-
-```
-GET /reports/00416400910670863867
-```
-
-**Response:**
-
-```json
-{
-    "report": {
-        "neid": "00416400910670863867",
-        "name": "Apple",
-        "aliases": ["AAPL", "APPLE", "APPLE INC", "Apple Inc"],
-        "type": "organization"
-    }
-}
-```
-
----
-
-### Find entities by expression
-
-`POST /elemental/find`
-
-Search for entities using a powerful expression language. The expression parameter supports complex nested queries with logical operators, geographic constraints, property comparisons, and more.
-
-#### Guidance
-
-CRITICAL: This endpoint REQUIRES Content-Type: application/x-www-form-urlencoded. Sending a JSON body will fail with 400 error. The expression parameter must be URL-encoded form data, not a JSON request body. For the full expression language reference including all expression types, comparison operators, and examples, see find.md.
+Look up all known aliases for multiple entities by their NEIDs in a single request.
 
 #### Request Body
 
-**Content-Type:** `application/x-www-form-urlencoded`
+Batch aliases request
 
-| Name       | Type    | Required | Description                                                 |
-| ---------- | ------- | -------- | ----------------------------------------------------------- |
-| expression | string  | yes      | JSON-encoded expression object defining the search criteria |
-| deadline   | any     | no       | Response deadline in milliseconds or duration format        |
-| limit      | integer | no       | Maximum number of entity IDs to return in first response    |
+**Type:** `BatchEntityAliasesRequest`
 
 #### Responses
 
-| Status | Description                                                        |
-| ------ | ------------------------------------------------------------------ |
-| 200    | Find operation successful (`FindResponse`)                         |
-| 400    | Bad request - invalid parameters or malformed expression (`Error`) |
-| 500    | Internal server error (`Error`)                                    |
-| 501    | Elemental API capability not enabled (`Error`)                     |
+| Status | Description                                   |
+| ------ | --------------------------------------------- |
+| 200    | Entity aliases (`BatchEntityAliasesResponse`) |
+| 400    | Invalid request (`Error`)                     |
 
 #### Example
 
 **Request:**
 
 ```
-POST /elemental/find
-Content-Type: application/x-www-form-urlencoded
+POST /entities/aliases
+{"neids": ["00416400910670863867"]}
+```
 
-expression={"type":"is_type","is_type":{"fid":10}}&limit=5
+**Response:**
+
+```json
+{ "results": { "00416400910670863867": ["Apple", "AAPL", "Apple Inc", "Apple Inc."] } }
+```
+
+---
+
+### Batch entity name lookup
+
+`POST /entities/names`
+
+Look up canonical display names for multiple entities by their NEIDs in a single request.
+
+#### Request Body
+
+Batch names request
+
+**Type:** `BatchEntityNamesRequest`
+
+#### Responses
+
+| Status | Description                               |
+| ------ | ----------------------------------------- |
+| 200    | Entity names (`BatchEntityNamesResponse`) |
+| 400    | Invalid request (`Error`)                 |
+
+#### Example
+
+**Request:**
+
+```
+POST /entities/names
+{"neids": ["00416400910670863867", "03016672914748108965"]}
+```
+
+**Response:**
+
+```json
+{ "results": { "00416400910670863867": "Apple", "03016672914748108965": "MSFT" } }
+```
+
+---
+
+### Get canonical NEIDs for merges
+
+`POST /entities/redirect`
+
+Get the canonical NEIDs for a set of entities, resolving any merges. If an entity has been merged into another, the canonical NEID of the merge target is returned.
+
+#### Request Body
+
+Redirect request
+
+**Type:** `RedirectRequest`
+
+#### Responses
+
+| Status | Description                           |
+| ------ | ------------------------------------- |
+| 200    | Redirect results (`RedirectResponse`) |
+| 400    | Invalid request (`Error`)             |
+
+#### Example
+
+**Request:**
+
+```
+POST /entities/redirect
+{"neids": ["00416400910670863867", "03016672914748108965"]}
 ```
 
 **Response:**
 
 ```json
 {
-    "op_id": "98cc54e9-0108-4361-9c96-18ea97cda7a2",
-    "follow_up": true,
-    "eids": ["01601807036815568643", "08115040994665529432", "02045070050429461063"]
+    "redirects": [
+        { "neid": "00416400910670863867", "canonicalNeid": "00416400910670863867" },
+        { "neid": "03016672914748108965", "canonicalNeid": "01234567890123456789" }
+    ]
 }
+```
+
+---
+
+### Search for entities
+
+`POST /entities/search`
+
+Search for entities by name with scored ranking and optional disambiguation. Supports batch queries (multiple entities in one request). Content-Type must be application/json.
+
+#### Request Body
+
+Search request
+
+**Type:** `SearchRequest`
+
+#### Responses
+
+| Status | Description                       |
+| ------ | --------------------------------- |
+| 200    | Search results (`SearchResponse`) |
+| 400    | Invalid request (`Error`)         |
+
+#### Example
+
+**Request:**
+
+```
+POST /entities/search
+{"queries": [{"queryId": 1, "query": "Apple"}, {"queryId": 2, "query": "MSFT", "flavors": ["financial_instrument"]}], "maxResults": 3}
+```
+
+**Response:**
+
+```json
+{
+    "results": [
+        {
+            "queryId": 1,
+            "matches": [
+                {
+                    "neid": "00416400910670863867",
+                    "name": "Apple",
+                    "flavor": "organization",
+                    "score": 0.95
+                }
+            ]
+        },
+        {
+            "queryId": 2,
+            "matches": [
+                {
+                    "neid": "03016672914748108965",
+                    "name": "MSFT",
+                    "flavor": "financial_instrument",
+                    "score": 0.98
+                }
+            ]
+        }
+    ]
+}
+```
+
+---
+
+### Get entity aliases
+
+`GET /entities/{neid}/aliases`
+
+Get all known aliases for an entity by its NEID. Includes the canonical name and all alternative names, abbreviations, and synonyms.
+
+#### Parameters
+
+| Name | Type   | Required | Description                                |
+| ---- | ------ | -------- | ------------------------------------------ |
+| neid | string | yes      | Named Entity ID (20-character zero-padded) |
+
+#### Responses
+
+| Status | Description                                |
+| ------ | ------------------------------------------ |
+| 200    | Entity aliases (`NindexToAliasesResponse`) |
+| 404    | Entity not found (`Error`)                 |
+
+#### Example
+
+**Request:**
+
+```
+GET /entities/00416400910670863867/aliases
+```
+
+**Response:**
+
+```json
+{ "aliases": ["Apple", "AAPL", "Apple Inc", "Apple Inc."] }
+```
+
+---
+
+### Get entity name
+
+`GET /entities/{neid}/name`
+
+Get the canonical display name for an entity by its NEID. Works for all entity types (organizations, people, documents, etc.).
+
+#### Parameters
+
+| Name | Type   | Required | Description                                |
+| ---- | ------ | -------- | ------------------------------------------ |
+| neid | string | yes      | Named Entity ID (20-character zero-padded) |
+
+#### Responses
+
+| Status | Description                          |
+| ------ | ------------------------------------ |
+| 200    | Entity name (`NindexToNameResponse`) |
+| 404    | Entity not found (`Error`)           |
+
+#### Example
+
+**Request:**
+
+```
+GET /entities/05501022040203405417/name
+```
+
+**Response:**
+
+```json
+{ "name": "Apple Inc" }
 ```
 
 ---
@@ -387,36 +405,66 @@ eids=["00416400910670863867"]&pids=[8]
 
 ## Types
 
-### GetNamedEntityReportResponse
+### BatchEntityNamesResponse
 
-Response containing a report about a named entity
+| Field   | Type     | Description |
+| ------- | -------- | ----------- |
+| errors  | string[] |             |
+| results | object   |             |
 
-| Field  | Type                | Description |
-| ------ | ------------------- | ----------- |
-| report | `NamedEntityReport` |             |
+### Match
 
-### NamedEntityReport
+| Field   | Type     | Description                 |
+| ------- | -------- | --------------------------- |
+| aliases | string[] | Other names for this entity |
+| created | boolean  | True if newly created       |
+| flavor  | string   |                             |
+| name    | string   |                             |
+| neid    | string   | Named Entity ID             |
+| score   | number   | 0.0-1.0                     |
 
-The named entity report
+### Redirect
 
-| Field   | Type     | Description                                                         |
-| ------- | -------- | ------------------------------------------------------------------- |
-| aliases | string[] | Aliases of the Named Entity from the forwarding map (i.e., from ER) |
-| name    | string   | Name of the Named Entity                                            |
-| neid    | string   | Named Entity ID                                                     |
-| type    | string   | Entity type (flavor)                                                |
+| Field         | Type   | Description     |
+| ------------- | ------ | --------------- |
+| canonicalNeid | string | Named Entity ID |
+| neid          | string | Named Entity ID |
 
-### FindResponse
+### SearchQuery
 
-| Field | Type       | Description |
-| ----- | ---------- | ----------- |
-| find  | `FindData` |             |
+| Field            | Type                | Description                                                          |
+| ---------------- | ------------------- | -------------------------------------------------------------------- |
+| context          | integer[]           | Additional context for disambiguation                                |
+| contextType      | `EntityContextType` |                                                                      |
+| eventCategory    | string              | Category of an event, e.g. strategic partnership                     |
+| eventDate        | string              | Date of an event, e.g. 2026-01-20                                    |
+| eventDescription | string              | Description of an event                                              |
+| eventLikelihood  | string              | Likelihood of an event, e.g. confirmed, ongoing, likely, speculative |
+| flavors          | string[]            | Limit to these flavors if non-empty                                  |
+| query            | string              | Entity name or strong ID to search for                               |
+| queryId          | integer             | User-provided ID for matching with response                          |
+| snippet          | string              | Free-text snippet for disambiguating named entities                  |
+| strongIdProperty | string              | Property to use as the strong ID type                                |
 
-### FindData
+### SearchRequest
 
-| Field    | Type     | Description                                                     |
-| -------- | -------- | --------------------------------------------------------------- |
-| **eids** | string[] | Array of 20-character entity IDs matching the search expression |
+| Field          | Type            | Description          |
+| -------------- | --------------- | -------------------- |
+| includeAliases | boolean         | default false        |
+| includeFlavors | boolean         | default true         |
+| includeNames   | boolean         | default true         |
+| includeScores  | boolean         | default true         |
+| maxResults     | integer         | default 10           |
+| minScore       | number          | 0.0-1.0, default 0.8 |
+| queries        | `SearchQuery`[] |                      |
+
+### SearchResult
+
+| Field   | Type      | Description                |
+| ------- | --------- | -------------------------- |
+| error   | string    | Set if query failed        |
+| matches | `Match`[] | Sorted by decreasing score |
+| queryId | integer   |                            |
 
 ### GetPropertyValuesResponse
 

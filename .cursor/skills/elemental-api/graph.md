@@ -1,6 +1,6 @@
 # Graph
 
-The graph endpoints are focused on "graph analysis", providing insights into relationships between different entities. This includes, but is not limited to, visual rendering of a graph.
+The graph endpoints are focused on "graph analysis". This includes, but is not limited to, visual rendering of a graph.
 
 ## When to Use
 
@@ -32,7 +32,7 @@ Get nodes and edges layout data for visualizing a relationship graph. Response i
 
 #### Guidance
 
-Only use this endpoint if you care about graph-specific properties. Otherwise it is faster to use /entities/{source_neid}/links/{target_neid}. This should always be called with a non-empty list of neids. A typical pattern is to call /graph/{center_neid}/neighborhood and then use the returned NEIDs to call this endpoint.
+This should always be called with a non-empty list of neids. A typical pattern is to call /graph/{center_neid}/neighborhood and then use the returned NEIDs to call this endpoint.
 
 #### Parameters
 
@@ -103,7 +103,7 @@ Get list of neighboring entities in the relationship graph, optionally filtered 
 
 #### Guidance
 
-Only use this endpoint if you care about graph-specific properties. Otherwise it is faster to use /entities/{source_neid}/linked. Response includes the center entity itself in the results with a weight of 1.0. The 'neighbors' and 'weights' arrays are parallel (same indices correspond).
+Response includes the center entity itself in the results with a weight of 1.0. The 'neighbors' and 'weights' arrays are parallel (same indices correspond).
 
 #### Parameters
 

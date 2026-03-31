@@ -62,11 +62,14 @@ MCP tools — the app can still be built using the Elemental API client
 
 ## Step 3: Understand the Environment
 
-First, ensure dependencies are installed (skill docs and types aren't available without this):
+First, ensure dependencies are installed (types aren't available without this):
 
 ```bash
 test -d node_modules || npm install
 ```
+
+Skills in `.cursor/skills/` are populated during project init (`node init-project.js`).
+If that directory is empty after `npm install`, run `node init-project.js` to install them.
 
 Then read these files to understand what's available:
 
@@ -89,7 +92,47 @@ Key capabilities:
 
 ---
 
-## Step 4: Design the UX
+## Step 4: Verify Data Availability
+
+Before designing UX, verify that the data your app needs actually exists
+in the knowledge graph. This prevents building features around empty data.
+
+**If MCP tools are available:**
+
+```
+elemental_get_schema()                          → list entity types, confirm your target types exist
+elemental_get_entity(entity="Microsoft")        → verify entity lookup works with a known entity
+elemental_get_entity(entity="Apple Inc")        → try another known entity
+```
+
+If schema calls succeed but entity lookups return "not found," that means
+the entity type exists in the schema but has no data. That's a **data
+issue**, not a broken server. Try different, well-known entity names.
+
+**If MCP tools are NOT available, use curl:**
+
+```bash
+# Read credentials from broadchurch.yaml
+GW=$(grep 'url:' broadchurch.yaml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+ORG=$(grep 'org_id:' broadchurch.yaml | sed 's/.*"\(.*\)".*/\1/')
+KEY=$(grep 'qs_api_key:' broadchurch.yaml | sed 's/.*"\(.*\)".*/\1/')
+
+# List entity types
+curl -s "$GW/api/qs/$ORG/elemental/metadata/schema" -H "X-Api-Key: $KEY"
+
+# Search for a known entity
+curl -s "$GW/api/qs/$ORG/entities/search" \
+  -X POST -H "Content-Type: application/json" -H "X-Api-Key: $KEY" \
+  -d '{"queries":[{"queryId":1,"query":"Microsoft"}],"maxResults":3,"includeNames":true}'
+```
+
+**Document what you find.** If certain entity types have sparse data, note
+it in your UX plan. Design features around data that actually exists, and
+mark aspirational features (that need more data) as future work.
+
+---
+
+## Step 5: Design the UX
 
 Based on the brief, think about the right UX for this specific problem. Do NOT default to a sidebar-with-tabs layout. Consider:
 
@@ -113,7 +156,7 @@ Present the plan to the user and ask for approval before proceeding.
 
 ---
 
-## Step 5: Build
+## Step 6: Build
 
 Implement the plan:
 
@@ -125,6 +168,13 @@ Implement the plan:
 6. Use Vuetify components and the project's dark theme
 7. Update `DESIGN.md` with what you built
 
+**Use the pre-built platform utilities:**
+
+- `useElementalSchema()` — schema discovery with caching, flavor/PID lookup helpers
+- `buildGatewayUrl()`, `getApiKey()`, `padNeid()` from `utils/elementalHelpers`
+- `searchEntities()`, `getEntityName()` from `utils/elementalHelpers`
+- `useElementalClient()` from `@yottagraph-app/elemental-api/client`
+
 **Follow the project's coding conventions:**
 
 - `<script setup lang="ts">` for all Vue components
@@ -133,7 +183,7 @@ Implement the plan:
 
 ---
 
-## Step 6: Verify
+## Step 7: Verify
 
 After building, check dependencies are installed and run a build:
 
@@ -148,7 +198,7 @@ Then suggest the user run `npm run dev` to preview their app locally.
 
 ---
 
-## Step 7: Next Steps
+## Step 8: Next Steps
 
 > Your app is taking shape! Here's what you can do next:
 >

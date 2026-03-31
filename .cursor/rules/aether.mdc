@@ -18,4 +18,4 @@ alwaysApply: true
 
 **First action for a new project:** Run `/build_my_app`.
 
-**Task-specific rules:** `architecture` (project structure, navigation, server routes, agents, MCP), `api` (Elemental API client, schema discovery, gotchas, optional MCP servers), `design` (DESIGN.md workflow, feature docs), `ui` (page templates, layout patterns), `cookbook` (copy-paste UI patterns), `pref` (KV preferences), `branding` (colors, fonts), `server` (Nitro routes, Neon Postgres), `something-broke` (error recovery, build failures).
+**Task-specific rules:** `architecture` (project structure, navigation, server routes, agents, MCP), `api` (Elemental API client, schema discovery, gotchas, optional MCP servers), `design` (DESIGN.md workflow, feature docs), `ui` (page templates, layout patterns), `cookbook` (copy-paste UI patterns), `pref` (KV preferences), `branding` (colors, fonts), `server` (Nitro routes, Neon Postgres, server-side Elemental API), `something-broke` (error recovery, build failures).

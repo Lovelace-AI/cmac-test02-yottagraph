@@ -102,7 +102,7 @@ Once deployed, agents can connect to your MCP server. Add the Cloud Run URL to y
 
 - One server per data domain or external service
 - Keep tools focused and well-documented
-- Return structured data (dicts/lists), not raw strings
+- Return structured data (dicts/lists), not raw strings — MCP handles serialization via the protocol. (This differs from ADK agent tools, which should return formatted strings because the LLM reads tool output directly — see the `agents` rule.)
 - Handle errors by returning descriptive error messages in the response
 - Use environment variables for API keys and configuration (never hardcode secrets)
 - For secrets, use GCP Secret Manager and access at runtime

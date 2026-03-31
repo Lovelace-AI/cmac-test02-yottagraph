@@ -14,6 +14,11 @@ interface LineageInvestigationOptions {
 const DEFAULT_MAX_HOPS = 6;
 const DEFAULT_MAX_ORGANIZATIONS = 250;
 const RELATED_LIMIT = 500;
+const EXCLUDED_LINEAGE_NEID_PAIRS = new Set([
+    // Explicitly exclude service-provider predecessor edge that is not a corporate action.
+    '01470965072054453101|07683517764755523583',
+    '07683517764755523583|01470965072054453101',
+]);
 
 const LINEAGE_TYPE_PATTERN =
     /(predecessor|successor|acquir|acquisition|merge|merger|sold|sale|buy|bought|purchase|owner|ownership|parent|subsidiary|absorbed|transfer)/i;
@@ -31,7 +36,12 @@ function normalizeRelationshipType(value: string): string {
 }
 
 function relationshipTypesFromRow(row: any): string[] {
-    const values = Array.isArray(row?.relationship_types) ? row.relationship_types : [];
+    const values: unknown[] = [];
+    if (Array.isArray(row?.relationship_types)) values.push(...row.relationship_types);
+    if (typeof row?.relationship_type === 'string') values.push(row.relationship_type);
+    if (typeof row?.type === 'string') values.push(row.type);
+    if (typeof row?.relationship === 'string') values.push(row.relationship);
+    if (typeof row?.relationship?.type === 'string') values.push(row.relationship.type);
     return Array.from(
         new Set(values.map((item) => String(item ?? '').trim()).filter((item) => item.length > 0))
     );
@@ -63,6 +73,10 @@ function typeMatchesLineage(type: string): boolean {
 
 function edgeId(edge: LineageInvestigationRelationship): string {
     return `${edge.sourceNeid}|${edge.targetNeid}|${edge.type}`;
+}
+
+function excludedPair(sourceNeid: string, targetNeid: string): boolean {
+    return EXCLUDED_LINEAGE_NEID_PAIRS.has(`${sourceNeid}|${targetNeid}`);
 }
 
 function buildChains(
@@ -186,6 +200,7 @@ export async function runCorporateLineageInvestigation(
         const type = relationship.type;
         runtimeTypeCandidates.add(type);
         if (!typeMatchesLineage(type)) continue;
+        if (excludedPair(sourceNeid, targetNeid)) continue;
         matchedRelationshipTypes.add(type);
         const edge: LineageInvestigationRelationship = {
             sourceNeid,
@@ -227,6 +242,7 @@ export async function runCorporateLineageInvestigation(
                 for (const relationshipType of relationshipTypes) {
                     runtimeTypeCandidates.add(relationshipType);
                     if (!typeMatchesLineage(relationshipType)) continue;
+                    if (excludedPair(current.neid, targetNeid)) continue;
                     matchedRelationshipTypes.add(relationshipType);
                     const edge: LineageInvestigationRelationship = {
                         sourceNeid: current.neid,

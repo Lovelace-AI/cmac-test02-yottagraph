@@ -41,11 +41,16 @@
                             <span v-else class="state-dot" />
                         </div>
                     </div>
+                    <div v-if="stepElapsed(node.id)" class="mt-1">
+                        <v-chip size="x-small" variant="tonal" color="primary">
+                            {{ stepElapsed(node.id) }}
+                        </v-chip>
+                    </div>
 
                     <div class="text-body-2 mt-3">{{ node.description }}</div>
 
                     <div
-                        v-if="node.type !== 'output' && nodeActivity[node.id]"
+                        v-if="nodeActivity[node.id]"
                         class="activity-snippet mt-2"
                         :class="`activity-snippet--${node.id}`"
                     >
@@ -87,6 +92,22 @@
                         <span class="text-caption text-medium-emphasis">Produces</span>
                         <span class="text-body-2">{{ node.produces }}</span>
                     </div>
+
+                    <div v-if="traceByNode[node.id]?.length" class="trace-stream mt-3">
+                        <div class="text-caption text-medium-emphasis mb-1">Live trace</div>
+                        <div class="trace-list">
+                            <div
+                                v-for="trace in traceByNode[node.id]"
+                                :key="trace.id"
+                                class="trace-line text-caption"
+                            >
+                                <span class="trace-time">
+                                    {{ new Date(trace.timestamp).toLocaleTimeString() }}
+                                </span>
+                                <span>{{ trace.message }}</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div
@@ -104,7 +125,12 @@
 </template>
 
 <script setup lang="ts">
-    import type { AgentPipelineStep, AgentRunDetails } from '~/utils/agentPipeline';
+    import type {
+        AgentPipelineStep,
+        AgentRunDetails,
+        AgentTraceEntry,
+    } from '~/utils/agentPipeline';
+    import { onBeforeUnmount, onMounted, ref } from 'vue';
 
     type NodeStatus = 'idle' | 'working' | 'completed';
 
@@ -131,6 +157,7 @@
     const props = defineProps<{
         steps: AgentPipelineStep[];
         runDetails: AgentRunDetails;
+        traceEntries?: AgentTraceEntry[];
     }>();
 
     const connectorLabels = ['plan', 'evidence', 'grounded output'];
@@ -252,16 +279,98 @@
                       : null,
             composition:
                 compositionStatus === 'working'
-                    ? { line1: 'Composing grounded answer from assembled evidence...' }
+                    ? {
+                          line1: props.runDetails.composition?.question
+                              ? `Assembling answer for: "${props.runDetails.composition.question.slice(0, 110)}${props.runDetails.composition.question.length > 110 ? '…' : ''}"`
+                              : 'Composing grounded answer from assembled evidence...',
+                          line2: props.runDetails.composition?.assembledFrom
+                              ? `Using ${props.runDetails.composition.assembledFrom.entityCount} entities, ${props.runDetails.composition.assembledFrom.eventCount} events, ${props.runDetails.composition.assembledFrom.relationshipCount} relationships, ${props.runDetails.composition.assembledFrom.evidenceLineCount} evidence lines.`
+                              : undefined,
+                      }
                     : props.runDetails.composition && compositionStatus === 'completed'
                       ? {
-                            line1: props.runDetails.composition.outputPreview
-                                ? props.runDetails.composition.outputPreview.slice(0, 120)
-                                : 'Generated grounded response.',
+                            line1: props.runDetails.composition.question
+                                ? `Answer assembled for: "${props.runDetails.composition.question.slice(0, 95)}${props.runDetails.composition.question.length > 95 ? '…' : ''}"`
+                                : props.runDetails.composition.outputPreview
+                                  ? props.runDetails.composition.outputPreview.slice(0, 120)
+                                  : 'Generated grounded response.',
+                            line2: props.runDetails.composition.outputPreview
+                                ? `Preview: ${props.runDetails.composition.outputPreview.slice(0, 120)}${props.runDetails.composition.outputPreview.length > 120 ? '…' : ''}`
+                                : undefined,
                             badge: `${props.runDetails.composition.citationCount} citations`,
                         }
                       : null,
-            output: null,
+            output:
+                props.runDetails.composition && compositionStatus === 'completed'
+                    ? {
+                          line1: props.runDetails.composition.outputPreview
+                              ? `Answer: ${props.runDetails.composition.outputPreview.slice(0, 120)}${props.runDetails.composition.outputPreview.length > 120 ? '…' : ''}`
+                              : 'Answer ready.',
+                          badge: `${props.runDetails.composition.citationCount} citations`,
+                      }
+                    : null,
+        };
+    });
+
+    const nowMs = ref(Date.now());
+    let ticker: ReturnType<typeof setInterval> | null = null;
+
+    onMounted(() => {
+        ticker = setInterval(() => {
+            nowMs.value = Date.now();
+        }, 500);
+    });
+
+    onBeforeUnmount(() => {
+        if (ticker) clearInterval(ticker);
+    });
+
+    function formatDuration(ms: number): string {
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+        const minutes = Math.floor(ms / 60_000);
+        const seconds = Math.floor((ms % 60_000) / 1000);
+        return `${minutes}m ${seconds}s`;
+    }
+
+    const stepByNodeId = computed<Record<string, AgentPipelineStep | undefined>>(() => ({
+        planning: props.steps.find((step) => step.label === 'Planning Agent'),
+        context: props.steps.find((step) => step.label === 'Context Agent'),
+        composition: props.steps.find((step) => step.label === 'Composition Agent'),
+        output: undefined,
+    }));
+
+    function stepElapsed(nodeId: string): string | null {
+        const step = stepByNodeId.value[nodeId];
+        if (!step) return null;
+        if (step.status === 'working' && step.startedAtMs) {
+            return formatDuration(Math.max(0, nowMs.value - step.startedAtMs));
+        }
+        if (step.status === 'completed' && step.durationMs !== undefined) {
+            return formatDuration(step.durationMs);
+        }
+        return null;
+    }
+
+    const traceByNode = computed<Record<string, AgentTraceEntry[]>>(() => {
+        const entries = props.traceEntries ?? [];
+        const buckets: Record<string, AgentTraceEntry[]> = {
+            planning: [],
+            context: [],
+            composition: [],
+            output: [],
+        };
+        entries.forEach((entry) => {
+            if (entry.agent === 'planning') buckets.planning.push(entry);
+            if (entry.agent === 'context') buckets.context.push(entry);
+            if (entry.agent === 'composition') buckets.composition.push(entry);
+            if (entry.agent === 'system') buckets.output.push(entry);
+        });
+        return {
+            planning: buckets.planning.slice(-3),
+            context: buckets.context.slice(-3),
+            composition: buckets.composition.slice(-3),
+            output: buckets.output.slice(-3),
         };
     });
 </script>
@@ -354,6 +463,34 @@
         display: flex;
         flex-direction: column;
         gap: 2px;
+    }
+
+    .trace-stream {
+        border-top: 1px dashed var(--app-divider);
+        padding-top: 8px;
+    }
+
+    .trace-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 88px;
+        overflow-y: auto;
+    }
+
+    .trace-line {
+        display: flex;
+        gap: 6px;
+        color: var(--dynamic-text-secondary);
+        line-height: 1.3;
+    }
+
+    .trace-time {
+        color: var(--dynamic-text-muted);
+        font-family:
+            ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+            monospace;
+        flex-shrink: 0;
     }
 
     .connector-cell {

@@ -99,21 +99,26 @@ Only add navigation if the app genuinely needs multiple views. Choose the patter
 
 ## New Page Checklist
 
-- [ ] Created a design doc in `design/` (copy `design/feature_template.md`)
 - [ ] Page in `pages/` with `<script setup lang="ts">`
 - [ ] Uses Vuetify components and the project's dark theme
 - [ ] Updated `DESIGN.md` with current status
+- [ ] (Optional) Created a design doc in `design/` for complex features
+
+Design docs in `design/` are most useful for incremental feature work where
+you need to plan, track decisions, and coordinate across multiple changes.
+For initial app builds via `/build_my_app`, skip the per-page design docs —
+they add friction without value when building the whole app at once. Start
+using them later when adding features to an established app.
 
 ## Server Routes
 
-Nitro server routes live in `server/api/` and deploy with the app to Vercel. They're auto-registered by Nuxt:
+Nitro server routes live in `server/api/` and deploy with the app to Vercel.
+Use server routes when you need to proxy external APIs (avoid CORS), call
+the Elemental API server-side, or keep secrets off the client. Call them
+from client code with `$fetch('/api/my-data/fetch')`.
 
-```
-server/api/my-data/fetch.get.ts   →   GET /api/my-data/fetch
-server/api/my-data/submit.post.ts →  POST /api/my-data/submit
-```
-
-Call them from client code with `$fetch('/api/my-data/fetch')`. See the `server` cursor rule for patterns. Use server routes when you need to proxy external APIs (avoid CORS) or keep secrets off the client.
+See the `server` rule for file-routing conventions, Neon Postgres patterns,
+and server-side Elemental API access via `useRuntimeConfig()`.
 
 ## Beyond the UI: Agents, MCP Servers, and Server Routes
 

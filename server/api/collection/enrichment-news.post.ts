@@ -65,6 +65,40 @@ function hostnameFromUrl(url?: string): string | undefined {
     }
 }
 
+function firstStringFromUnknown(value: unknown): string | undefined {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (value && typeof value === 'object') {
+        const nestedValue = (value as Record<string, unknown>).value;
+        if (typeof nestedValue === 'string' && nestedValue.trim()) return nestedValue.trim();
+    }
+    return undefined;
+}
+
+function relationshipDate(row: any, props: Record<string, any>): string | undefined {
+    const directPropertyDate = firstString(props, ['published_at', 'published_date', 'date']);
+    if (directPropertyDate) return directPropertyDate;
+
+    const relationshipCandidates: unknown[] = [
+        row?.published_at,
+        row?.published_date,
+        row?.date,
+        row?.recorded_at,
+        row?.relationship?.published_at,
+        row?.relationship?.published_date,
+        row?.relationship?.date,
+        row?.relationship?.recorded_at,
+        row?.relationship_properties?.published_at,
+        row?.relationship_properties?.published_date,
+        row?.relationship_properties?.date,
+        row?.relationship_properties?.recorded_at,
+    ];
+    for (const candidate of relationshipCandidates) {
+        const resolved = firstStringFromUnknown(candidate);
+        if (resolved) return resolved;
+    }
+    return undefined;
+}
+
 export default defineEventHandler(async (event) => {
     const body = await readBody<NewsRequest>(event);
     const entityNeids = Array.isArray(body?.entityNeids) ? body.entityNeids : [];
@@ -121,7 +155,8 @@ export default defineEventHandler(async (event) => {
                         articleNeid: String(article?.neid ?? ''),
                         title,
                         // TODO(data-quality): Ensure publication timestamps are consistently present in article ingestion.
-                        date: firstString(props, ['published_at', 'published_date', 'date']),
+                        // Some feeds emit publication date on the relationship row instead of article properties.
+                        date: relationshipDate(article, props),
                         description: firstString(props, ['snippet', 'summary', 'description']),
                         sourceName,
                         url,

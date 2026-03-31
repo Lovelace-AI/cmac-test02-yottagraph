@@ -17,6 +17,16 @@ export interface AgentPipelineStep {
     icon?: string;
     color?: string;
     durationMs?: number;
+    startedAtMs?: number;
+}
+
+export interface AgentTraceEntry {
+    id: string;
+    agent: 'planning' | 'context' | 'composition' | 'system';
+    status: 'info' | 'working' | 'completed';
+    message: string;
+    timestamp: string;
+    elapsedMs?: number;
 }
 
 export interface PlanningAgentRunDetail {
@@ -44,6 +54,13 @@ export interface ContextAgentRunDetail {
 
 export interface CompositionAgentRunDetail {
     agent: 'composition';
+    question?: string;
+    assembledFrom?: {
+        entityCount: number;
+        eventCount: number;
+        relationshipCount: number;
+        evidenceLineCount: number;
+    };
     citationCount: number;
     outputLength: number;
     generationSource?: AskYottaPipelineResponse['generationSource'];
@@ -188,6 +205,7 @@ export function seedAskYottaPipelineSteps(): AgentPipelineStep[] {
             detail: 'Interpreting your question and selecting a retrieval strategy...',
             icon: 'mdi-head-question',
             color: 'deep-purple',
+            startedAtMs: Date.now(),
         },
         {
             step: 2,

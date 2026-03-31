@@ -5,8 +5,8 @@ The `/elemental/find` endpoint searches for entities using a JSON expression lan
 ## When to Use
 
 - You need to search for entities matching specific criteria (type, property values, relationships)
-- You need to combine multiple filters (e.g., "ships with name containing PACIFIC")
-- You need to find entities connected to a given entity via the knowledge graph
+- You need to combine multiple filters
+- You need to find entities connected to a given entity via the relationship links
 
 ## Expression Structure
 
@@ -18,16 +18,75 @@ Every expression is a JSON object with a `type` field that determines which othe
 
 Expressions are passed as URL-encoded form data in the `expression` parameter (NOT as a JSON request body).
 
+## Common Mistakes
+
+These errors come up repeatedly. Check this section before constructing expressions.
+
+### Using `comparison` to filter by entity type
+
+**Wrong** — `comparison` with `pid: 0` fails:
+
+```json
+{ "type": "comparison", "comparison": { "operator": "eq", "pid": 0, "value": 12 } }
+```
+
+→ Error: "Comparison expression requires pid != 0"
+
+**Right** — use `is_type`:
+
+```json
+{ "type": "is_type", "is_type": { "fid": 12 } }
+```
+
+### Using `string_like` on non-name properties
+
+`string_like` **only works on the name property (PID 8)**. Any other PID returns an error.
+
+**Wrong:**
+
+```json
+{
+    "type": "comparison",
+    "comparison": { "operator": "string_like", "pid": 115, "value": "Politics" }
+}
+```
+
+→ Error: "string_like only supports the 'name' property (pid=8)"
+
+**Right** — use `eq` for exact matches on other properties, or fetch all results and filter client-side:
+
+```json
+{ "type": "comparison", "comparison": { "operator": "eq", "pid": 115, "value": "Politics" } }
+```
+
+### Using `conjunction` / `disjunction` instead of `and` / `or`
+
+**Wrong:**
+
+```json
+{"type": "conjunction", "conjunction": {"operator": "and", "expressions": [...]}}
+```
+
+**Right:**
+
+```json
+{"type": "and", "and": [expression1, expression2]}
+```
+
+### Using `lt` / `gt` on non-numeric properties
+
+`lt` and `gt` only work on `data_int` and `data_float` properties. Using them on strings or categories returns an error.
+
 ## Expression Types
 
-| Type         | Description                            | Key Fields                                                  | Status                              |
-| ------------ | -------------------------------------- | ----------------------------------------------------------- | ----------------------------------- |
-| `is_type`    | Filter entities by type (flavor)       | `is_type.fid` (integer)                                     | Implemented                         |
-| `comparison` | Compare a property value               | `comparison.operator`, `comparison.pid`, `comparison.value` | Partial -- see operator table below |
-| `linked`     | Find entities linked via relationships | `linked.distance`, `linked.to_entity`, `linked.pids`        | Implemented                         |
-| `and`        | All sub-expressions must match         | `and` (array of expressions)                                | Implemented                         |
-| `or`         | At least one sub-expression must match | `or` (array of expressions)                                 | Implemented                         |
-| `not`        | Negate an expression                   | `not` (single expression)                                   | Implemented                         |
+| Type         | Description                            | Key Fields                                                  | Status                                             |
+| ------------ | -------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------- |
+| `is_type`    | Filter entities by type (flavor)       | `is_type.fid` (integer)                                     | Implemented                                        |
+| `comparison` | Compare a property value               | `comparison.operator`, `comparison.pid`, `comparison.value` | Partial — see operator table and limitations below |
+| `linked`     | Find entities linked via relationships | `linked.distance`, `linked.to_entity`, `linked.pids`        | Implemented                                        |
+| `and`        | All sub-expressions must match         | `and` (array of expressions)                                | Implemented                                        |
+| `or`         | At least one sub-expression must match | `or` (array of expressions)                                 | Implemented                                        |
+| `not`        | Negate an expression                   | `not` (single expression)                                   | Implemented                                        |
 
 ### `is_type` -- Filter by Entity Type
 
@@ -56,14 +115,16 @@ Compares a property (identified by PID) against a value. Look up PIDs via the sc
 
 **Operators:**
 
-| Operator      | Description                                     | Value Type                 | Status                                |
-| ------------- | ----------------------------------------------- | -------------------------- | ------------------------------------- |
-| `string_like` | Case-insensitive substring match                | string                     | Implemented (name property only)      |
-| `has_value`   | Property has any value (value field not needed) | n/a                        | Implemented                           |
-| `eq`          | Equal to                                        | string, number, or boolean | Implemented (type-aware)              |
-| `lt`          | Less than                                       | number                     | Implemented (numeric properties only) |
-| `gt`          | Greater than                                    | number                     | Implemented (numeric properties only) |
-| `regex`       | Regular expression match                        | string (regex pattern)     | Not yet implemented                   |
+| Operator      | Description                                     | Value Type                 | Limitations                                                                                              |
+| ------------- | ----------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `string_like` | Case-insensitive substring match                | string                     | **NAME PROPERTY ONLY (PID 8)**. Fails with error on any other PID. Use `eq` for other string properties. |
+| `has_value`   | Property has any value (value field not needed) | n/a                        | —                                                                                                        |
+| `eq`          | Equal to                                        | string, number, or boolean | Type-aware; works on any property                                                                        |
+| `lt`          | Less than                                       | number                     | Numeric properties only (`data_int`, `data_float`)                                                       |
+| `gt`          | Greater than                                    | number                     | Numeric properties only (`data_int`, `data_float`)                                                       |
+| `regex`       | Regular expression match                        | string (regex pattern)     | **Not yet implemented** — returns error                                                                  |
+
+**Important:** The `pid` field must be non-zero. PID 0 is reserved; use `is_type` to filter by entity type instead of `comparison` with PID 0.
 
 ### `linked` -- Relationship Traversal
 
@@ -133,13 +194,13 @@ Content-Type: application/x-www-form-urlencoded
 expression={"type":"comparison","comparison":{"operator":"string_like","pid":8,"value":"Apple"}}
 ```
 
-### Find ships with "PACIFIC" in the name (combined AND)
+### Find organizations with "Global" in the name (combined AND)
 
 ```
 POST /elemental/find
 Content-Type: application/x-www-form-urlencoded
 
-expression={"type":"and","and":[{"type":"is_type","is_type":{"fid":1}},{"type":"comparison","comparison":{"operator":"string_like","pid":8,"value":"PACIFIC"}}]}&limit=50
+expression={"type":"and","and":[{"type":"is_type","is_type":{"fid":10}},{"type":"comparison","comparison":{"operator":"string_like","pid":8,"value":"Global"}}]}&limit=50
 ```
 
 ### Find entities linked to a specific entity
@@ -274,6 +335,12 @@ expression={"type":"is_type","is_type":{"fid":10}}&limit=5
 | ----------- | -------- | ----------- |
 | **is_type** | `IsType` |             |
 
+### LinkedExpression
+
+| Field      | Type     | Description |
+| ---------- | -------- | ----------- |
+| **linked** | `Linked` |             |
+
 ### Comparison
 
 | Field          | Type    | Description                                                                                                                                                                                                                |
@@ -288,5 +355,14 @@ expression={"type":"is_type","is_type":{"fid":10}}&limit=5
 | Field   | Type    | Description                                      |
 | ------- | ------- | ------------------------------------------------ |
 | **fid** | integer | Flavor identifier (FID) representing entity type |
+
+### Linked
+
+| Field        | Type      | Description                                                                                                                                                                             |
+| ------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **distance** | integer   | Maximum relationship distance to traverse                                                                                                                                               |
+| pids         | integer[] | Property identifiers defining the relationship types to follow                                                                                                                          |
+| to_entity    | string    | Target entity ID for relationship traversal                                                                                                                                             |
+| direction    | string    | Direction of relationship traversal. 'outgoing' (default) follows subject->value edges, 'incoming' follows value->subject (reverse) edges, 'both' unions outgoing and incoming results. |
 
 <!-- END GENERATED CONTENT -->

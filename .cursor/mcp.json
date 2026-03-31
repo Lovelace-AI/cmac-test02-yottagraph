@@ -11,12 +11,6 @@
         },
         "lovelace-polymarket": {
             "url": "https://broadchurch-portal-194773164895.us-central1.run.app/api/mcp/org_uljCkZRTKeenccpL/polymarket/mcp"
-        },
-        "lovelace-mcp": {
-            "url": "https://mcp.pip.stg.g.lovelace.ai/elemental",
-            "headers": {
-                "Authorization": "Bearer dev-token-eyJzdWIiOiAidXNlckBsb3ZlbGFjZS5haSIsICJuYW1lIjogIkRldiBVc2VyIiwgInNjb3BlIjogInJlYWQ6YWxsIiwgImlhdCI6IDE2NDA5OTUyMDAsICJleHAiOiA5OTk5OTk5OTk5fQo="
-            }
         }
     }
 }
