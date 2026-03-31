@@ -828,6 +828,40 @@
         buildGraph();
     }
 
+    function fitCameraToGraphBounds(graph: Graph): void {
+        if (!sigmaInstance || !graphContainer.value || graph.order === 0) return;
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        graph.forEachNode((nodeId) => {
+            const x = Number(graph.getNodeAttribute(nodeId, 'x'));
+            const y = Number(graph.getNodeAttribute(nodeId, 'y'));
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        });
+        if (!Number.isFinite(minX) || !Number.isFinite(minY)) return;
+
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const spanX = Math.max(maxX - minX, 1);
+        const spanY = Math.max(maxY - minY, 1);
+        const width = Math.max(graphContainer.value.clientWidth, 1);
+        const height = Math.max(graphContainer.value.clientHeight, 1);
+        const ratio = Math.max(
+            0.08,
+            Math.min(4.5, Math.max((spanX * 1.35) / width, (spanY * 1.35) / height))
+        );
+        try {
+            sigmaInstance.getCamera().animate({ x: centerX, y: centerY, ratio }, { duration: 0 });
+        } catch {
+            // guard against camera state errors
+        }
+    }
+
     function buildGraph(): void {
         if (!graphContainer.value) return;
 
@@ -1182,6 +1216,7 @@
             tooltip.value = null;
         });
 
+        fitCameraToGraphBounds(g);
         applySelectedHighlight();
         queueSigmaReflow();
     }
