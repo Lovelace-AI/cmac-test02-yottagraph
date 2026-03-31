@@ -190,6 +190,10 @@ export default defineNuxtConfig({
             gatewayUrl: bcYaml.gatewayUrl,
             tenantOrgId: bcYaml.tenantOrgId,
             agents: '',
+            askYottaPlanningAgentName: 'planning_agent',
+            askYottaContextAgentName: 'context_agent',
+            askYottaContextAgentFallbackName: 'example_agent',
+            askYottaCompositionAgentName: 'composition_agent',
 
             // User Configuration — bypass Auth0 in dev mode for provisioned projects
             userName: bcYaml.found && process.env.NODE_ENV !== 'production' ? 'dev-user' : '',

@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue';
 import type { CollectionState } from '~/utils/collectionTypes';
+import type { AskYottaPipelineResponse } from '~/utils/agentPipeline';
 
 export interface InsightCitation {
     type: 'entity' | 'event' | 'document' | 'relationship';
@@ -261,30 +262,26 @@ export function useInsightsWorkspace() {
         };
 
         try {
-            const result = await $fetch<{
-                output: string;
-                generationSource?: 'gemini' | 'fallback' | 'gateway';
-                generationNote?: string;
-                usage?: {
-                    model: string;
-                    promptTokens: number;
-                    completionTokens: number;
-                    totalTokens: number;
-                    costUsd: number;
-                };
-            }>('/api/collection/answer', {
-                method: 'POST',
-                body: {
-                    action: 'insight_question',
-                    question: question.text,
-                },
-            });
+            const result = await $fetch<AskYottaPipelineResponse>(
+                '/api/collection/agent-orchestrator',
+                {
+                    method: 'POST',
+                    body: {
+                        action: 'insight_question',
+                        question: question.text,
+                    },
+                }
+            );
             const output = result?.output?.trim() || 'No answer returned.';
 
             answers.value[question.id] = {
                 status: 'answered',
                 answer: output,
-                citations: [],
+                citations: (result?.citations ?? []).map((row) => ({
+                    type: row.type,
+                    neid: row.neid,
+                    label: row.label,
+                })),
                 error: null,
                 cached: false,
                 usage: result?.usage,

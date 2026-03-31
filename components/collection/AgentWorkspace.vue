@@ -166,6 +166,7 @@
     const {
         isReady,
         agentLoading,
+        agentResult,
         entities,
         relationships,
         documents,
@@ -177,15 +178,15 @@
     const activeAction = ref<string | null>(null);
 
     const agentSteps = ref<RebuildStep[]>([
-        { step: 1, status: 'pending', label: 'Dialogue Agent', detail: 'Interpreting question...' },
+        { step: 1, status: 'pending', label: 'Planning Agent', detail: 'Interpreting question...' },
         { step: 2, status: 'pending', label: 'Context Agent', detail: 'Fetching evidence...' },
         { step: 3, status: 'pending', label: 'Composition Agent', detail: 'Composing response...' },
     ]);
 
     const agentCards = computed(() => [
         {
-            name: 'Dialogue Agent',
-            role: 'Question understanding',
+            name: 'Planning Agent',
+            role: 'Question understanding and strategy',
             description:
                 'Interprets intent and selects a grounded strategy for the collection scope.',
             active: agentLoading.value,
@@ -209,17 +210,17 @@
         {
             title: 'Executive Brief',
             question: 'What matters most in this collection?',
-            flow: 'Dialogue Agent -> Context Agent -> Composition Agent',
+            flow: 'Planning Agent -> Context Agent -> Composition Agent',
         },
         {
             title: 'Evidence Gap Check',
             question: 'Where is support incomplete?',
-            flow: 'Dialogue Agent -> Context Agent (coverage focus) -> Composition Agent',
+            flow: 'Planning Agent -> Context Agent (coverage focus) -> Composition Agent',
         },
         {
             title: 'Anchor Selection',
             question: 'Which entities should we expand first?',
-            flow: 'Dialogue Agent -> Context Agent (connectivity ranking) -> Composition Agent',
+            flow: 'Planning Agent -> Context Agent (connectivity ranking) -> Composition Agent',
         },
     ];
 
@@ -251,7 +252,7 @@
             {
                 step: 1,
                 status: 'working',
-                label: 'Dialogue Agent',
+                label: 'Planning Agent',
                 detail: 'Interpreting question...',
             },
             { step: 2, status: 'pending', label: 'Context Agent', detail: 'Fetching evidence...' },
@@ -262,17 +263,21 @@
                 detail: 'Composing response...',
             },
         ];
-        setTimeout(() => {
-            if (!agentLoading.value) return;
-            agentSteps.value[0].status = 'completed';
-            agentSteps.value[1].status = 'working';
-        }, 500);
-        setTimeout(() => {
-            if (!agentLoading.value) return;
-            agentSteps.value[1].status = 'completed';
-            agentSteps.value[2].status = 'working';
-        }, 950);
     });
+
+    watch(
+        () => agentResult.value?.agentSteps,
+        (steps) => {
+            if (!steps?.length) return;
+            agentSteps.value = steps.map((step) => ({
+                step: step.step,
+                status: step.status,
+                label: step.label,
+                detail: step.detail,
+                durationMs: step.durationMs,
+            }));
+        }
+    );
 
     async function runAction(actionId: string) {
         activeAction.value = actionId;
