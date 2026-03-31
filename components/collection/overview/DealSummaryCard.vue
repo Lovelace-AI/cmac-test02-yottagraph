@@ -1,33 +1,31 @@
 <template>
     <v-card class="briefing-card h-100" variant="flat">
-        <v-card-item class="pb-1">
+        <v-card-item class="pb-1 d-flex align-center justify-space-between ga-2">
             <v-card-title class="section-title">Deal Summary</v-card-title>
+            <div class="d-flex align-center ga-1 flex-wrap">
+                <v-btn
+                    v-if="hasSummary"
+                    size="x-small"
+                    variant="text"
+                    class="narrative-action"
+                    :loading="isRegenerating"
+                    :disabled="isRegenerating"
+                    @click="$emit('regenerate')"
+                >
+                    Refresh
+                </v-btn>
+                <v-chip
+                    v-if="citationCount > 0"
+                    size="x-small"
+                    variant="tonal"
+                    prepend-icon="mdi-file-document-outline"
+                >
+                    {{ citationCount }} source references
+                </v-chip>
+            </div>
         </v-card-item>
         <v-card-text class="pt-0 pb-4">
             <div class="narrative-section">
-                <div class="d-flex align-center justify-end ga-1 flex-wrap mb-2">
-                    <div class="d-flex align-center ga-1 flex-wrap">
-                        <v-btn
-                            v-if="hasSummary"
-                            size="x-small"
-                            variant="text"
-                            class="narrative-action"
-                            :loading="isRegenerating"
-                            :disabled="isRegenerating"
-                            @click="$emit('regenerate')"
-                        >
-                            Refresh
-                        </v-btn>
-                        <v-chip
-                            v-if="citationCount > 0"
-                            size="x-small"
-                            variant="tonal"
-                            prepend-icon="mdi-file-document-outline"
-                        >
-                            {{ citationCount }} source references
-                        </v-chip>
-                    </div>
-                </div>
                 <template v-if="narrativeParagraphs.length">
                     <p
                         v-for="paragraph in narrativeParagraphs"

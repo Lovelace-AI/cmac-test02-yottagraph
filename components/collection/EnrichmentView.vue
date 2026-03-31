@@ -193,31 +193,18 @@
             </v-window-item>
 
             <v-window-item value="news">
-                <v-card class="mb-3" variant="outlined">
-                    <v-card-item>
-                        <v-card-title class="text-body-2">
-                            Filtered Financial and Legal News
-                        </v-card-title>
-                        <v-card-subtitle>
-                            Articles connected by NEID via <code>appears_in</code>, filtered to
-                            solvency, legal, and transaction-focused event categories.
-                        </v-card-subtitle>
-                    </v-card-item>
-                    <v-card-text>
-                        <v-chip-group v-model="selectedNewsCategories" multiple column>
-                            <v-chip
-                                v-for="category in filteredNewsCategories"
-                                :key="`news-category:${category}`"
-                                size="small"
-                                filter
-                                variant="tonal"
-                                :color="categoryColor(category)"
-                            >
-                                {{ category }}
-                            </v-chip>
-                        </v-chip-group>
-                    </v-card-text>
-                </v-card>
+                <NewsSection
+                    title="Filtered Financial and Legal News"
+                    subtitle="Articles connected by NEID via appears_in, filtered to solvency, legal, and transaction-focused event categories."
+                    class="mb-3"
+                >
+                    <template #filters>
+                        <FilterChipBar
+                            v-model="selectedNewsCategories"
+                            :options="filteredNewsCategories"
+                        />
+                    </template>
+                </NewsSection>
                 <v-alert v-if="filteredNewsLoading" type="info" variant="tonal" class="mb-3">
                     Loading filtered NEID-linked news...
                 </v-alert>
@@ -228,87 +215,27 @@
                     No category-matched news was found for the selected document-graph anchors.
                 </v-alert>
                 <div v-else class="d-flex flex-column ga-3">
-                    <v-card
+                    <section
                         v-for="group in filteredNews.slice(0, 8)"
                         :key="`news:${group.anchorNeid}`"
+                        class="news-group-block"
                     >
-                        <v-card-item>
-                            <v-card-title class="text-body-2">
-                                {{ resolveEntityName(group.anchorNeid) }}
-                            </v-card-title>
-                            <v-card-subtitle>
-                                {{ group.items.length }} filtered articles
-                            </v-card-subtitle>
-                        </v-card-item>
-                        <v-card-text class="d-flex flex-column ga-2">
-                            <v-card
+                        <NewsGroupHeader
+                            :title="resolveEntityName(group.anchorNeid)"
+                            :count-label="`${group.items.length} filtered articles`"
+                        />
+                        <div class="news-items">
+                            <NewsArticleItem
                                 v-for="item in group.items.slice(0, 6)"
                                 :key="`news-item:${group.anchorNeid}:${item.articleNeid}`"
-                                variant="outlined"
-                            >
-                                <v-card-item>
-                                    <template #append>
-                                        <v-btn
-                                            v-if="item.url"
-                                            size="x-small"
-                                            variant="text"
-                                            color="primary"
-                                            :href="item.url"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            icon="mdi-open-in-new"
-                                        />
-                                    </template>
-                                    <v-card-title class="text-body-2">
-                                        {{ item.title || item.urlHost || 'Headline unavailable' }}
-                                    </v-card-title>
-                                    <v-card-subtitle>
-                                        {{ formatArticleMeta(item) }}
-                                    </v-card-subtitle>
-                                </v-card-item>
-                                <v-card-text class="pt-0">
-                                    <div class="text-body-2">
-                                        {{
-                                            truncate(
-                                                item.description ||
-                                                    (item.url
-                                                        ? 'Open the linked article to review the exact source text.'
-                                                        : 'No article summary available.'),
-                                                240
-                                            )
-                                        }}
-                                    </div>
-                                    <div class="d-flex flex-wrap ga-1 mt-2">
-                                        <v-chip
-                                            v-if="item.sentiment != null"
-                                            size="x-small"
-                                            variant="tonal"
-                                            color="info"
-                                        >
-                                            sentiment {{ formatSentiment(item.sentiment) }}
-                                        </v-chip>
-                                        <v-chip
-                                            v-for="topic in item.topics"
-                                            :key="`topic:${item.articleNeid}:${topic}`"
-                                            size="x-small"
-                                            variant="tonal"
-                                            :color="categoryColor(topic)"
-                                        >
-                                            {{ topic }}
-                                        </v-chip>
-                                        <v-chip
-                                            v-if="item.urlHost"
-                                            size="x-small"
-                                            variant="tonal"
-                                            color="primary"
-                                        >
-                                            {{ item.urlHost }}
-                                        </v-chip>
-                                    </div>
-                                </v-card-text>
-                            </v-card>
-                        </v-card-text>
-                    </v-card>
+                                :item="item"
+                                :category-label="primaryTopic(item.topics)"
+                                grouped
+                                compact
+                                :fallback-entity-name="resolveEntityName(group.anchorNeid)"
+                            />
+                        </div>
+                    </section>
                 </div>
             </v-window-item>
 
@@ -359,73 +286,25 @@
                     entities.
                 </v-alert>
                 <div v-else class="d-flex flex-column ga-3">
-                    <v-card v-for="group in enrichmentNews.slice(0, 6)" :key="group.anchorNeid">
-                        <v-card-item>
-                            <v-card-title class="text-body-2">
-                                {{ resolveEntityName(group.anchorNeid) }}
-                            </v-card-title>
-                            <v-card-subtitle>
-                                {{ group.items.length }} recent articles
-                            </v-card-subtitle>
-                        </v-card-item>
-                        <v-card-text class="d-flex flex-column ga-2">
-                            <v-card
+                    <section
+                        v-for="group in enrichmentNews.slice(0, 6)"
+                        :key="group.anchorNeid"
+                        class="news-group-block"
+                    >
+                        <NewsGroupHeader
+                            :title="resolveEntityName(group.anchorNeid)"
+                            :count-label="`${group.items.length} recent articles`"
+                        />
+                        <div class="news-items">
+                            <NewsArticleItem
                                 v-for="item in group.items.slice(0, 4)"
                                 :key="item.articleNeid"
-                                variant="outlined"
-                            >
-                                <v-card-item>
-                                    <template #append>
-                                        <v-btn
-                                            v-if="item.url"
-                                            size="x-small"
-                                            variant="text"
-                                            color="primary"
-                                            :href="item.url"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            icon="mdi-open-in-new"
-                                        />
-                                    </template>
-                                    <v-card-title class="text-body-2">
-                                        {{ item.title || item.urlHost || 'Headline unavailable' }}
-                                    </v-card-title>
-                                    <v-card-subtitle>
-                                        {{ formatArticleMeta(item) }}
-                                    </v-card-subtitle>
-                                </v-card-item>
-                                <v-card-text class="text-body-2">
-                                    {{
-                                        truncate(
-                                            item.description ||
-                                                (item.url
-                                                    ? 'Open the linked article to review the exact source text.'
-                                                    : 'No article summary available.'),
-                                            260
-                                        )
-                                    }}
-                                    <div class="d-flex flex-wrap ga-1 mt-2">
-                                        <v-chip
-                                            v-if="item.sentiment != null"
-                                            size="x-small"
-                                            variant="tonal"
-                                            color="info"
-                                        >
-                                            sentiment {{ formatSentiment(item.sentiment) }}
-                                        </v-chip>
-                                        <v-chip
-                                            v-if="item.url"
-                                            size="x-small"
-                                            variant="tonal"
-                                            color="primary"
-                                        >
-                                            {{ item.urlHost || 'linked article' }}
-                                        </v-chip>
-                                    </div>
-                                </v-card-text>
-                            </v-card>
-                        </v-card-text>
-                    </v-card>
+                                :item="item"
+                                grouped
+                                :fallback-entity-name="resolveEntityName(group.anchorNeid)"
+                            />
+                        </div>
+                    </section>
                 </div>
             </v-window-item>
 
@@ -596,20 +475,8 @@
         { deep: true }
     );
 
-    function truncate(text: string, max: number): string {
-        return text.length > max ? `${text.slice(0, max).trimEnd()}...` : text;
-    }
-
     function formatNumber(value: number): string {
         return value.toLocaleString();
-    }
-
-    function formatConfidence(value: number): string {
-        return value >= 0 && value <= 1 ? `${Math.round(value * 100)}%` : value.toFixed(2);
-    }
-
-    function formatSentiment(value: number): string {
-        return value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2);
     }
 
     function formatFlavor(value: string): string {
@@ -619,42 +486,12 @@
             .replace(/\b\w/g, (char) => char.toUpperCase());
     }
 
-    function formatArticleMeta(item: {
-        date?: string;
-        sourceName?: string;
-        confidence?: number | null;
-    }): string {
-        const parts: string[] = [];
-        if (item.date) parts.push(item.date);
-        if (item.sourceName) parts.push(item.sourceName);
-        if (item.confidence != null) parts.push(`confidence ${formatConfidence(item.confidence)}`);
-        return parts.join(' • ');
+    function formatSentiment(value: number): string {
+        return value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2);
     }
 
-    function categoryColor(category: string): string {
-        const key = category.toLowerCase();
-        if (
-            key.includes('bankruptcy') ||
-            key.includes('default') ||
-            key.includes('insolvency') ||
-            key.includes('hostile takeover') ||
-            key.includes('legal judgement') ||
-            key.includes('expropriation') ||
-            key.includes('seizure')
-        ) {
-            return 'error';
-        }
-        if (
-            key.includes('merger') ||
-            key.includes('acquisition') ||
-            key.includes('credit rating') ||
-            key.includes('insider trading') ||
-            key.includes('cybersecurity') ||
-            key.includes('layoff')
-        ) {
-            return 'warning';
-        }
-        return 'info';
+    function primaryTopic(topics: string[]): string | undefined {
+        return topics.find((topic) => topic.trim().length > 0);
     }
 </script>
 
@@ -670,5 +507,16 @@
         justify-content: space-between;
         gap: 16px;
         margin-bottom: 6px;
+    }
+
+    .news-items :deep(.news-article-item:last-child) {
+        border-bottom: 0;
+    }
+
+    .news-group-block {
+        border: 1px solid var(--app-divider);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--dynamic-surface) 94%, var(--dynamic-background) 6%);
+        padding: 10px 12px 4px;
     }
 </style>

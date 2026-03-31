@@ -120,6 +120,7 @@ export default defineEventHandler(async (event) => {
                     return {
                         articleNeid: String(article?.neid ?? ''),
                         title,
+                        // TODO(data-quality): Ensure publication timestamps are consistently present in article ingestion.
                         date: firstString(props, ['published_at', 'published_date', 'date']),
                         description: firstString(props, ['snippet', 'summary', 'description']),
                         sourceName,
@@ -133,6 +134,7 @@ export default defineEventHandler(async (event) => {
                         ]),
                         sentiment: firstNumber(props, ['sentiment', 'article_sentiment']),
                         citations,
+                        // Linked entities are optional for this endpoint until article-to-entity joins are exposed.
                         linkedEntityNames: [],
                     };
                 })
