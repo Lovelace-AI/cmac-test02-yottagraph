@@ -116,6 +116,124 @@ CORE_PROPERTIES_BY_FLAVOR: dict[str, tuple[str, ...]] = {
 
 DEFAULT_CORE_PROPERTIES = ("name", "alias", "wikibase_shortdesc", "wikipedia_summary", "notes")
 NEID_RE = re.compile(r"^\d{20}$")
+CONTEXT_OUTPUT_SCHEMA: dict = {
+    "type": "object",
+    "required": [
+        "collectionName",
+        "question",
+        "topEntities",
+        "topEvents",
+        "relationships",
+        "profileEvidence",
+        "evidenceLines",
+        "stats",
+    ],
+    "properties": {
+        "collectionName": {"type": "string"},
+        "question": {"type": "string"},
+        "focusEntity": {
+            "type": "object",
+            "required": ["neid", "name", "flavor", "docs"],
+            "properties": {
+                "neid": {"type": "string", "pattern": r"^\d{20}$"},
+                "name": {"type": "string"},
+                "flavor": {"type": "string"},
+                "docs": {"type": "integer", "minimum": 0},
+            },
+            "additionalProperties": False,
+        },
+        "topEntities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["neid", "name", "flavor", "docs"],
+                "properties": {
+                    "neid": {"type": "string", "pattern": r"^\d{20}$"},
+                    "name": {"type": "string"},
+                    "flavor": {"type": "string"},
+                    "docs": {"type": "integer", "minimum": 0},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "topEvents": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["neid", "name", "date", "participants"],
+                "properties": {
+                    "neid": {"type": "string", "pattern": r"^\d{20}$"},
+                    "name": {"type": "string"},
+                    "date": {"type": "string"},
+                    "participants": {"type": "integer", "minimum": 0},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "relationships": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["type", "sourceNeid", "targetNeid"],
+                "properties": {
+                    "type": {"type": "string"},
+                    "sourceNeid": {"type": "string", "pattern": r"^\d{20}$"},
+                    "targetNeid": {"type": "string", "pattern": r"^\d{20}$"},
+                    "sourceDocumentNeid": {"type": "string", "pattern": r"^\d{20}$"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "profileEvidence": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "neid",
+                    "name",
+                    "flavor",
+                    "resolution",
+                    "properties",
+                    "missingProperties",
+                ],
+                "properties": {
+                    "neid": {"type": "string", "pattern": r"^\d{20}$"},
+                    "name": {"type": "string"},
+                    "flavor": {"type": "string"},
+                    "resolution": {"type": "string", "enum": ["provided_neid", "name_search"]},
+                    "properties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "missingProperties": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+        "evidenceLines": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "stats": {
+            "type": "object",
+            "required": ["documentCount", "entityCount", "eventCount", "relationshipCount"],
+            "properties": {
+                "documentCount": {"type": "integer", "minimum": 0},
+                "entityCount": {"type": "integer", "minimum": 0},
+                "eventCount": {"type": "integer", "minimum": 0},
+                "relationshipCount": {"type": "integer", "minimum": 0},
+            },
+            "additionalProperties": False,
+        },
+    },
+    "additionalProperties": False,
+}
 
 
 def get_schema() -> dict:
@@ -532,6 +650,7 @@ root_agent = Agent(
         "temperature": 0.3,
         "response_mime_type": "application/json",
     },
+    output_schema=CONTEXT_OUTPUT_SCHEMA,
     instruction="""You are the Context Agent in a 3-stage Ask Yotta pipeline.
 You are a super librarian of the knowledge graph.
 
