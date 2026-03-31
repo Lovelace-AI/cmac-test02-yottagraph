@@ -124,7 +124,9 @@
             :scrim="false"
             class="pa-2 entity-drawer"
         >
-            <EntityDetailPanel />
+            <div ref="entityPanelRoot" class="entity-panel-shell">
+                <EntityDetailPanel />
+            </div>
         </v-navigation-drawer>
 
         <v-dialog
@@ -135,7 +137,7 @@
             scrollable
             class="entity-dialog"
         >
-            <div class="entity-dialog-shell">
+            <div ref="entityPanelRoot" class="entity-dialog-shell entity-panel-shell">
                 <EntityDetailPanel />
             </div>
         </v-dialog>
@@ -407,6 +409,7 @@
     const chatDrawerOpen = ref(false);
     const askYottaQuestion = ref('');
     const askYottaOutputEl = ref<HTMLElement | null>(null);
+    const entityPanelRoot = ref<HTMLElement | null>(null);
     const askYottaSteps = ref<
         Array<{
             step: number;
@@ -599,13 +602,22 @@
             entityDrawerOpen.value = false;
         }
     };
+    const handleGlobalPointerDown = (event: PointerEvent) => {
+        if (!entityDrawerOpen.value) return;
+        const target = event.target;
+        if (!(target instanceof Node)) return;
+        if (entityPanelRoot.value?.contains(target)) return;
+        entityDrawerOpen.value = false;
+    };
 
     onMounted(() => {
         bootstrap();
         window.addEventListener('keydown', handleGlobalEsc);
+        document.addEventListener('pointerdown', handleGlobalPointerDown, true);
     });
     onBeforeUnmount(() => {
         window.removeEventListener('keydown', handleGlobalEsc);
+        document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
     });
 
     watch(
@@ -758,6 +770,10 @@
     :deep(.entity-drawer.v-navigation-drawer) {
         width: min(480px, 94vw) !important;
         z-index: 12020 !important;
+    }
+
+    .entity-panel-shell {
+        height: 100%;
     }
 
     :deep(.chat-overlay-top.v-navigation-drawer) {
