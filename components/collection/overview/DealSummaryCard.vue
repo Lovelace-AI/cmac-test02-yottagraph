@@ -5,10 +5,7 @@
         </v-card-item>
         <v-card-text class="pt-0 pb-4">
             <div class="narrative-section">
-                <div class="d-flex align-center justify-space-between ga-2 mb-2">
-                    <div class="text-caption text-medium-emphasis text-uppercase">
-                        Corpus Description
-                    </div>
+                <div class="d-flex align-center justify-end ga-1 flex-wrap mb-2">
                     <div class="d-flex align-center ga-1 flex-wrap">
                         <v-btn
                             v-if="hasSummary"

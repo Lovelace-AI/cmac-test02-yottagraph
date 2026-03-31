@@ -2529,21 +2529,9 @@ export function useCollectionWorkspace() {
                             relationshipCount: number;
                             propertyCount: number;
                         };
-                        degree2?: {
-                            entityCount: number;
-                            eventCount: number;
-                            relationshipCount: number;
-                            propertyCount: number;
-                        };
                     };
                     byDepth?: {
                         degree1?: {
-                            entityCount: number;
-                            eventCount: number;
-                            relationshipCount: number;
-                            propertyCount: number;
-                        };
-                        degree2?: {
                             entityCount: number;
                             eventCount: number;
                             relationshipCount: number;

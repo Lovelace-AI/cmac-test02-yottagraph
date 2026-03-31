@@ -63,9 +63,8 @@ export interface EnrichmentCountBucket {
 export interface EnrichmentCountSummary {
     document: EnrichmentCountBucket;
     raw1Degree: EnrichmentCountBucket;
-    raw2Degrees: EnrichmentCountBucket;
+    kgOneHop?: EnrichmentCountBucket;
     degree1?: EnrichmentCountBucket;
-    degree2?: EnrichmentCountBucket;
     auditOneHop?: EnrichmentCountBucket;
 }
 
@@ -115,6 +114,11 @@ export interface CollectionMeta {
         events: boolean;
         eventHubs: boolean;
     };
+    kgPerEntity?: Array<{
+        neid: string;
+        relationshipCount: number;
+        eventCount: number;
+    }>;
     cacheSource?: 'memory' | 'redis' | 'none';
     cachedAt?: string;
     cacheVersion?: string;

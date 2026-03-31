@@ -30,7 +30,7 @@
         <v-window v-model="activeSubtab">
             <v-window-item value="comparison">
                 <v-row>
-                    <v-col cols="12" md="4">
+                    <v-col cols="12" md="6">
                         <v-card>
                             <v-card-item>
                                 <v-card-title class="text-body-2">Document Truth</v-card-title>
@@ -67,77 +67,39 @@
                             </v-card-text>
                         </v-card>
                     </v-col>
-                    <v-col cols="12" md="4">
+                    <v-col cols="12" md="6">
                         <v-card>
                             <v-card-item>
-                                <v-card-title class="text-body-2"
-                                    >Enriched by 1 Degree</v-card-title
-                                >
-                                <v-card-subtitle>Total raw 1-hop results</v-card-subtitle>
+                                <v-card-title class="text-body-2">KG 1-Hop Reach</v-card-title>
+                                <v-card-subtitle>
+                                    Total connections from document entities in the knowledge graph
+                                </v-card-subtitle>
                             </v-card-item>
                             <v-card-text>
                                 <div class="metric-row">
-                                    <span>Reference entities</span>
+                                    <span>Connected entities</span>
                                     <strong>{{
-                                        formatNumber(enrichmentComparison.raw1Degree.entityCount)
+                                        formatNumber(enrichmentComparison.kgOneHop.entityCount)
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
-                                    <span>Reference events</span>
+                                    <span>Connected events</span>
                                     <strong>{{
-                                        formatNumber(enrichmentComparison.raw1Degree.eventCount)
+                                        formatNumber(enrichmentComparison.kgOneHop.eventCount)
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
-                                    <span>Reference relationships</span>
+                                    <span>Relationship connections</span>
                                     <strong>{{
                                         formatNumber(
-                                            enrichmentComparison.raw1Degree.relationshipCount
+                                            enrichmentComparison.kgOneHop.relationshipCount
                                         )
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
                                     <span>Properties</span>
                                     <strong>{{
-                                        formatNumber(enrichmentComparison.raw1Degree.propertyCount)
-                                    }}</strong>
-                                </div>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                    <v-col cols="12" md="4">
-                        <v-card>
-                            <v-card-item>
-                                <v-card-title class="text-body-2"
-                                    >Enriched by 2 Degrees</v-card-title
-                                >
-                                <v-card-subtitle>Total raw 2-hop results</v-card-subtitle>
-                            </v-card-item>
-                            <v-card-text>
-                                <div class="metric-row">
-                                    <span>Reference entities</span>
-                                    <strong>{{
-                                        formatNumber(enrichmentComparison.raw2Degrees.entityCount)
-                                    }}</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Reference events</span>
-                                    <strong>{{
-                                        formatNumber(enrichmentComparison.raw2Degrees.eventCount)
-                                    }}</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Reference relationships</span>
-                                    <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.raw2Degrees.relationshipCount
-                                        )
-                                    }}</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Properties</span>
-                                    <strong>{{
-                                        formatNumber(enrichmentComparison.raw2Degrees.propertyCount)
+                                        formatNumber(enrichmentComparison.kgOneHop.propertyCount)
                                     }}</strong>
                                 </div>
                             </v-card-text>
@@ -170,7 +132,7 @@
                                     Top Connected Extracted Entities
                                 </v-card-title>
                                 <v-card-subtitle>
-                                    Ranked by document-linked connections in the extracted graph.
+                                    Ranked by total relationships and events in the knowledge graph.
                                 </v-card-subtitle>
                             </v-card-item>
                             <v-card-text>
@@ -192,51 +154,10 @@
                                         {{ entity.name }}
                                         <span class="text-medium-emphasis ml-1">
                                             ({{ formatFlavor(entity.flavor) }} ·
-                                            {{ entity.linkedEntityCount }} links ·
                                             {{ entity.relationshipCount }} rels ·
                                             {{ entity.eventCount }} events)
                                         </span>
                                     </v-chip>
-                                </div>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                </v-row>
-                <v-row class="mt-1">
-                    <v-col cols="12">
-                        <v-alert type="info" variant="tonal" density="comfortable" class="mb-2">
-                            These groups are a subset: extracted entities that currently have at
-                            least one enrichment link in the graph.
-                        </v-alert>
-                    </v-col>
-                    <v-col
-                        v-for="group in enrichableExtractedEntityGroups"
-                        :key="group.key"
-                        cols="12"
-                        md="6"
-                    >
-                        <v-card>
-                            <v-card-item>
-                                <v-card-title class="text-body-2">
-                                    {{ group.label }}
-                                </v-card-title>
-                                <v-card-subtitle>
-                                    {{ group.entities.length }} linked extracted entities
-                                </v-card-subtitle>
-                            </v-card-item>
-                            <v-card-text>
-                                <div v-if="group.entities.length" class="d-flex flex-wrap ga-2">
-                                    <v-chip
-                                        v-for="entity in group.entities"
-                                        :key="entity.neid"
-                                        size="small"
-                                        variant="tonal"
-                                    >
-                                        {{ entity.name }}
-                                    </v-chip>
-                                </div>
-                                <div v-else class="text-body-2 text-medium-emphasis">
-                                    No linked extracted entities for this type.
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -658,7 +579,6 @@
         enrichmentRelatedDealsLoading,
         enrichmentRelatedDealsError,
         loadFilteredNews,
-        enrichableExtractedEntityGroups,
         topConnectedExtractedEntities,
         strictProjectLocationEntities,
     } = useCollectionWorkspace();

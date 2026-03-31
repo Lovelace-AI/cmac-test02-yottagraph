@@ -168,7 +168,7 @@ function emptyEnrichmentResult(): EnrichmentExpandResult {
         relationships: [],
         events: [],
         caps: {
-            maxHops: 2,
+            maxHops: 1,
             maxEntities: ENRICHMENT_MAX_ENTITIES,
             maxRelationships: ENRICHMENT_MAX_RELATIONSHIPS,
             maxEvents: ENRICHMENT_MAX_EVENTS,
@@ -195,13 +195,15 @@ function emptyEnrichmentResult(): EnrichmentExpandResult {
             raw: { entityCount: 0, eventCount: 0, relationshipCount: 0, propertyCount: 0 },
             rawByDepth: {
                 degree1: { entityCount: 0, relationshipCount: 0, eventCount: 0, propertyCount: 0 },
-                degree2: { entityCount: 0, relationshipCount: 0, eventCount: 0, propertyCount: 0 },
             },
             curated: { entityCount: 0, relationshipCount: 0, eventCount: 0, propertyCount: 0 },
             byDepth: {
                 degree1: { entityCount: 0, relationshipCount: 0, eventCount: 0, propertyCount: 0 },
-                degree2: { entityCount: 0, relationshipCount: 0, eventCount: 0, propertyCount: 0 },
             },
+        },
+        kgTotals: {
+            oneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0, propertyCount: 0 },
+            perEntity: [],
         },
     };
 }

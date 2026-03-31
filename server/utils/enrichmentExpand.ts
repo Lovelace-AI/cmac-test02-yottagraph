@@ -3,7 +3,6 @@ import type { EntityRecord, EventRecord, RelationshipRecord } from '~/utils/coll
 
 export interface EnrichmentExpandRequest {
     anchorNeids: string[];
-    hops?: number;
     includeEvents?: boolean;
     maxEntities?: number;
     maxRelationships?: number;
@@ -69,12 +68,6 @@ export interface EnrichmentExpandResult {
                 eventCount: number;
                 propertyCount: number;
             };
-            degree2: {
-                entityCount: number;
-                relationshipCount: number;
-                eventCount: number;
-                propertyCount: number;
-            };
         };
         curated: {
             entityCount: number;
@@ -89,13 +82,20 @@ export interface EnrichmentExpandResult {
                 eventCount: number;
                 propertyCount: number;
             };
-            degree2: {
-                entityCount: number;
-                relationshipCount: number;
-                eventCount: number;
-                propertyCount: number;
-            };
         };
+    };
+    kgTotals: {
+        oneHop: {
+            entityCount: number;
+            relationshipCount: number;
+            eventCount: number;
+            propertyCount: number;
+        };
+        perEntity: Array<{
+            neid: string;
+            relationshipCount: number;
+            eventCount: number;
+        }>;
     };
 }
 
@@ -110,7 +110,7 @@ const ENRICHMENT_FLAVORS = [
     'event',
 ] as const;
 const MAX_RELATIONSHIPS_PER_CALL = 500;
-const MAX_HOPS = 2;
+const MAX_HOPS = 1;
 const DEFAULT_MAX_EVENT_HUBS = 12;
 const MAX_EVENTS_PER_HUB = 500;
 const DEFAULT_MAX_ENTITIES = 6000;
@@ -230,6 +230,17 @@ function countRecordProperties(record: { properties?: Record<string, unknown> })
     return Object.keys(record.properties ?? {}).length;
 }
 
+function normalizeTotalCount(value: unknown, fallbackCount: number): number {
+    const parsed =
+        typeof value === 'number'
+            ? value
+            : typeof value === 'string'
+              ? Number.parseInt(value, 10)
+              : Number.NaN;
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    return fallbackCount;
+}
+
 async function pMap<T>(
     items: T[],
     fn: (item: T) => Promise<void>,
@@ -250,7 +261,7 @@ export async function runEnrichmentExpansion(
     body: EnrichmentExpandRequest,
     options: EnrichmentExpandOptions = {}
 ): Promise<EnrichmentExpandResult> {
-    const hops = Math.max(1, Math.min(body.hops ?? 1, MAX_HOPS));
+    const hops = 1;
     const includeEvents = body.includeEvents !== false;
     const maxEntities = Math.max(1, Math.min(body.maxEntities ?? DEFAULT_MAX_ENTITIES, 50000));
     const maxRelationships = Math.max(
@@ -293,6 +304,9 @@ export async function runEnrichmentExpansion(
     let rawRelationshipCandidates = 0;
     const rawRelationshipCandidatesByDepth = new Map<number, number>();
     const rawPropertyCandidatesByDepth = new Map<number, number>();
+    const kgRelatedTotalByDepth = new Map<number, number>();
+    const kgRelatedTotalByNeid = new Map<string, number>();
+    const kgEventTotalByNeid = new Map<string, number>();
     const capsReached = () =>
         entities.length >= maxEntities || relationships.length >= maxRelationships;
     const eventPhaseCapsReached = () => capsReached() || events.length >= maxEvents;
@@ -352,6 +366,27 @@ export async function runEnrichmentExpansion(
         rawPropertyCandidatesByDepth.set(
             boundedDepth,
             (rawPropertyCandidatesByDepth.get(boundedDepth) ?? 0) + count
+        );
+    }
+
+    function addKgRelatedTotal(sourceNeid: string, depth: number, count: number): void {
+        const normalizedSourceNeid = normalizeNeid(sourceNeid);
+        const boundedDepth = Math.max(1, Math.min(depth, MAX_HOPS));
+        kgRelatedTotalByDepth.set(
+            boundedDepth,
+            (kgRelatedTotalByDepth.get(boundedDepth) ?? 0) + count
+        );
+        kgRelatedTotalByNeid.set(
+            normalizedSourceNeid,
+            (kgRelatedTotalByNeid.get(normalizedSourceNeid) ?? 0) + count
+        );
+    }
+
+    function addKgEventTotal(sourceNeid: string, count: number): void {
+        const normalizedSourceNeid = normalizeNeid(sourceNeid);
+        kgEventTotalByNeid.set(
+            normalizedSourceNeid,
+            (kgEventTotalByNeid.get(normalizedSourceNeid) ?? 0) + count
         );
     }
 
@@ -502,19 +537,29 @@ export async function runEnrichmentExpansion(
         await pMap(
             tasks,
             async ({ neid, flavor }) => {
-                if (capsReached()) return;
                 try {
                     relatedCalls += 1;
+                    const allowRowProcessing = !capsReached();
                     const result = await mcpCallTool(
                         'elemental_get_related',
                         {
                             entity_id: { id_type: 'neid', id: neid },
                             related_flavor: flavor,
-                            limit: MAX_RELATIONSHIPS_PER_CALL,
+                            limit: allowRowProcessing ? MAX_RELATIONSHIPS_PER_CALL : 1,
                             direction: 'both',
                         },
                         { timeoutMs: RELATED_TOOL_TIMEOUT_MS }
                     );
+                    const totalRelated = normalizeTotalCount(
+                        result?.total,
+                        Array.isArray(result?.relationships) ? result.relationships.length : 0
+                    );
+                    addKgRelatedTotal(neid, depth, totalRelated);
+                    if (!allowRowProcessing) {
+                        if (entities.length >= maxEntities) entitiesTruncated = true;
+                        if (relationships.length >= maxRelationships) relationshipsTruncated = true;
+                        return;
+                    }
 
                     const sortedRelationships = Array.from(result?.relationships ?? []).sort(
                         (a: any, b: any) => {
@@ -612,24 +657,32 @@ export async function runEnrichmentExpansion(
         await pMap(
             eventHubNeids,
             async (hubNeid) => {
-                if (eventPhaseCapsReached()) return;
                 const hubDepth = entityDepthByNeid.get(hubNeid) ?? 0;
                 const eventDepth = Math.max(1, Math.min(hops, hubDepth || 1));
                 try {
                     eventCalls += 1;
+                    const allowRowProcessing = !eventPhaseCapsReached();
                     const eventsByNeid = new Map<string, any>();
                     for (const window of EVENT_TIME_WINDOWS) {
-                        if (eventPhaseCapsReached()) break;
                         const result = await mcpCallTool(
                             'elemental_get_events',
                             {
                                 entity_id: { id_type: 'neid', id: hubNeid },
-                                limit: MAX_EVENTS_PER_HUB,
+                                limit: allowRowProcessing ? MAX_EVENTS_PER_HUB : 1,
                                 include_participants: true,
                                 ...(window.time_range ? { time_range: window.time_range } : {}),
                             },
                             { timeoutMs: EVENTS_TOOL_TIMEOUT_MS }
                         );
+                        const totalEvents = normalizeTotalCount(
+                            result?.total,
+                            Array.isArray(result?.events) ? result.events.length : 0
+                        );
+                        addKgEventTotal(hubNeid, totalEvents);
+                        if (!allowRowProcessing) {
+                            if (events.length >= maxEvents) eventsTruncated = true;
+                            continue;
+                        }
                         for (const evt of result?.events ?? []) {
                             if (!evt?.neid) continue;
                             const normalizedEventNeid = normalizeNeid(String(evt.neid));
@@ -740,7 +793,6 @@ export async function runEnrichmentExpansion(
     };
 
     const degree1Summary = summarizeByDepth(1);
-    const degree2Summary = summarizeByDepth(2);
     const summarizeRawByDepth = (maxDepth: number) => {
         const boundedDepth = Math.max(1, Math.min(maxDepth, MAX_HOPS));
         const entityNeids = new Set<string>();
@@ -761,7 +813,28 @@ export async function runEnrichmentExpansion(
         };
     };
     const rawDegree1Summary = summarizeRawByDepth(1);
-    const rawDegree2Summary = summarizeRawByDepth(2);
+    const oneHopRelationshipCount = kgRelatedTotalByDepth.get(1) ?? 0;
+    const oneHopEventCount = Array.from(kgEventTotalByNeid.entries()).reduce(
+        (sum, [neid, count]) => {
+            if ((entityDepthByNeid.get(neid) ?? Number.POSITIVE_INFINITY) > 0) return sum;
+            return sum + count;
+        },
+        0
+    );
+    const oneHopEntityCount = oneHopRelationshipCount;
+    const perEntity = Array.from(kgRelatedTotalByNeid.entries())
+        .map(([neid, relationshipCount]) => ({
+            neid,
+            relationshipCount,
+            eventCount: kgEventTotalByNeid.get(neid) ?? 0,
+        }))
+        .sort((a, b) => {
+            const relDelta = b.relationshipCount - a.relationshipCount;
+            if (relDelta !== 0) return relDelta;
+            const eventDelta = b.eventCount - a.eventCount;
+            if (eventDelta !== 0) return eventDelta;
+            return a.neid.localeCompare(b.neid);
+        });
 
     return {
         entities,
@@ -796,22 +869,29 @@ export async function runEnrichmentExpansion(
                 entityCount: rawEntityCandidates.size,
                 eventCount: rawEventCandidates.size,
                 relationshipCount: rawRelationshipCandidates,
-                propertyCount: rawDegree2Summary.propertyCount,
+                propertyCount: rawDegree1Summary.propertyCount,
             },
             rawByDepth: {
                 degree1: rawDegree1Summary,
-                degree2: rawDegree2Summary,
             },
             curated: {
                 entityCount: entities.length,
                 relationshipCount: relationships.length,
                 eventCount: events.length,
-                propertyCount: degree2Summary.propertyCount,
+                propertyCount: degree1Summary.propertyCount,
             },
             byDepth: {
                 degree1: degree1Summary,
-                degree2: degree2Summary,
             },
+        },
+        kgTotals: {
+            oneHop: {
+                entityCount: oneHopEntityCount,
+                relationshipCount: oneHopRelationshipCount,
+                eventCount: oneHopEventCount,
+                propertyCount: 0,
+            },
+            perEntity,
         },
     };
 }

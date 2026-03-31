@@ -66,77 +66,94 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     });
 }
 
+function isModelNotFoundError(error: unknown): boolean {
+    const message = String((error as any)?.message ?? error ?? '').toLowerCase();
+    return message.includes('not found') && message.includes('generatecontent');
+}
+
 export async function generateGeminiText(options: GenerateGeminiTextOptions): Promise<{
     text: string;
     usage: GeminiUsage;
 }> {
     const runtime = getRuntimeGeminiConfig();
-    const model = options.model || runtime.model;
     const temperature = normalizeTemperature(options.temperature ?? runtime.temperature);
     const retries = options.retries ?? 1;
     const timeoutMs = options.timeoutMs ?? runtime.timeoutMs;
+    const preferredModel = options.model || runtime.model;
+    const stableFallbackModel = 'gemini-2.5-pro';
+    const modelCandidates =
+        preferredModel === stableFallbackModel
+            ? [preferredModel]
+            : [preferredModel, stableFallbackModel];
 
     let lastError: unknown = null;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        const startedAt = Date.now();
-        try {
-            const client = getGeminiClient();
-            const response = await withTimeout(
-                client.models.generateContent({
-                    model,
-                    contents: options.prompt,
-                    config: {
-                        maxOutputTokens: options.maxOutputTokens ?? 800,
-                        temperature,
-                        systemInstruction: options.systemInstruction,
-                    },
-                }),
-                timeoutMs
-            );
-            const text = (response.text || '').trim();
-            const usage = response.usageMetadata;
-            const promptTokens = usage?.promptTokenCount ?? 0;
-            const completionTokens = usage?.candidatesTokenCount ?? 0;
-            const totalTokens = usage?.totalTokenCount ?? 0;
-            recordGeminiUsage({
-                model,
-                promptTokens,
-                completionTokens,
-                totalTokens,
-                costUsd: 0,
-                latencyMs: Date.now() - startedAt,
-                label: options.label ?? 'generate_text',
-                status: 'success',
-            });
-            return {
-                text,
-                usage: {
+    for (const model of modelCandidates) {
+        let modelError: unknown = null;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            const startedAt = Date.now();
+            try {
+                const client = getGeminiClient();
+                const response = await withTimeout(
+                    client.models.generateContent({
+                        model,
+                        contents: options.prompt,
+                        config: {
+                            maxOutputTokens: options.maxOutputTokens ?? 800,
+                            temperature,
+                            systemInstruction: options.systemInstruction,
+                        },
+                    }),
+                    timeoutMs
+                );
+                const text = (response.text || '').trim();
+                const usage = response.usageMetadata;
+                const promptTokens = usage?.promptTokenCount ?? 0;
+                const completionTokens = usage?.candidatesTokenCount ?? 0;
+                const totalTokens = usage?.totalTokenCount ?? 0;
+                recordGeminiUsage({
                     model,
                     promptTokens,
                     completionTokens,
                     totalTokens,
-                },
-            };
-        } catch (error) {
-            lastError = error;
-            if (attempt >= retries) {
-                recordGeminiUsage({
-                    model,
-                    promptTokens: 0,
-                    completionTokens: 0,
-                    totalTokens: 0,
                     costUsd: 0,
                     latencyMs: Date.now() - startedAt,
                     label: options.label ?? 'generate_text',
-                    status: 'error',
-                    error: String(
-                        (error as any)?.message ?? error ?? 'Gemini generation failed'
-                    ).slice(0, 220),
+                    status: 'success',
                 });
-                break;
+                return {
+                    text,
+                    usage: {
+                        model,
+                        promptTokens,
+                        completionTokens,
+                        totalTokens,
+                    },
+                };
+            } catch (error) {
+                lastError = error;
+                modelError = error;
+                const modelMissing = isModelNotFoundError(error);
+                const finalAttempt = attempt >= retries || modelMissing;
+                if (finalAttempt) {
+                    recordGeminiUsage({
+                        model,
+                        promptTokens: 0,
+                        completionTokens: 0,
+                        totalTokens: 0,
+                        costUsd: 0,
+                        latencyMs: Date.now() - startedAt,
+                        label: options.label ?? 'generate_text',
+                        status: 'error',
+                        error: String(
+                            (error as any)?.message ?? error ?? 'Gemini generation failed'
+                        ).slice(0, 220),
+                    });
+                    break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
             }
-            await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
         }
+        if (!isModelNotFoundError(modelError)) break;
     }
 
     throw lastError instanceof Error ? lastError : new Error('Gemini generation failed.');
