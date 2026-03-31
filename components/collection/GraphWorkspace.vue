@@ -3,6 +3,24 @@
         <!-- Toolbar -->
         <div class="d-flex align-center justify-space-between mb-2 flex-wrap ga-2 graph-toolbar">
             <div class="d-flex align-center ga-2 flex-wrap">
+                <template v-if="showWorkspaceSummaryChips">
+                    <v-chip size="small" variant="tonal" color="primary">
+                        {{ formatNumber(primaryMeta.entityCount) }} entities
+                    </v-chip>
+                    <v-chip size="small" variant="tonal">
+                        {{ formatNumber(primaryMeta.eventCount) }} events
+                    </v-chip>
+                    <v-chip size="small" variant="tonal">
+                        {{ formatNumber(primaryMeta.relationshipCount) }} edges
+                    </v-chip>
+                    <v-chip size="small" variant="tonal">
+                        {{ formatNumber(extractedPropertyCount) }} properties /
+                        {{ formatNumber(propertyBearingRecordCount) }} records
+                    </v-chip>
+                    <v-chip size="small" variant="tonal">
+                        {{ formatNumber(propertySeries.length) }} prop series
+                    </v-chip>
+                </template>
                 <v-chip size="small" variant="tonal" color="success">
                     {{ formatNumber(displayedDocumentEntityCount) }} document-derived
                 </v-chip>
@@ -389,6 +407,10 @@
         documents,
         documentRelationships: workspaceRelationships,
         documentEvents: events,
+        primaryMeta,
+        extractedPropertyCount,
+        propertyBearingRecordCount,
+        propertySeries,
         selectedEntityNeid,
         selectEntity,
         resolveEntityName,
@@ -397,6 +419,9 @@
     const entities = computed(() => props.entitiesOverride ?? workspaceEntities.value);
     const relationships = computed(
         () => props.relationshipsOverride ?? workspaceRelationships.value
+    );
+    const showWorkspaceSummaryChips = computed(
+        () => !props.entitiesOverride && !props.relationshipsOverride
     );
     const displayedDocumentEntityCount = computed(
         () => visibleEntities.value.filter((entity) => entity.origin === 'document').length
@@ -748,8 +773,16 @@
         const localY = pointerY !== undefined && rect ? pointerY - rect.top : 0;
         const estimatedWidth = 220;
         const estimatedHeight = 104;
-        const desiredX = localX + 14;
-        const desiredY = localY - estimatedHeight - 10;
+        const horizontalOffset = 28;
+        const verticalOffset = 22;
+        let desiredX = localX + horizontalOffset;
+        let desiredY = localY + verticalOffset;
+        if (desiredX + estimatedWidth > frameWidth - 8) {
+            desiredX = localX - estimatedWidth - horizontalOffset;
+        }
+        if (desiredY + estimatedHeight > frameHeight - 8) {
+            desiredY = localY - estimatedHeight - verticalOffset;
+        }
         const x = Math.max(8, Math.min(desiredX, Math.max(8, frameWidth - estimatedWidth - 8)));
         const y = Math.max(8, Math.min(desiredY, Math.max(8, frameHeight - estimatedHeight - 8)));
         return { x, y };

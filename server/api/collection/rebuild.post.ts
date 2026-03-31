@@ -494,7 +494,7 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     const documentEvents = Array.from(eventMap.values());
     const enrichmentResult = await runEnrichmentExpansion({
         anchorNeids: documentEntities.map((entity) => entity.neid),
-        hops: 1,
+        hops: 2,
         includeEvents: true,
         maxEntities: 6000,
         maxRelationships: 24000,
@@ -507,16 +507,6 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
     const entities = mergeEntities(documentEntities, enrichmentResult.entities);
     const events = mergeEvents(documentEvents, enrichmentResult.events);
     const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
-    const curatedOneHopEntityCount = entities.filter(
-        (entity) => entity.origin === 'enriched'
-    ).length;
-    const curatedOneHopRelationshipCount = relationships.filter(
-        (relationship) => relationship.origin === 'enriched'
-    ).length;
-    const curatedOneHopEventCount = events.filter(
-        (eventItem) => eventItem.extractedSeed === false
-    ).length;
-
     const state: CollectionState = {
         meta: {
             name: 'BNY Rebate Analysis Collection',
@@ -529,9 +519,29 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
             agreementCount: agreements.length,
             rawOneHopCounts: { ...auditCounts.rawOneHop },
             curatedOneHopCounts: {
-                entityCount: curatedOneHopEntityCount,
-                eventCount: curatedOneHopEventCount,
-                relationshipCount: curatedOneHopRelationshipCount,
+                entityCount: enrichmentResult.counts.byDepth.degree1.entityCount,
+                eventCount: enrichmentResult.counts.byDepth.degree1.eventCount,
+                relationshipCount: enrichmentResult.counts.byDepth.degree1.relationshipCount,
+            },
+            enrichmentCounts: {
+                document: {
+                    entityCount: documentEntities.length,
+                    eventCount: documentEvents.length,
+                    relationshipCount: documentRelationships.length,
+                    propertyCount: baselineExtractedPropertyCount,
+                },
+                degree1: {
+                    ...enrichmentResult.counts.byDepth.degree1,
+                },
+                degree2: {
+                    ...enrichmentResult.counts.byDepth.degree2,
+                },
+                auditOneHop: {
+                    entityCount: auditCounts.rawOneHop.entityCount,
+                    eventCount: auditCounts.rawOneHop.eventCount,
+                    relationshipCount: auditCounts.rawOneHop.relationshipCount,
+                    propertyCount: enrichmentResult.counts.raw.propertyCount,
+                },
             },
             lastRebuilt: new Date().toISOString(),
         },

@@ -18,6 +18,7 @@ export interface EntityRecord {
     extractedSeed?: boolean;
     mcpConfirmed?: boolean;
     properties?: Record<string, unknown>;
+    enrichmentDepth?: number;
 }
 
 export interface RelationshipRecord {
@@ -32,6 +33,7 @@ export interface RelationshipRecord {
     extractedSeed?: boolean;
     mcpConfirmed?: boolean;
     mcpOnly?: boolean;
+    enrichmentDepth?: number;
 }
 
 export interface EventRecord {
@@ -48,6 +50,21 @@ export interface EventRecord {
     properties?: Record<string, unknown>;
     extractedSeed?: boolean;
     mcpConfirmed?: boolean;
+    enrichmentDepth?: number;
+}
+
+export interface EnrichmentCountBucket {
+    entityCount: number;
+    eventCount: number;
+    relationshipCount: number;
+    propertyCount: number;
+}
+
+export interface EnrichmentCountSummary {
+    document: EnrichmentCountBucket;
+    degree1: EnrichmentCountBucket;
+    degree2: EnrichmentCountBucket;
+    auditOneHop: EnrichmentCountBucket;
 }
 
 export interface PropertyPoint {
@@ -83,6 +100,7 @@ export interface CollectionMeta {
         eventCount: number;
         relationshipCount: number;
     };
+    enrichmentCounts?: EnrichmentCountSummary;
     cacheSource?: 'memory' | 'redis' | 'none';
     cachedAt?: string;
     cacheVersion?: string;

@@ -130,12 +130,14 @@ export interface WatchlistTheme {
 }
 
 export interface EnrichmentNewsItem {
-    eventNeid: string;
+    articleNeid: string;
     title: string;
     date?: string;
     description?: string;
-    category?: string;
-    likelihood?: string;
+    sourceName?: string;
+    url?: string;
+    confidence?: number | null;
+    sentiment?: number | null;
     citations: string[];
     linkedEntityNames: string[];
 }
@@ -143,6 +145,11 @@ export interface EnrichmentNewsItem {
 export interface EnrichmentNewsGroup {
     anchorNeid: string;
     items: EnrichmentNewsItem[];
+}
+
+export interface EnrichmentTypeCount {
+    label: string;
+    count: number;
 }
 
 export interface EnrichmentEconomicSignal {
@@ -168,6 +175,10 @@ export interface EnrichmentRelatedDealInsight {
 
 function normalizeRelationshipType(type: string): string {
     return type.replace(/^schema::relationship::/, '');
+}
+
+function countRecordProperties(record: { properties?: Record<string, unknown> }): number {
+    return Object.keys(record.properties ?? {}).length;
 }
 
 const INITIAL_STEPS: RebuildStep[] = [
@@ -362,12 +373,31 @@ export function useCollectionWorkspace() {
     const enrichedEntities = computed(() =>
         collection.value.entities.filter((e) => e.origin === 'enriched')
     );
+    const enrichedEntitiesDegree1 = computed(() =>
+        enrichedEntities.value.filter((entity) => (entity.enrichmentDepth ?? 1) <= 1)
+    );
+    const enrichedEntitiesDegree2 = computed(() =>
+        enrichedEntities.value.filter((entity) => (entity.enrichmentDepth ?? 2) <= 2)
+    );
     const documentEvents = computed(() =>
         collection.value.events.filter(
             (eventItem) =>
                 eventItem.extractedSeed !== false &&
                 hasStrictDocumentSource(eventItem.sourceDocuments)
         )
+    );
+    const enrichedEvents = computed(() =>
+        collection.value.events.filter(
+            (eventItem) =>
+                eventItem.extractedSeed === false ||
+                !hasStrictDocumentSource(eventItem.sourceDocuments)
+        )
+    );
+    const enrichedEventsDegree1 = computed(() =>
+        enrichedEvents.value.filter((eventItem) => (eventItem.enrichmentDepth ?? 1) <= 1)
+    );
+    const enrichedEventsDegree2 = computed(() =>
+        enrichedEvents.value.filter((eventItem) => (eventItem.enrichmentDepth ?? 2) <= 2)
     );
     const documentRelationships = computed(() =>
         collection.value.relationships.filter(
@@ -377,6 +407,16 @@ export function useCollectionWorkspace() {
     );
     const enrichedRelationships = computed(() =>
         collection.value.relationships.filter((relationship) => relationship.origin === 'enriched')
+    );
+    const enrichedRelationshipsDegree1 = computed(() =>
+        enrichedRelationships.value.filter(
+            (relationship) => (relationship.enrichmentDepth ?? 1) <= 1
+        )
+    );
+    const enrichedRelationshipsDegree2 = computed(() =>
+        enrichedRelationships.value.filter(
+            (relationship) => (relationship.enrichmentDepth ?? 2) <= 2
+        )
     );
     const documentAgreements = computed(() =>
         documentEntities.value.filter((entity) => entity.flavor === 'legal_agreement')
@@ -397,6 +437,32 @@ export function useCollectionWorkspace() {
                 entityNeidSet.value.has(relationship.sourceNeid) &&
                 entityNeidSet.value.has(relationship.targetNeid)
         )
+    );
+    const enrichmentGraphEntityNeids = computed(
+        () =>
+            new Set([
+                ...documentEntities.value.map((entity) => entity.neid),
+                ...enrichedEntitiesDegree1.value.map((entity) => entity.neid),
+            ])
+    );
+    const enrichmentGraphEntities = computed(() =>
+        collection.value.entities.filter((entity) =>
+            enrichmentGraphEntityNeids.value.has(entity.neid)
+        )
+    );
+    const enrichmentGraphRelationships = computed(() =>
+        collection.value.relationships.filter((relationship) => {
+            if (
+                !enrichmentGraphEntityNeids.value.has(relationship.sourceNeid) ||
+                !enrichmentGraphEntityNeids.value.has(relationship.targetNeid)
+            ) {
+                return false;
+            }
+            return (
+                relationship.origin === 'document' ||
+                (relationship.origin === 'enriched' && (relationship.enrichmentDepth ?? 1) <= 1)
+            );
+        })
     );
     const collapsedExpandedProjection = computed(() =>
         projectCollapsedOrganizationLineage(
@@ -479,37 +545,63 @@ export function useCollectionWorkspace() {
         }
         return counts;
     });
-    const outsideEvents = computed(() =>
-        collection.value.events.filter(
-            (eventItem) =>
-                eventItem.extractedSeed === false ||
-                !hasStrictDocumentSource(eventItem.sourceDocuments)
-        )
-    );
-    const enrichmentComparison = computed(() => {
-        const documentCounts = {
+    const outsideEvents = computed(() => enrichedEvents.value);
+    const derivePropertyCount = (entities: EntityRecord[], events: EventRecord[]): number =>
+        entities.reduce((sum, entity) => sum + countRecordProperties(entity), 0) +
+        events.reduce((sum, eventItem) => sum + countRecordProperties(eventItem), 0);
+    const enrichmentCounts = computed(() => {
+        const fallbackDocument = {
             entityCount: documentEntities.value.length,
             eventCount: documentEvents.value.length,
             relationshipCount: documentRelationships.value.length,
+            propertyCount: extractedPropertyCount.value,
+        };
+        const fallbackDegree1 = {
+            entityCount: enrichedEntitiesDegree1.value.length,
+            eventCount: enrichedEventsDegree1.value.length,
+            relationshipCount: enrichedRelationshipsDegree1.value.length,
+            propertyCount: derivePropertyCount(
+                enrichedEntitiesDegree1.value,
+                enrichedEventsDegree1.value
+            ),
+        };
+        const fallbackDegree2 = {
+            entityCount: enrichedEntitiesDegree2.value.length,
+            eventCount: enrichedEventsDegree2.value.length,
+            relationshipCount: enrichedRelationshipsDegree2.value.length,
+            propertyCount: derivePropertyCount(
+                enrichedEntitiesDegree2.value,
+                enrichedEventsDegree2.value
+            ),
         };
         const rawOneHop = collection.value.meta.rawOneHopCounts ?? {
             entityCount: 0,
             eventCount: 0,
             relationshipCount: 0,
         };
-        const oneHopContext = collection.value.meta.curatedOneHopCounts ?? {
-            entityCount: enrichedEntities.value.length,
-            eventCount: outsideEvents.value.length,
-            relationshipCount: enrichedRelationships.value.length,
-        };
+        return (
+            collection.value.meta.enrichmentCounts ?? {
+                document: fallbackDocument,
+                degree1: fallbackDegree1,
+                degree2: fallbackDegree2,
+                auditOneHop: {
+                    ...rawOneHop,
+                    propertyCount: fallbackDegree1.propertyCount,
+                },
+            }
+        );
+    });
+    const enrichmentComparison = computed(() => {
         return {
-            document: documentCounts,
-            rawOneHop,
-            oneHopContext,
+            documentTruth: enrichmentCounts.value.document,
+            enrichedBy1Degree: enrichmentCounts.value.degree1,
+            enrichedBy2Degrees: enrichmentCounts.value.degree2,
+            rawAuditOneHop: enrichmentCounts.value.auditOneHop,
             netAdditions: {
-                entityCount: oneHopContext.entityCount,
-                eventCount: oneHopContext.eventCount,
-                relationshipCount: oneHopContext.relationshipCount,
+                entityCount: enrichmentCounts.value.degree1.entityCount,
+                eventCount: enrichmentCounts.value.degree1.eventCount,
+                relationshipCount: enrichmentCounts.value.degree1.relationshipCount,
+                propertyCount: enrichmentCounts.value.degree1.propertyCount,
             },
         };
     });
@@ -1434,6 +1526,59 @@ export function useCollectionWorkspace() {
         outsideEventCount: outsideEvents.value.length,
         takeawayBullets: enrichmentTakeawayBullets.value,
     }));
+    const toTypeCounts = (entries: string[]): EnrichmentTypeCount[] =>
+        Array.from(
+            entries.reduce((counts, label) => {
+                counts.set(label, (counts.get(label) ?? 0) + 1);
+                return counts;
+            }, new Map<string, number>())
+        )
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            .map(([label, count]) => ({ label, count }));
+    const enrichableEntityTypeCounts = computed(() =>
+        toTypeCounts(
+            enrichedEntitiesDegree1.value.map((entity) =>
+                entity.flavor.replace(/^schema::flavor::/, '').replace(/_/g, ' ')
+            )
+        )
+    );
+    const enrichableEventTypeCounts = computed(() =>
+        toTypeCounts(
+            enrichedEventsDegree1.value.map(
+                (eventItem) => eventItem.category?.trim() || 'uncategorized'
+            )
+        )
+    );
+    const strictProjectLocationEntities = computed(() =>
+        collection.value.entities.filter((entity) => {
+            if (entity.flavor !== 'location') return false;
+            const normalized = entity.name.trim().toLowerCase();
+            return (
+                normalized.includes('presidential plaza at newport') ||
+                normalized === 'presidential plaza' ||
+                normalized === 'newport project'
+            );
+        })
+    );
+    const recentCoverageAnchors = computed(() => {
+        const anchorByNeid = new Map<string, EntityRecord>();
+        const addAnchor = (entity: EntityRecord) => {
+            if (!['organization', 'person', 'location'].includes(entity.flavor)) return;
+            if (
+                entity.flavor === 'location' &&
+                !strictProjectLocationEntities.value.includes(entity)
+            )
+                return;
+            anchorByNeid.set(entity.neid, entity);
+        };
+        for (const entity of keyQuestionEntities.value) addAnchor(entity);
+        for (const entity of enrichedEntitiesDegree1.value) {
+            if (anchorByNeid.size >= 10) break;
+            addAnchor(entity);
+        }
+        for (const entity of strictProjectLocationEntities.value) addAnchor(entity);
+        return Array.from(anchorByNeid.values()).slice(0, 10);
+    });
     const enrichmentLanguageCards = computed(() =>
         [
             ...lineageInsights.value,
@@ -1925,7 +2070,7 @@ export function useCollectionWorkspace() {
     }
 
     async function loadEnrichmentNews(): Promise<void> {
-        const anchors = enrichedEntities.value.map((entity) => entity.neid);
+        const anchors = recentCoverageAnchors.value.map((entity) => entity.neid);
         if (!anchors.length) {
             enrichmentNews.value = [];
             return;
@@ -1937,13 +2082,15 @@ export function useCollectionWorkspace() {
                 '/api/collection/enrichment-news',
                 {
                     method: 'POST',
-                    body: { entityNeids: anchors, maxEntities: 12, eventsPerEntity: 12 },
+                    body: { entityNeids: anchors, maxEntities: 10, articlesPerEntity: 8 },
                 }
             );
             enrichmentNews.value = response.groups ?? [];
         } catch (error: any) {
             enrichmentNewsError.value =
-                error?.data?.statusMessage || error?.message || 'Failed to load enrichment news.';
+                error?.data?.statusMessage ||
+                error?.message ||
+                'Failed to load recent article coverage.';
             enrichmentNews.value = [];
         } finally {
             enrichmentNewsLoading.value = false;
@@ -2218,6 +2365,25 @@ export function useCollectionWorkspace() {
                 entities: EntityRecord[];
                 relationships: RelationshipRecord[];
                 events: EventRecord[];
+                counts?: {
+                    byDepth?: {
+                        degree1?: {
+                            entityCount: number;
+                            eventCount: number;
+                            relationshipCount: number;
+                            propertyCount: number;
+                        };
+                        degree2?: {
+                            entityCount: number;
+                            eventCount: number;
+                            relationshipCount: number;
+                            propertyCount: number;
+                        };
+                    };
+                    raw?: {
+                        propertyCount?: number;
+                    };
+                };
             }>('/api/collection/enrich', {
                 method: 'POST',
                 body: { anchorNeids, hops: boundedHops, includeEvents },
@@ -2250,6 +2416,33 @@ export function useCollectionWorkspace() {
             collection.value.meta.entityCount = collection.value.entities.length;
             collection.value.meta.relationshipCount = collection.value.relationships.length;
             collection.value.meta.eventCount = collection.value.events.length;
+            if (result.counts?.byDepth) {
+                const existingAudit = collection.value.meta.rawOneHopCounts ?? {
+                    entityCount: 0,
+                    eventCount: 0,
+                    relationshipCount: 0,
+                };
+                collection.value.meta.enrichmentCounts = {
+                    document:
+                        collection.value.meta.enrichmentCounts?.document ??
+                        enrichmentCounts.value.document,
+                    degree1:
+                        result.counts.byDepth.degree1 ??
+                        collection.value.meta.enrichmentCounts?.degree1,
+                    degree2:
+                        result.counts.byDepth.degree2 ??
+                        collection.value.meta.enrichmentCounts?.degree2,
+                    auditOneHop: {
+                        entityCount: existingAudit.entityCount,
+                        eventCount: existingAudit.eventCount,
+                        relationshipCount: existingAudit.relationshipCount,
+                        propertyCount:
+                            result.counts.raw?.propertyCount ??
+                            collection.value.meta.enrichmentCounts?.auditOneHop.propertyCount ??
+                            0,
+                    },
+                };
+            }
             enrichmentLastRun.value = {
                 anchorNeids: [...anchorNeids],
                 hops: boundedHops,
@@ -2436,8 +2629,12 @@ export function useCollectionWorkspace() {
         documentEntities,
         documentEvents,
         enrichedEntities,
+        enrichedEntitiesDegree1,
+        enrichedEntitiesDegree2,
         documentRelationships,
         enrichedRelationships,
+        enrichedRelationshipsDegree1,
+        enrichedRelationshipsDegree2,
         enrichmentAnchorNeids: computed(() => enrichmentAnchorNeids.value),
         enrichmentHops: computed(() => enrichmentHops.value),
         enrichmentIncludeEvents: computed(() => enrichmentIncludeEvents.value),
@@ -2447,6 +2644,8 @@ export function useCollectionWorkspace() {
         enrichmentDocumentGraphRelationships,
         enrichmentSupersetGraphEntities,
         enrichmentSupersetGraphRelationships,
+        enrichmentGraphEntities,
+        enrichmentGraphRelationships,
         enrichmentExpandedGraphEntities,
         enrichmentExpandedGraphRelationships: enrichmentExpandedGraphRelationshipsCollapsed,
         enrichmentCollapsedOrganizationCount,
@@ -2460,7 +2659,12 @@ export function useCollectionWorkspace() {
         peopleAffiliationInsights,
         enrichmentLanguageLoading: computed(() => enrichmentLanguageLoading.value),
         enrichmentLanguageError: computed(() => enrichmentLanguageError.value),
+        enrichmentCounts,
         enrichmentComparison,
+        enrichableEntityTypeCounts,
+        enrichableEventTypeCounts,
+        strictProjectLocationEntities,
+        recentCoverageAnchors,
         keyQuestionEntities,
         enrichmentNews: computed(() => enrichmentNews.value),
         enrichmentNewsLoading: computed(() => enrichmentNewsLoading.value),

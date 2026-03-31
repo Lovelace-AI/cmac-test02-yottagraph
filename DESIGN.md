@@ -12,7 +12,7 @@ documents.
 **Created:** 2026-03-25  
 **App ID:** cmac-test02  
 **Description:** Document Collection Intelligence workspace  
-**Last updated:** 2026-03-30 (gateway-backed Ask Yotta agent flow, MCP response-shape normalization, strict document-vs-enrichment separation, eager 2-hop enrichment loading, and enrichment news/economic tabs)
+**Last updated:** 2026-03-31 (enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, and Graph & Entities header cleanup)
 
 ## Vision
 
@@ -86,9 +86,10 @@ Details:
 - Trust & Coverage tab reframes validation into completeness, partial coverage, provenance, and next recommended checks.
 - Ask Yotta tab offers contextual prompts, confidence framing, and evidence-linked outputs grounded in entities/events/documents.
 - Insights tab now provides a curated multi-category question deck, per-question execution, cache restoration, citation-first answer panels, entity pivots, and Markdown/HTML export with PDF graceful fallback.
-- Enrichment now defaults to an Enriched Entities view and includes dedicated tabs for Graph, Lineage, News, and Micro/Macro context, with Settings retained for optional manual context refresh.
+- Enrichment now opens with an Enriched Graph comparison view that separates document truth from live 1-degree and 2-degree context, and it breaks out enrichable entities/events by type.
 - Full 2-hop enrichment context is loaded during the main rebuild pipeline so enrichment views are available immediately after analysis, while primary tabs remain strict document-backed projections.
-- Expanded graph mode traverses full organization lineage but collapses acquired-bank chains into surviving organizations by default, while preserving document vs enriched origin labeling.
+- The enrichment Graph tab now renders the full curated 1-degree entity/event neighborhood without the previous collapsed simplified default, while lineage remains available as its own subview.
+- Recent Coverage in enrichment now uses article-backed results for key organizations, people, and verified project-linked locations instead of reusing graph events as a press proxy.
 - Entity detail panel (right drawer) is a shared tabbed surface with fixed header/tab strip and a single scroll region; it now supports Properties, Relationships, Events (conditional), Sources, and Compare (conditional), plus in-place entity pivots from graph, events, insights, agreements, and enrichment.
 - App shell supports both dark mode and light mode, with a header toggle and settings control for switching.
 - Dark mode polish pass introduced layered charcoal/slate surfaces, stronger card hierarchy, improved narrative readability, and consistent pill styling across overview and analysis surfaces.

@@ -55,7 +55,7 @@
 
         <!-- Post-rebuild meta bar -->
         <div
-            v-if="isReady && !rebuilding && currentTab !== 'overview'"
+            v-if="isReady && !rebuilding && currentTab !== 'overview' && currentTab !== 'graph'"
             class="meta-bar flex-shrink-0 px-4 py-1"
         >
             <div class="workspace-content-shell">
