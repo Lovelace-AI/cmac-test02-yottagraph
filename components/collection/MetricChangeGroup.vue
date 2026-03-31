@@ -1,7 +1,9 @@
 <template>
     <v-card variant="outlined" class="mb-3">
         <v-card-item class="py-3">
-            <v-card-title class="text-body-1">{{ group.metricLabel }}</v-card-title>
+            <v-card-title class="text-body-1 metric-group-title">{{
+                group.metricLabel
+            }}</v-card-title>
             <v-card-subtitle>
                 {{ group.changes.length }} change{{ group.changes.length === 1 ? '' : 's' }} ·
                 strongest move {{ strongestDelta }}
@@ -22,3 +24,11 @@
 
     const strongestDelta = computed(() => props.group.changes[0]?.deltaDisplay ?? 'N/A');
 </script>
+
+<style scoped>
+    .metric-group-title {
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+</style>

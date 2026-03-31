@@ -38,13 +38,14 @@
                     </div>
                 </v-sheet>
 
-                <div class="d-flex align-center ga-2 flex-wrap mb-3">
+                <div class="notable-controls d-flex align-center ga-2 flex-wrap mb-3">
                     <v-btn-toggle
                         v-model="viewMode"
                         mandatory
                         density="comfortable"
                         color="primary"
                         divided
+                        class="view-mode-toggle"
                     >
                         <v-btn value="grouped" size="small">Group by metric</v-btn>
                         <v-btn value="feed" size="small">Chronological feed</v-btn>
@@ -115,7 +116,7 @@
                     show-expand
                 >
                     <template #item.metricLabel="{ item }">
-                        <span class="font-weight-medium">{{ item.metricLabel }}</span>
+                        <span class="font-weight-medium metric-cell">{{ item.metricLabel }}</span>
                     </template>
                     <template #item.deltaDisplay="{ item }">
                         <span :class="directionClass(item.direction)" class="font-weight-medium">
@@ -129,10 +130,12 @@
                         </span>
                     </template>
                     <template #item.fromTo="{ item }">
-                        <span>{{ item.fromDisplay }} → {{ item.toDisplay }}</span>
+                        <span class="from-to-cell"
+                            >{{ item.fromDisplay }} → {{ item.toDisplay }}</span
+                        >
                     </template>
                     <template #item.periodLabel="{ item }">
-                        <span class="text-caption">{{ item.periodLabel }}</span>
+                        <span class="text-caption period-cell">{{ item.periodLabel }}</span>
                     </template>
                     <template #item.severity="{ item }">
                         <ChangeSeverityBadge :severity="item.severity" />
@@ -353,6 +356,14 @@
         width: min(260px, 100%);
     }
 
+    .metric-cell,
+    .from-to-cell,
+    .period-cell {
+        white-space: normal;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+    }
+
     .narrative-panel {
         border: 1px solid color-mix(in srgb, rgb(var(--v-theme-on-surface)) 10%, transparent);
         background: color-mix(
@@ -372,5 +383,23 @@
 
     .direction-neutral {
         color: rgb(var(--v-theme-on-surface));
+    }
+
+    @media (max-width: 1200px) {
+        .notable-controls > * {
+            flex: 1 1 220px;
+            min-width: 190px;
+        }
+
+        .view-mode-toggle {
+            flex: 1 1 100%;
+        }
+    }
+
+    @media (max-width: 800px) {
+        .notable-controls > * {
+            flex-basis: 100%;
+            min-width: 100%;
+        }
     }
 </style>

@@ -1,8 +1,10 @@
 <template>
     <div class="change-row py-3 px-2">
         <div class="d-flex align-start justify-space-between ga-3 flex-wrap">
-            <div>
-                <div class="text-body-2 text-medium-emphasis mb-1">{{ change.metricLabel }}</div>
+            <div class="row-primary">
+                <div class="metric-title text-body-2 text-medium-emphasis mb-1">
+                    {{ change.metricLabel }}
+                </div>
                 <div class="d-flex align-center ga-2 flex-wrap">
                     <span class="text-body-1 font-weight-bold" :class="directionClass">
                         {{ change.deltaDisplay }}
@@ -29,7 +31,9 @@
             </div>
         </div>
 
-        <div class="text-body-2 mt-2">{{ change.fromDisplay }} → {{ change.toDisplay }}</div>
+        <div class="text-body-2 mt-2 from-to-line">
+            {{ change.fromDisplay }} → {{ change.toDisplay }}
+        </div>
         <div class="text-caption text-medium-emphasis mt-1">
             {{ change.periodLabel }}
         </div>
@@ -69,6 +73,24 @@
 <style scoped>
     .change-row {
         border-radius: 10px;
+    }
+
+    .row-primary {
+        min-width: 0;
+        flex: 1 1 360px;
+    }
+
+    .metric-title {
+        font-weight: 600;
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .from-to-line {
+        line-height: 1.3;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     .change-row + .change-row {
