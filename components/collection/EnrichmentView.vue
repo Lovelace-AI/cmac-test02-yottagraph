@@ -228,40 +228,36 @@
                         <FilterChipBar
                             v-model="selectedNewsCategories"
                             :options="filteredNewsCategories"
+                            :loading="filteredNewsLoading || filteredNewsRefreshing"
                         />
                     </template>
                 </NewsSection>
-                <v-alert v-if="filteredNewsLoading" type="info" variant="tonal" class="mb-3">
-                    Loading filtered NEID-linked news...
-                </v-alert>
-                <v-alert v-else-if="filteredNewsError" type="error" variant="tonal" class="mb-3">
+                <v-alert
+                    v-if="filteredNewsError && sortedDedupedNews.length === 0"
+                    type="error"
+                    variant="tonal"
+                    class="mb-3"
+                >
                     {{ filteredNewsError }}
                 </v-alert>
-                <v-alert v-else-if="!filteredNews.length" type="info" variant="tonal" class="mb-3">
-                    No category-matched news was found for the selected document-graph anchors.
+                <v-alert
+                    v-else-if="filteredNewsError && sortedDedupedNews.length > 0"
+                    type="warning"
+                    variant="tonal"
+                    density="comfortable"
+                    class="mb-3"
+                >
+                    {{ filteredNewsError }} Showing most recent loaded results.
                 </v-alert>
-                <div v-else class="d-flex flex-column ga-3">
-                    <section
-                        v-for="group in filteredNews.slice(0, 8)"
-                        :key="`news:${group.anchorNeid}`"
-                        class="news-group-block"
-                    >
-                        <NewsGroupHeader
-                            :title="resolveEntityName(group.anchorNeid)"
-                            :count-label="`${group.items.length} filtered articles`"
-                        />
-                        <div class="news-items">
-                            <NewsArticleItem
-                                v-for="item in group.items.slice(0, 6)"
-                                :key="`news-item:${group.anchorNeid}:${item.articleNeid}`"
-                                :item="item"
-                                :category-label="primaryTopic(item.topics)"
-                                grouped
-                                compact
-                            />
-                        </div>
-                    </section>
-                </div>
+                <DedupedArticleList
+                    :articles="sortedDedupedNews"
+                    :loading="newsInitialLoading"
+                    :refreshing="filteredNewsRefreshing"
+                    :sort-mode="newsSortMode"
+                    :view-mode="newsViewMode"
+                    @update:sort-mode="newsSortMode = $event"
+                    @update:view-mode="newsViewMode = $event"
+                />
             </v-window-item>
 
             <v-window-item value="press">
@@ -461,15 +457,18 @@
         enrichmentNews,
         enrichmentNewsLoading,
         enrichmentNewsError,
-        filteredNews,
         filteredNewsCategories,
         filteredNewsLoading,
+        filteredNewsRefreshing,
+        filteredNewsInitialized,
         filteredNewsError,
+        dedupedFilteredNewsArticles,
         enrichmentEconomicLoading,
         enrichmentRelatedDeals,
         enrichmentRelatedDealsLoading,
         enrichmentRelatedDealsError,
         loadFilteredNews,
+        sortDedupedNewsArticles,
         topConnectedExtractedEntities,
         strictProjectLocationEntities,
     } = useCollectionWorkspace();
@@ -478,6 +477,21 @@
         'comparison'
     );
     const selectedNewsCategories = ref<string[]>([]);
+    const newsSortMode = ref<
+        'strongest_graph_connection' | 'most_graph_entities' | 'most_recent' | 'highest_relevance'
+    >('strongest_graph_connection');
+    const newsViewMode = ref<'deduped' | 'grouped'>('deduped');
+
+    const sortedDedupedNews = computed(() =>
+        sortDedupedNewsArticles(dedupedFilteredNewsArticles.value, newsSortMode.value)
+    );
+    const newsInitialLoading = computed(
+        () =>
+            filteredNewsLoading.value &&
+            !filteredNewsRefreshing.value &&
+            !filteredNewsInitialized.value &&
+            sortedDedupedNews.value.length === 0
+    );
 
     watch(
         filteredNewsCategories,
@@ -511,10 +525,6 @@
 
     function formatSentiment(value: number): string {
         return value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2);
-    }
-
-    function primaryTopic(topics: string[]): string | undefined {
-        return topics.find((topic) => topic.trim().length > 0);
     }
 </script>
 

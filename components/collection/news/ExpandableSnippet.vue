@@ -1,6 +1,9 @@
 <template>
     <div class="snippet-wrap">
-        <p :class="['snippet', { 'snippet--clamped': !expanded }]">
+        <p
+            :class="['snippet', { 'snippet--clamped': !expanded }]"
+            :style="!expanded ? { WebkitLineClamp: String(clampLines) } : undefined"
+        >
             {{ textToRender }}
         </p>
         <button v-if="isExpandable" type="button" class="toggle" @click="expanded = !expanded">
@@ -39,7 +42,6 @@
 
     .snippet--clamped {
         display: -webkit-box;
-        -webkit-line-clamp: v-bind(clampLines);
         -webkit-box-orient: vertical;
         overflow: hidden;
     }

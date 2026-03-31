@@ -4,7 +4,14 @@
             v-for="option in options"
             :key="`filter:${option}`"
             type="button"
-            :class="['filter-chip', { 'filter-chip--active': modelValue.includes(option) }]"
+            :class="[
+                'filter-chip',
+                {
+                    'filter-chip--active': modelValue.includes(option),
+                    'filter-chip--loading': loading && modelValue.includes(option),
+                },
+            ]"
+            :disabled="disabled"
             @click="toggle(option)"
         >
             {{ option }}
@@ -16,6 +23,8 @@
     const props = defineProps<{
         modelValue: string[];
         options: string[];
+        loading?: boolean;
+        disabled?: boolean;
     }>();
 
     const emit = defineEmits<{
@@ -23,6 +32,7 @@
     }>();
 
     function toggle(option: string): void {
+        if (props.disabled) return;
         const exists = props.modelValue.includes(option);
         if (exists) {
             emit(
@@ -75,6 +85,33 @@
         border-color: color-mix(in srgb, var(--dynamic-primary) 44%, var(--app-divider));
         color: var(--dynamic-text-primary);
         background: color-mix(in srgb, var(--dynamic-primary) 11%, var(--dynamic-surface));
+    }
+
+    .filter-chip--loading {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .filter-chip--loading::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+            90deg,
+            transparent 0%,
+            color-mix(in srgb, var(--dynamic-primary) 18%, transparent) 50%,
+            transparent 100%
+        );
+        animation: chipPulse 1.2s linear infinite;
+    }
+
+    @keyframes chipPulse {
+        0% {
+            transform: translateX(-50%);
+        }
+        100% {
+            transform: translateX(50%);
+        }
     }
 
     :global(:root[data-app-color-mode='dark']) .filter-chip {

@@ -16,6 +16,7 @@ import { emptyCollectionState } from '~/utils/collectionTypes';
 import { mapCollectionToOverviewViewModel } from '~/utils/overviewBriefing';
 import { projectCollapsedOrganizationLineage } from '~/utils/enrichmentLineage';
 import type {
+    AgentTraceEntry,
     AgentRunDetails,
     AskYottaHistoryTurn,
     AskYottaPipelineResponse,
@@ -263,6 +264,35 @@ function normalizeRelationshipType(type: string): string {
     return type.replace(/^schema::relationship::/, '');
 }
 
+function normalizeNeid(neid: string): string {
+    const value = String(neid ?? '').trim();
+    const unpadded = value.replace(/^0+(?=\d)/, '') || '0';
+    return unpadded.padStart(20, '0');
+}
+
+function sanitizeLineageInvestigation(
+    value?: Partial<LineageInvestigationResult> | null
+): LineageInvestigationResult {
+    return {
+        status: value?.status ?? 'idle',
+        startedAt: value?.startedAt,
+        completedAt: value?.completedAt,
+        roots: Array.isArray(value?.roots) ? value.roots : [],
+        scannedRelationshipTypes: Array.isArray(value?.scannedRelationshipTypes)
+            ? value.scannedRelationshipTypes
+            : [],
+        matchedRelationshipTypes: Array.isArray(value?.matchedRelationshipTypes)
+            ? value.matchedRelationshipTypes
+            : [],
+        scannedOrganizations:
+            typeof value?.scannedOrganizations === 'number' ? value.scannedOrganizations : 0,
+        traversedHops: typeof value?.traversedHops === 'number' ? value.traversedHops : 0,
+        relationships: Array.isArray(value?.relationships) ? value.relationships : [],
+        chains: Array.isArray(value?.chains) ? value.chains : [],
+        error: value?.error,
+    };
+}
+
 function countRecordProperties(record: { properties?: Record<string, unknown> }): number {
     return Object.keys(record.properties ?? {}).length;
 }
@@ -346,6 +376,7 @@ type AgentAnswerResult = AskYottaPipelineResponse;
 const agentResult = ref<AgentAnswerResult | null>(null);
 const agentStepsLive = ref<AgentPipelineStep[] | null>(null);
 const agentRunDetails = ref<AgentRunDetails>({});
+const agentTraceLive = ref<AgentTraceEntry[]>([]);
 type AskYottaAnswerResult = AskYottaPipelineResponse;
 interface AskYottaThreadTurn {
     id: string;
@@ -366,16 +397,7 @@ const enrichmentWatchlistThemes = ref<WatchlistTheme[]>([]);
 const enrichmentWatchlistLoading = ref(false);
 const enrichmentWatchlistError = ref<string | null>(null);
 const enrichmentWatchlistGeneratedAt = ref<string | null>(null);
-const lineageInvestigation = ref<LineageInvestigationResult>({
-    status: 'idle',
-    roots: [],
-    scannedRelationshipTypes: [],
-    matchedRelationshipTypes: [],
-    scannedOrganizations: 0,
-    traversedHops: 0,
-    relationships: [],
-    chains: [],
-});
+const lineageInvestigation = ref<LineageInvestigationResult>(sanitizeLineageInvestigation());
 const enrichmentLanguageByInsightId = ref<Record<string, EnrichmentLanguageCard>>({});
 const enrichmentLanguageLoading = ref(false);
 const enrichmentLanguageError = ref<string | null>(null);
@@ -1398,9 +1420,10 @@ export function useCollectionWorkspace() {
         };
     };
 
-    const lineageResults = computed<LineageResultViewModel[]>(() =>
-        Array.from(
-            lineageInvestigation.value.relationships
+    const lineageResults = computed<LineageResultViewModel[]>(() => {
+        const investigation = sanitizeLineageInvestigation(lineageInvestigation.value);
+        return Array.from(
+            investigation.relationships
                 .reduce((map, relationship) => {
                     const oriented = orientLineageRelationship(relationship);
                     if (!oriented) return map;
@@ -1482,9 +1505,9 @@ export function useCollectionWorkspace() {
                 const explanationSentence = `${relationshipTypeLabel}${effectiveDateLabel ? ` with date signal ${String(effectiveDateLabel).slice(0, 10)}` : ''}. ${lineageEvidenceModeLabel(evidenceMode)}.`;
                 const groundingNotes = [
                     `Investigation matched ${evidenceRows.length} relationship edge${evidenceRows.length === 1 ? '' : 's'} for this transition.`,
-                    `Relationship types scanned: ${lineageInvestigation.value.scannedRelationshipTypes.length}.`,
-                    lineageInvestigation.value.matchedRelationshipTypes.length
-                        ? `Matched lineage relationship families: ${lineageInvestigation.value.matchedRelationshipTypes
+                    `Relationship types scanned: ${investigation.scannedRelationshipTypes.length}.`,
+                    investigation.matchedRelationshipTypes.length
+                        ? `Matched lineage relationship families: ${investigation.matchedRelationshipTypes
                               .map((type) => normalizeRelationshipType(type))
                               .slice(0, 5)
                               .join(', ')}.`
@@ -1532,8 +1555,8 @@ export function useCollectionWorkspace() {
                 };
             })
             .filter((item): item is LineageResultViewModel => Boolean(item))
-            .sort((a, b) => b.supportCount - a.supportCount)
-    );
+            .sort((a, b) => b.supportCount - a.supportCount);
+    });
 
     const broaderActivityInsights = computed<EnrichmentInsightCard[]>(() => {
         const cards: Array<EnrichmentInsightCard & { rankScore: number; dedupeKey: string }> = [];
@@ -2667,7 +2690,9 @@ export function useCollectionWorkspace() {
             const data = await $fetch<CollectionState>('/api/collection/bootstrap');
             collection.value = data;
             if (data.lineageInvestigation) {
-                lineageInvestigation.value = data.lineageInvestigation;
+                lineageInvestigation.value = sanitizeLineageInvestigation(
+                    data.lineageInvestigation
+                );
             }
             if (data.status === 'ready') {
                 const hasReadyLineage =
@@ -2843,15 +2868,15 @@ export function useCollectionWorkspace() {
                     },
                 }
             );
-            lineageInvestigation.value = {
+            lineageInvestigation.value = sanitizeLineageInvestigation({
                 ...result,
                 status: 'ready',
                 startedAt: result.startedAt ?? lineageInvestigation.value.startedAt,
                 completedAt: result.completedAt ?? new Date().toISOString(),
-            };
+            });
             collection.value.lineageInvestigation = lineageInvestigation.value;
         } catch (error: any) {
-            lineageInvestigation.value = {
+            lineageInvestigation.value = sanitizeLineageInvestigation({
                 ...lineageInvestigation.value,
                 status: 'error',
                 completedAt: new Date().toISOString(),
@@ -2859,7 +2884,7 @@ export function useCollectionWorkspace() {
                     error?.data?.statusMessage ||
                     error?.message ||
                     'Unable to run relationship-based lineage investigation.',
-            };
+            });
             collection.value.lineageInvestigation = lineageInvestigation.value;
         }
     }
@@ -3085,7 +3110,9 @@ export function useCollectionWorkspace() {
                 if (state) {
                     collection.value = state;
                     if (state.lineageInvestigation) {
-                        lineageInvestigation.value = state.lineageInvestigation;
+                        lineageInvestigation.value = sanitizeLineageInvestigation(
+                            state.lineageInvestigation
+                        );
                     }
                 }
                 break;
@@ -3326,6 +3353,7 @@ export function useCollectionWorkspace() {
         agentResult.value = null;
         agentStepsLive.value = null;
         agentRunDetails.value = {};
+        agentTraceLive.value = [];
         try {
             const prompt = gatewayPromptForAction(action, params, resolveEntityName);
             const response = await fetch('/api/collection/agent-orchestrator', {
@@ -3381,6 +3409,11 @@ export function useCollectionWorkspace() {
                         agentStepsLive.value = (payload as AgentPipelineStep[]).map((s) => ({
                             ...s,
                         }));
+                    } else if (eventType === 'trace') {
+                        const trace = payload as AgentTraceEntry;
+                        if (trace?.message) {
+                            agentTraceLive.value = [...agentTraceLive.value, trace].slice(-80);
+                        }
                     } else if (eventType === 'agent-detail') {
                         const detail = payload as AgentRunDetails[keyof AgentRunDetails];
                         if (detail?.agent === 'planning') {
@@ -3638,6 +3671,7 @@ export function useCollectionWorkspace() {
         agentResult: computed(() => agentResult.value),
         agentStepsLive: computed(() => agentStepsLive.value),
         agentRunDetails: computed(() => agentRunDetails.value),
+        agentTraceLive: computed(() => agentTraceLive.value),
         askYottaLoading: computed(() => askYottaLoading.value),
         askYottaThread: computed(() => askYottaThread.value),
         mcpLog: computed(() => mcpLog.value),
