@@ -13,15 +13,25 @@
                 </a>
                 <span v-else>{{ article.title || article.urlHost || 'Headline unavailable' }}</span>
             </h4>
-            <v-btn
-                v-if="article.url"
-                icon="mdi-open-in-new"
-                size="x-small"
-                variant="text"
-                :href="article.url"
-                target="_blank"
-                rel="noopener noreferrer"
-            />
+            <div class="headline-actions">
+                <button
+                    v-if="primaryTopic"
+                    type="button"
+                    class="topic-badge topic-badge--button"
+                    @click="emit('topic-click', primaryTopic)"
+                >
+                    {{ primaryTopic }}
+                </button>
+                <v-btn
+                    v-if="article.url"
+                    icon="mdi-open-in-new"
+                    size="x-small"
+                    variant="text"
+                    :href="article.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                />
+            </div>
         </div>
 
         <div class="meta-row">
@@ -51,7 +61,7 @@
 
         <div class="tag-row">
             <span
-                v-for="category in article.matchedCategories.slice(0, 3)"
+                v-for="category in secondaryTopics"
                 :key="`category:${article.canonicalArticleKey}:${category}`"
                 class="category-tag"
             >
@@ -79,8 +89,13 @@
     const props = defineProps<{
         article: DedupedNewsArticle;
     }>();
+    const emit = defineEmits<{
+        'topic-click': [topic: string];
+    }>();
 
     const dateInfo = computed(() => formatNewsDate(props.article.date));
+    const primaryTopic = computed(() => props.article.matchedCategories[0] || '');
+    const secondaryTopics = computed(() => props.article.matchedCategories.slice(1, 4));
 </script>
 
 <style scoped>
@@ -96,6 +111,13 @@
         align-items: flex-start;
         justify-content: space-between;
         gap: 8px;
+    }
+
+    .headline-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
     }
 
     .headline {
@@ -154,6 +176,27 @@
 
     .category-tag {
         background: color-mix(in srgb, var(--dynamic-primary) 9%, transparent);
+    }
+
+    .topic-badge {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid color-mix(in srgb, var(--dynamic-primary) 48%, var(--app-divider));
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-size: 0.66rem;
+        line-height: 1.1;
+        color: color-mix(in srgb, var(--dynamic-primary) 80%, var(--dynamic-text-primary));
+        background: color-mix(in srgb, var(--dynamic-primary) 14%, transparent);
+        white-space: nowrap;
+    }
+
+    .topic-badge--button {
+        cursor: pointer;
+    }
+
+    .topic-badge--button:hover {
+        background: color-mix(in srgb, var(--dynamic-primary) 20%, transparent);
     }
 
     .sentiment-tag {

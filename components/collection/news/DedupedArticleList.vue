@@ -47,6 +47,7 @@
                             v-for="article in group.items"
                             :key="article.canonicalArticleKey"
                             :article="article"
+                            @topic-click="emit('topicClick', $event)"
                         />
                     </div>
                 </section>
@@ -56,6 +57,7 @@
                     v-for="article in articles"
                     :key="article.canonicalArticleKey"
                     :article="article"
+                    @topic-click="emit('topicClick', $event)"
                 />
             </template>
             <ArticleLoadingSkeleton
@@ -85,6 +87,7 @@
     const emit = defineEmits<{
         'update:sortMode': [value: NewsSortMode];
         'update:viewMode': [value: NewsViewMode];
+        topicClick: [topic: string];
     }>();
 
     const summaryLine = computed(() => `Showing ${props.articles.length} deduped articles`);

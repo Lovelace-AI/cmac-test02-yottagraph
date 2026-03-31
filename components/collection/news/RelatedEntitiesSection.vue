@@ -2,7 +2,7 @@
     <div class="related-entities">
         <div class="row">
             <span class="label">Primary entity:</span>
-            <EntityChip v-if="primaryEntity" :label="primaryEntity.name" />
+            <EntityChip v-if="primaryEntity" :label="primaryEntity.name" tone="primary" />
             <span v-else class="muted">Not resolved</span>
         </div>
         <div v-if="secondaryEntities.length" class="row">
@@ -12,6 +12,7 @@
                     v-for="entity in secondaryEntities"
                     :key="`secondary:${entity.neid}`"
                     :label="entity.name"
+                    tone="secondary"
                 />
             </div>
         </div>
