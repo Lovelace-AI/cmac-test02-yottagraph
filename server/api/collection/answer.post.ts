@@ -215,13 +215,30 @@ function parseMaybeJson(text: string): Record<string, unknown> | null {
     return null;
 }
 
+function extractModelOutput(text: string): string {
+    const trimmed = text.trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
+    const candidate = fenced || trimmed;
+    if (!candidate) return '';
+    const parsed = parseMaybeJson(candidate);
+    if (parsed && typeof parsed.output === 'string' && parsed.output.trim()) {
+        return parsed.output.trim();
+    }
+    // If model produced plain text instead of JSON, keep that instead of dropping to fallback.
+    if (candidate && !candidate.startsWith('{')) return candidate;
+    return '';
+}
+
 function fallbackResponse(
     action: string,
     question: string,
     entity: EntityRecord | undefined,
     relationships: string[],
     events: string[],
-    documents: string[]
+    documents: string[],
+    topEntityRows: Array<{ neid: string; name: string; flavor: string; docs: number }>,
+    topEventRows: Array<{ neid: string; name: string; date: string; participants: number }>,
+    docCount: number
 ): string {
     if (action === 'explain_entity' && entity) {
         const relText = relationships.length
@@ -235,7 +252,52 @@ function fallbackResponse(
             : 'No source documents were linked.';
         return `${entity.name} is a ${entity.flavor.replace(/_/g, ' ')} in this collection. ${relText} ${eventText} ${docText}`;
     }
-    return `Grounded answer unavailable from model. Analyst question: "${question}". Please retry; this fallback did not run full composition.`;
+    const topEntities = topEntityRows
+        .slice(0, 4)
+        .map((row) => `${row.name} (${row.flavor.replace(/_/g, ' ')})`)
+        .join(', ');
+    const topEvents = topEventRows
+        .slice(0, 4)
+        .map((row) => `${row.name} (${row.date})`)
+        .join('; ');
+    const baseline = `${docCount} source document${docCount === 1 ? '' : 's'} support this answer context.`;
+    if (
+        action === 'insight_question' ||
+        action === 'answer_question' ||
+        action === 'summarize_collection'
+    ) {
+        return [
+            baseline,
+            topEntities
+                ? `Most central entities in the document graph: ${topEntities}.`
+                : 'No central entities are currently available.',
+            topEvents
+                ? `Most material document-backed events: ${topEvents}.`
+                : 'No material document-backed events are currently available.',
+            question ? `Analyst focus: ${question}` : '',
+        ]
+            .filter(Boolean)
+            .join(' ');
+    }
+    if (action === 'lineage_narrative') {
+        return [
+            baseline,
+            topEntities
+                ? `Lineage should be interpreted using named organization transitions anchored in document entities such as ${topEntities}.`
+                : 'Lineage context is currently limited because organization anchors are sparse.',
+            topEvents
+                ? `Relevant timeline anchors include: ${topEvents}.`
+                : 'No lineage events are currently linked in the document-backed timeline.',
+        ].join(' ');
+    }
+    return [
+        baseline,
+        topEntities ? `Top entities: ${topEntities}.` : 'No entity context is currently available.',
+        topEvents ? `Top events: ${topEvents}.` : 'No event context is currently available.',
+        question ? `Analyst focus: ${question}` : '',
+    ]
+        .filter(Boolean)
+        .join(' ');
 }
 
 export default defineEventHandler(async (event): Promise<CollectionAnswerResponse> => {
@@ -334,14 +396,17 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
 
         const parsed = parseMaybeJson(generated.text);
         const output =
-            String(parsed?.output ?? '').trim() ||
+            extractModelOutput(generated.text) ||
             fallbackResponse(
                 action,
                 questionLine,
                 targetEntity,
                 entityRelationshipLines,
                 entityEventLines,
-                entityDocLines
+                entityDocLines,
+                topEntityRows,
+                topEventRows,
+                collection.documents.length
             );
         const citations = Array.isArray(parsed?.citations)
             ? (parsed?.citations as Array<Record<string, unknown>>)
@@ -374,7 +439,10 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
             targetEntity,
             entityRelationshipLines,
             entityEventLines,
-            entityDocLines
+            entityDocLines,
+            topEntityRows,
+            topEventRows,
+            collection.documents.length
         );
         completeStep(steps, 3, startedAt);
         return {
