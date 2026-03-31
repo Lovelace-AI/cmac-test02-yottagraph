@@ -113,10 +113,6 @@
                         :initial-source-backed-only="true"
                     />
                     <EventsView v-else-if="currentTab === 'events'" />
-                    <InsightsView
-                        v-else-if="currentTab === 'insights'"
-                        @open-chat="launchStarterQuestion"
-                    />
                     <TimelineComparisonView v-else-if="currentTab === 'timeline'" />
                     <ValidationView v-else-if="currentTab === 'validation'" />
                     <AgentWorkspace
@@ -534,7 +530,6 @@
         { value: 'graph', label: 'Graph & Entities', icon: 'mdi-graph-outline' },
         { value: 'events', label: 'Events', icon: 'mdi-calendar-star-outline' },
         { value: 'timeline', label: 'Financials', icon: 'mdi-chart-timeline-variant' },
-        { value: 'insights', label: 'Insights', icon: 'mdi-lightbulb-on-outline' },
         { value: 'enrichment', label: 'Enrichment', icon: 'mdi-arrow-expand-all' },
         { value: 'agent', label: 'Agents', icon: 'mdi-robot-outline' },
     ];
@@ -562,7 +557,6 @@
 
     const tabQuickActions = computed(() =>
         currentTab.value === 'graph' ||
-        currentTab.value === 'insights' ||
         currentTab.value === 'events' ||
         currentTab.value === 'timeline' ||
         currentTab.value === 'agent'
@@ -581,10 +575,6 @@
         events: [
             'Summarize the event timeline.',
             'Which events have the strongest document evidence?',
-        ],
-        insights: [
-            'What are the top executive insights from this collection?',
-            'Which findings should be highlighted in the briefing?',
         ],
         timeline: [
             'How did key financial properties change across documents?',

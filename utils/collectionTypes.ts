@@ -229,7 +229,6 @@ export type WorkspaceTab =
     | 'overview'
     | 'graph'
     | 'events'
-    | 'insights'
     | 'agreements'
     | 'timeline'
     | 'validation'
