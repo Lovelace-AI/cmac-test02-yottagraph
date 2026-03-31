@@ -1,141 +1,96 @@
 <template>
-    <div class="agents-workspace">
-        <v-card class="mb-3">
+    <div class="agents-workspace d-flex flex-column ga-3">
+        <v-card>
             <v-card-item>
                 <v-card-title class="d-flex align-center justify-space-between flex-wrap ga-2">
-                    <span>Agents</span>
+                    <span>How The Agents Work</span>
                     <v-btn
                         color="primary"
                         size="small"
                         prepend-icon="mdi-message-text-outline"
                         @click="emit('launch-question', suggestedQuestions[0])"
                     >
-                        Ask a Question
+                        Open Ask Yotta
                     </v-btn>
                 </v-card-title>
                 <v-card-subtitle>
-                    How it works: multi-agent reasoning over collection entities, relationships, and
-                    source evidence.
+                    A three-agent pipeline reasons over your document collection and knowledge
+                    graph.
                 </v-card-subtitle>
             </v-card-item>
-            <v-card-text class="d-flex align-center ga-2 flex-wrap">
-                <v-chip size="small" variant="tonal">{{ entities.length }} entities</v-chip>
-                <v-chip size="small" variant="tonal"
-                    >{{ relationships.length }} relationships</v-chip
-                >
-                <v-chip size="small" variant="tonal">{{ documents.length }} documents</v-chip>
-                <v-chip size="small" variant="tonal">{{ propertySeries.length }} properties</v-chip>
-            </v-card-text>
-        </v-card>
+            <v-card-text class="d-flex flex-column ga-3">
+                <div class="d-flex align-center ga-2 flex-wrap">
+                    <v-chip size="small" variant="tonal"
+                        >{{ entities.length }} entities in scope</v-chip
+                    >
+                    <v-chip size="small" variant="tonal">
+                        {{ relationships.length }} relationships in scope
+                    </v-chip>
+                    <v-chip size="small" variant="tonal">
+                        {{ documents.length }} documents in scope
+                    </v-chip>
+                    <v-chip size="small" variant="tonal">
+                        {{ propertySeries.length }} properties in scope
+                    </v-chip>
+                </div>
 
-        <v-card class="mb-3">
-            <v-card-item>
-                <v-card-title class="text-body-1">Question-to-Answer Pipeline</v-card-title>
-                <v-card-subtitle>Ordered reasoning steps with evidence grounding.</v-card-subtitle>
-            </v-card-item>
-            <v-card-text>
-                <SummaryAgentSteps :steps="agentSteps" />
-            </v-card-text>
-        </v-card>
+                <div class="pipeline-flow">
+                    <div class="pipeline-node">
+                        <v-chip color="deep-purple" size="small" variant="tonal">
+                            1. Planning Agent
+                        </v-chip>
+                        <div class="text-caption text-medium-emphasis">Interprets intent</div>
+                    </div>
+                    <v-icon color="medium-emphasis">mdi-arrow-right</v-icon>
+                    <div class="pipeline-node">
+                        <v-chip color="teal" size="small" variant="tonal">2. Context Agent</v-chip>
+                        <div class="text-caption text-medium-emphasis">Queries KG evidence</div>
+                    </div>
+                    <v-icon color="medium-emphasis">mdi-arrow-right</v-icon>
+                    <div class="pipeline-node">
+                        <v-chip color="amber-darken-2" size="small" variant="tonal">
+                            3. Composition Agent
+                        </v-chip>
+                        <div class="text-caption text-medium-emphasis">Synthesizes response</div>
+                    </div>
+                </div>
 
-        <v-row class="mb-3">
-            <v-col cols="12" md="8">
-                <v-card height="100%">
-                    <v-card-item>
-                        <v-card-title class="text-body-1">Agent Roles</v-card-title>
-                    </v-card-item>
-                    <v-card-text>
-                        <v-row>
-                            <v-col v-for="card in agentCards" :key="card.name" cols="12" md="6">
-                                <v-card variant="outlined" height="100%">
-                                    <v-card-text>
-                                        <div class="text-subtitle-2">{{ card.name }}</div>
-                                        <div class="text-caption text-medium-emphasis mb-2">
-                                            {{ card.role }}
-                                        </div>
-                                        <v-chip
-                                            size="x-small"
-                                            :color="card.active ? 'success' : 'default'"
-                                            variant="tonal"
-                                        >
-                                            {{ card.active ? 'active' : 'idle' }}
-                                        </v-chip>
-                                        <div class="text-body-2 mt-2">{{ card.description }}</div>
-                                    </v-card-text>
-                                </v-card>
-                            </v-col>
-                        </v-row>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-            <v-col cols="12" md="4">
-                <v-card height="100%">
-                    <v-card-item>
-                        <v-card-title class="text-body-1">Starter Questions</v-card-title>
-                    </v-card-item>
-                    <v-card-text class="d-flex flex-column ga-2">
-                        <v-btn
-                            v-for="question in suggestedQuestions"
-                            :key="question"
-                            size="small"
-                            variant="outlined"
-                            class="justify-start"
-                            @click="emit('launch-question', question)"
-                        >
-                            {{ question }}
-                        </v-btn>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-        </v-row>
-
-        <v-card class="mb-3">
-            <v-card-item>
-                <v-card-title class="text-body-1">Production Workflows</v-card-title>
-            </v-card-item>
-            <v-card-text>
                 <v-row>
-                    <v-col v-for="workflow in workflows" :key="workflow.title" cols="12" md="4">
-                        <v-card variant="outlined" height="100%">
-                            <v-card-text>
-                                <div class="text-subtitle-2">{{ workflow.title }}</div>
-                                <div class="text-caption text-medium-emphasis mb-2">
-                                    {{ workflow.question }}
-                                </div>
-                                <div class="text-body-2">{{ workflow.flow }}</div>
-                            </v-card-text>
-                        </v-card>
+                    <v-col v-for="agent in agentProfiles" :key="agent.name" cols="12" md="4">
+                        <AgentProfileCard
+                            :name="agent.name"
+                            :role="agent.role"
+                            :description="agent.description"
+                            :icon="agent.icon"
+                            :color="agent.color"
+                            :model="agent.model"
+                            :tool-chips="agent.toolChips"
+                            :active="agent.active"
+                        />
                     </v-col>
                 </v-row>
             </v-card-text>
         </v-card>
 
+        <AgentRunPanel
+            :steps="pipelineSteps"
+            :run-details="agentRunDetails"
+            :result="agentResult"
+            :loading="agentLoading"
+        />
+
         <v-card>
             <v-card-item>
-                <v-card-title class="text-body-1">Run Agent Action</v-card-title>
-                <v-card-subtitle
-                    >Directly trigger one of the available grounded actions.</v-card-subtitle
-                >
+                <v-card-title class="text-body-1">Ask The Agents</v-card-title>
+                <v-card-subtitle>
+                    Ask a grounded question or run a quick preset action.
+                </v-card-subtitle>
             </v-card-item>
             <v-card-text>
-                <div class="d-flex flex-wrap ga-2 mb-3">
-                    <v-btn
-                        v-for="action in actions"
-                        :key="action.id"
-                        size="small"
-                        variant="tonal"
-                        :prepend-icon="action.icon"
-                        :loading="agentLoading && activeAction === action.id"
-                        :disabled="!isReady"
-                        @click="runAction(action.id)"
-                    >
-                        {{ action.label }}
-                    </v-btn>
-                </div>
-                <div class="d-flex ga-2">
+                <div class="d-flex ga-2 mb-2">
                     <v-text-field
                         v-model="question"
-                        label="Ask grounded question"
+                        label="Ask a grounded question"
                         density="compact"
                         variant="outlined"
                         hide-details
@@ -145,11 +100,37 @@
                     <v-btn
                         color="primary"
                         :loading="agentLoading && activeAction === 'answer_question'"
-                        :disabled="!isReady || !question"
+                        :disabled="!isReady || !question.trim()"
                         @click="askQuestion"
                     >
                         Ask
                     </v-btn>
+                </div>
+
+                <div class="d-flex ga-2 flex-wrap">
+                    <v-chip
+                        v-for="action in actions"
+                        :key="action.id"
+                        label
+                        variant="outlined"
+                        :prepend-icon="action.icon"
+                        :disabled="!isReady"
+                        @click="runAction(action.id)"
+                    >
+                        {{ action.label }}
+                    </v-chip>
+                </div>
+
+                <div class="text-caption text-medium-emphasis mt-3">
+                    Try:
+                    <span
+                        v-for="(prompt, idx) in suggestedQuestions"
+                        :key="prompt"
+                        class="prompt-link"
+                        @click="question = prompt"
+                    >
+                        {{ prompt }}{{ idx < suggestedQuestions.length - 1 ? ' |' : '' }}
+                    </span>
                 </div>
             </v-card-text>
         </v-card>
@@ -157,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-    import type { RebuildStep } from '~/composables/useCollectionWorkspace';
+    import { seedAskYottaPipelineSteps, type AgentPipelineStep } from '~/utils/agentPipeline';
 
     const emit = defineEmits<{
         'launch-question': [prompt: string];
@@ -167,6 +148,8 @@
         isReady,
         agentLoading,
         agentResult,
+        agentStepsLive,
+        agentRunDetails,
         entities,
         relationships,
         documents,
@@ -177,58 +160,10 @@
     const question = ref('');
     const activeAction = ref<string | null>(null);
 
-    const agentSteps = ref<RebuildStep[]>([
-        { step: 1, status: 'pending', label: 'Planning Agent', detail: 'Interpreting question...' },
-        { step: 2, status: 'pending', label: 'Context Agent', detail: 'Fetching evidence...' },
-        { step: 3, status: 'pending', label: 'Composition Agent', detail: 'Composing response...' },
-    ]);
-
-    const agentCards = computed(() => [
-        {
-            name: 'Planning Agent',
-            role: 'Question understanding and strategy',
-            description:
-                'Interprets intent and selects a grounded strategy for the collection scope.',
-            active: agentLoading.value,
-        },
-        {
-            name: 'Context Agent',
-            role: 'Evidence assembly',
-            description:
-                'Assembles supporting entities, events, relationships, and document references.',
-            active: agentLoading.value,
-        },
-        {
-            name: 'Composition Agent',
-            role: 'Answer synthesis',
-            description: 'Produces concise evidence-backed output and confidence framing.',
-            active: agentLoading.value,
-        },
-    ]);
-
-    const workflows = [
-        {
-            title: 'Executive Brief',
-            question: 'What matters most in this collection?',
-            flow: 'Planning Agent -> Context Agent -> Composition Agent',
-        },
-        {
-            title: 'Evidence Gap Check',
-            question: 'Where is support incomplete?',
-            flow: 'Planning Agent -> Context Agent (coverage focus) -> Composition Agent',
-        },
-        {
-            title: 'Anchor Selection',
-            question: 'Which entities should we expand first?',
-            flow: 'Planning Agent -> Context Agent (connectivity ranking) -> Composition Agent',
-        },
-    ];
-
     const suggestedQuestions = [
-        'Summarize this collection in plain English.',
-        'Which agreements are central and why?',
+        'Give me a grounded executive brief.',
         'Where is evidence thin or incomplete?',
-        'How did key facts change across documents?',
+        'Which entities should we enrich first and why?',
     ];
 
     const actions = [
@@ -241,43 +176,56 @@
         { id: 'recommend_anchors', label: 'Recommend Anchors', icon: 'mdi-star-outline' },
     ];
 
-    watch(agentLoading, (loading) => {
-        if (!loading) {
-            agentSteps.value.forEach((step) => {
-                if (step.status === 'working') step.status = 'completed';
-            });
-            return;
-        }
-        agentSteps.value = [
-            {
-                step: 1,
-                status: 'working',
-                label: 'Planning Agent',
-                detail: 'Interpreting question...',
-            },
-            { step: 2, status: 'pending', label: 'Context Agent', detail: 'Fetching evidence...' },
-            {
-                step: 3,
-                status: 'pending',
-                label: 'Composition Agent',
-                detail: 'Composing response...',
-            },
-        ];
+    const pipelineSteps = computed<AgentPipelineStep[]>(() => {
+        if (agentStepsLive.value?.length) return agentStepsLive.value;
+        if (agentResult.value?.agentSteps?.length) return agentResult.value.agentSteps;
+        return seedAskYottaPipelineSteps().map((step) => ({
+            ...step,
+            status: 'pending',
+        }));
     });
 
-    watch(
-        () => agentResult.value?.agentSteps,
-        (steps) => {
-            if (!steps?.length) return;
-            agentSteps.value = steps.map((step) => ({
-                step: step.step,
-                status: step.status,
-                label: step.label,
-                detail: step.detail,
-                durationMs: step.durationMs,
-            }));
-        }
-    );
+    const agentProfiles = computed(() => [
+        {
+            name: 'Planning Agent',
+            role: 'Question understanding and strategy',
+            description:
+                'Translates your question into an answer plan, picks the response style, and identifies focus entities.',
+            icon: 'mdi-head-question',
+            color: 'deep-purple',
+            model: 'Gemini 2.0 Flash',
+            toolChips: [],
+            active: agentLoading.value && pipelineSteps.value.some((s) => s.step === 1),
+        },
+        {
+            name: 'Context Agent',
+            role: 'Knowledge graph retrieval',
+            description:
+                'Uses graph and schema tools to pull grounded entities, relationships, events, and profile evidence.',
+            icon: 'mdi-database-search',
+            color: 'teal',
+            model: 'Gemini 2.0 Flash',
+            toolChips: [
+                'get_schema',
+                'find_entities',
+                'get_properties',
+                'lookup_entity',
+                'search_entities_batch',
+            ],
+            active: agentLoading.value && pipelineSteps.value.some((s) => s.step === 2),
+        },
+        {
+            name: 'Composition Agent',
+            role: 'Grounded narrative synthesis',
+            description:
+                'Converts evidence bundles into concise, audience-friendly answers with citations.',
+            icon: 'mdi-file-document-edit-outline',
+            color: 'amber-darken-2',
+            model: 'Gemini 2.0 Flash',
+            toolChips: [],
+            active: agentLoading.value && pipelineSteps.value.some((s) => s.step === 3),
+        },
+    ]);
 
     async function runAction(actionId: string) {
         activeAction.value = actionId;
@@ -292,9 +240,34 @@
     }
 
     async function askQuestion() {
-        if (!question.value) return;
+        const trimmed = question.value.trim();
+        if (!trimmed) return;
         activeAction.value = 'answer_question';
-        await runAgentAction('answer_question', { question: question.value });
+        await runAgentAction('answer_question', { question: trimmed });
         activeAction.value = null;
     }
 </script>
+
+<style scoped>
+    .pipeline-flow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .pipeline-node {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .prompt-link {
+        cursor: pointer;
+        margin-left: 6px;
+    }
+
+    .prompt-link:hover {
+        text-decoration: underline;
+    }
+</style>
