@@ -174,9 +174,8 @@ def lookup_entity(name: str) -> dict:
     Returns:
         Entity details including IDs and basic properties.
     """
-    resp = elemental_client.get(f"/entities/lookup?entityName={quote(name)}&maxResults=5")
-    resp.raise_for_status()
-    return resp.json()
+    matches = _search_entity_matches(name, max_results=5)
+    return {"results": matches}
 
 
 def search_entities_batch(queries: list[str], max_results: int = 5) -> dict:
@@ -215,6 +214,16 @@ def _schema_payload() -> dict:
     return data.get("schema", data)
 
 
+def _is_neid_like(value: str) -> bool:
+    stripped = value.strip()
+    return stripped.isdigit() and 1 <= len(stripped) <= 20
+
+
+def _normalize_neid(value: str) -> str:
+    stripped = value.strip()
+    return stripped.zfill(20)
+
+
 def _property_pid_map() -> dict[str, int]:
     properties = _schema_payload().get("properties", [])
     pid_map: dict[str, int] = {}
@@ -232,7 +241,35 @@ def _property_pid_map() -> dict[str, int]:
     return pid_map
 
 
-def _lookup_results(name: str) -> list[dict]:
+def _search_entity_matches(
+    query: str, flavor: str | None = None, max_results: int = 5
+) -> list[dict]:
+    payload: dict = {
+        "queries": [{"queryId": 1, "query": query}],
+        "maxResults": max_results,
+        "includeNames": True,
+        "includeFlavors": True,
+        "includeScores": True,
+    }
+    if flavor:
+        payload["queries"][0]["flavors"] = [flavor]
+
+    resp = elemental_client.post("/entities/search", json=payload)
+    resp.raise_for_status()
+    data = resp.json()
+    raw_results = data.get("results") or []
+    if not isinstance(raw_results, list) or not raw_results:
+        return []
+    first = raw_results[0] if isinstance(raw_results[0], dict) else {}
+    matches = first.get("matches") or []
+    return [row for row in matches if isinstance(row, dict)]
+
+
+def _lookup_results(name: str, flavor: str | None = None) -> list[dict]:
+    matches = _search_entity_matches(name, flavor=flavor, max_results=5)
+    if matches:
+        return matches
+
     data = lookup_entity(name)
     raw_results = data.get("results") or data.get("entities") or data.get("matches") or []
     return [row for row in raw_results if isinstance(row, dict)]
@@ -252,6 +289,18 @@ def _core_properties_for_flavor(flavor: str | None) -> tuple[str, ...]:
     if not flavor:
         return DEFAULT_CORE_PROPERTIES
     return CORE_PROPERTIES_BY_FLAVOR.get(flavor, DEFAULT_CORE_PROPERTIES)
+
+
+def _all_core_properties() -> tuple[str, ...]:
+    ordered: list[str] = []
+    for prop_name in DEFAULT_CORE_PROPERTIES:
+        if prop_name not in ordered:
+            ordered.append(prop_name)
+    for properties in CORE_PROPERTIES_BY_FLAVOR.values():
+        for prop_name in properties:
+            if prop_name not in ordered:
+                ordered.append(prop_name)
+    return tuple(ordered)
 
 
 def get_entity_profile(entity: str, flavor: str | None = None) -> str:
@@ -280,10 +329,10 @@ def get_entity_profile(entity: str, flavor: str | None = None) -> str:
         resolved_name = entity
         resolved_flavor = flavor.strip() if flavor else ""
 
-        if entity.isdigit():
-            neid = entity.zfill(20)
+        if _is_neid_like(entity):
+            neid = _normalize_neid(entity)
         else:
-            results = _lookup_results(entity)
+            results = _lookup_results(entity, flavor=flavor)
             candidate = _select_lookup_result(results, flavor)
             if not candidate:
                 return f"No entity found matching '{entity}'."
@@ -297,7 +346,11 @@ def get_entity_profile(entity: str, flavor: str | None = None) -> str:
             return f"Could not resolve a NEID for '{entity}'."
 
         pid_map = _property_pid_map()
-        requested_properties = _core_properties_for_flavor(resolved_flavor or flavor)
+        requested_properties = (
+            _all_core_properties()
+            if not (resolved_flavor or flavor)
+            else _core_properties_for_flavor(resolved_flavor or flavor)
+        )
         available_properties = [name for name in requested_properties if name in pid_map]
         if not available_properties:
             return (
@@ -306,7 +359,7 @@ def get_entity_profile(entity: str, flavor: str | None = None) -> str:
             )
 
         raw = get_properties([neid], [pid_map[name] for name in available_properties])
-        values = raw.get("values", [])
+        values = raw.get("values") or []
         pid_to_name = {pid_map[name]: name for name in available_properties}
         collected: dict[str, list[str]] = {}
 
@@ -328,6 +381,11 @@ def get_entity_profile(entity: str, flavor: str | None = None) -> str:
             collected.setdefault(prop_name, [])
             if rendered not in collected[prop_name]:
                 collected[prop_name].append(rendered)
+
+        if not resolved_name or resolved_name == entity:
+            name_values = collected.get("name", [])
+            if name_values:
+                resolved_name = name_values[0].split(" [", 1)[0]
 
         lines = [
             f"Entity: {resolved_name}",
@@ -397,10 +455,12 @@ Core mission:
 
 Retrieval playbook (distilled from platform skills and API docs):
 1) Start from planner intent + requestedEvidence.
-2) Reuse provided NEIDs whenever available; avoid re-resolving known entities.
+2) Reuse provided NEIDs whenever available; do not re-resolve a known NEID back
+   through name search unless the user explicitly asks you to verify identity.
 3) Use schema discovery only when needed for flavor/property disambiguation.
 4) Prefer targeted retrieval before broad search:
-   - lookup_entity or search_entities_batch for unresolved names
+   - get_entity_profile or get_properties directly for known NEIDs
+   - lookup_entity or search_entities_batch only for unresolved names
    - find_entities / find_entities_batch for expression-based filters
    - get_properties and get_entity_profile for canonical scalar evidence
 5) Batch calls whenever multiple names or filters are requested.
