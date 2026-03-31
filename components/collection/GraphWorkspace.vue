@@ -4,40 +4,40 @@
         <div class="d-flex align-center justify-space-between mb-2 flex-wrap ga-2 graph-toolbar">
             <div class="d-flex align-center ga-2 flex-wrap">
                 <template v-if="showWorkspaceSummaryChips">
-                    <v-chip size="small" variant="tonal" color="primary">
-                        {{ formatNumber(primaryMeta.entityCount) }} entities
-                    </v-chip>
-                    <v-chip size="small" variant="tonal">
-                        {{ formatNumber(primaryMeta.eventCount) }} events
-                    </v-chip>
-                    <v-chip size="small" variant="tonal">
-                        {{ formatNumber(primaryMeta.relationshipCount) }} edges
-                    </v-chip>
-                    <v-chip size="small" variant="tonal">
-                        {{ formatNumber(extractedPropertyCount) }} properties /
-                        {{ formatNumber(propertyBearingRecordCount) }} records
-                    </v-chip>
-                    <v-chip size="small" variant="tonal">
-                        {{ formatNumber(propertySeries.length) }} prop series
-                    </v-chip>
+                    <SummaryMetaBar
+                        :entity-count="primaryMeta.entityCount"
+                        :event-count="primaryMeta.eventCount"
+                        :relationship-count="primaryMeta.relationshipCount"
+                        :property-count="extractedPropertyCount"
+                        :property-record-count="propertyBearingRecordCount"
+                        :property-series="propertySeries.length"
+                        :show-usage="false"
+                        class="graph-summary-meta"
+                    />
                 </template>
-                <v-chip size="small" variant="tonal" color="success">
+                <v-chip
+                    size="x-small"
+                    variant="tonal"
+                    color="success"
+                    class="meta-pill graph-meta-pill"
+                >
                     {{ formatNumber(displayedDocumentEntityCount) }} document-derived
                 </v-chip>
                 <v-chip
                     v-if="displayedEnrichedEntityCount"
-                    size="small"
+                    size="x-small"
                     variant="tonal"
                     color="info"
+                    class="meta-pill graph-meta-pill"
                 >
                     {{ formatNumber(displayedEnrichedEntityCount) }} enriched
                 </v-chip>
-                <v-chip size="small" variant="outlined">
+                <v-chip size="x-small" variant="tonal" class="meta-pill graph-meta-pill">
                     {{ formatNumber(visibleRelationships.length) }} links shown
                 </v-chip>
-                <span class="text-caption text-medium-emphasis">
+                <v-chip size="x-small" variant="tonal" class="meta-pill graph-meta-pill">
                     {{ formatNumber(relationships.length) }} total links
-                </span>
+                </v-chip>
             </div>
             <div class="d-flex align-center ga-2 flex-wrap justify-end">
                 <v-select
@@ -1722,6 +1722,14 @@
 
     .graph-toolbar {
         min-height: 40px;
+    }
+
+    .graph-summary-meta {
+        display: inline-flex;
+    }
+
+    .graph-meta-pill {
+        border: 1px solid var(--app-divider);
     }
 
     .graph-card {
