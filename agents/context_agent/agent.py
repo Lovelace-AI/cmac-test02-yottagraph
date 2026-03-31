@@ -619,6 +619,96 @@ def get_entity_profile(entity: str, flavor: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def build_entity_profile_context_bundle(
+    entity: str,
+    question: str = "",
+    flavor: str | None = None,
+    collection_name: str = "entity_profile",
+) -> dict:
+    """Build a deterministic context bundle for scalar profile requests.
+
+    This tool returns the full context JSON contract so the model can emit
+    grounded output directly from tool-returned data instead of synthesizing.
+    """
+    record = get_entity_profile_record(entity, flavor)
+    if not record.get("ok"):
+        return {
+            "collectionName": collection_name,
+            "question": question or f"Profile request for {entity}",
+            "topEntities": [],
+            "topEvents": [],
+            "relationships": [],
+            "profileEvidence": [],
+            "evidenceLines": [
+                str(record.get("error", f"Could not resolve profile for '{entity}'.")),
+            ],
+            "stats": {
+                "documentCount": 0,
+                "entityCount": 0,
+                "eventCount": 0,
+                "relationshipCount": 0,
+            },
+        }
+
+    resolved = record.get("resolved", {})
+    neid = str(resolved.get("neid") or "")
+    if not NEID_RE.match(neid):
+        return {
+            "collectionName": collection_name,
+            "question": question or f"Profile request for {entity}",
+            "topEntities": [],
+            "topEvents": [],
+            "relationships": [],
+            "profileEvidence": [],
+            "evidenceLines": [
+                f"Profile resolved but produced non-canonical NEID '{neid}'.",
+            ],
+            "stats": {
+                "documentCount": 0,
+                "entityCount": 0,
+                "eventCount": 0,
+                "relationshipCount": 0,
+            },
+        }
+
+    name = str(resolved.get("name") or entity)
+    flavor_value = str(resolved.get("flavor") or flavor or "unknown")
+    profile_row = {
+        "neid": neid,
+        "name": name,
+        "flavor": flavor_value,
+        "resolution": str(resolved.get("resolution_mode") or "name_search"),
+        "properties": record.get("properties", {}),
+        "missingProperties": record.get("missing_properties", []),
+    }
+    evidence_lines = [f"Retrieved scalar profile for {name} ({neid})."]
+    for note in record.get("notes", []):
+        if isinstance(note, str) and note.strip():
+            evidence_lines.append(note.strip())
+
+    return {
+        "collectionName": collection_name,
+        "question": question or f"Profile request for {entity}",
+        "focusEntity": {
+            "neid": neid,
+            "name": name,
+            "flavor": flavor_value,
+            "docs": 0,
+        },
+        "topEntities": [],
+        "topEvents": [],
+        "relationships": [],
+        "profileEvidence": [profile_row],
+        "evidenceLines": evidence_lines,
+        "stats": {
+            "documentCount": 0,
+            "entityCount": 1,
+            "eventCount": 0,
+            "relationshipCount": 0,
+        },
+    }
+
+
 # --- MCP Server integration ---
 # If MCP_SERVER_URL is set, the agent will also have access to MCP tools
 # discovered at deploy time.
@@ -633,6 +723,7 @@ _tools: list = [
     find_entities_batch,
     get_entity_profile_record,
     get_entity_profile,
+    build_entity_profile_context_bundle,
 ]
 
 if MCP_SERVER_URL:
@@ -666,6 +757,7 @@ Retrieval playbook (distilled from platform skills and API docs):
    through name search unless the user explicitly asks you to verify identity.
 3) Use schema discovery only when needed for flavor/property disambiguation.
 4) Prefer targeted retrieval before broad search:
+   - build_entity_profile_context_bundle for canonical scalar profile requests
    - get_entity_profile_record or get_properties directly for known NEIDs
    - lookup_entity or search_entities_batch only for unresolved names
    - find_entities / find_entities_batch for expression-based filters
@@ -701,8 +793,7 @@ Behavior rules:
 - Never fabricate entities, events, relationships, or citations.
 - Use tools to retrieve and verify evidence before claiming facts.
 - For canonical/scalar profile requests (especially when a NEID is provided),
-  call get_entity_profile_record and project its returned fields into
-  focusEntity and profileEvidence.
+  call build_entity_profile_context_bundle and return that tool JSON as-is.
 - For profileEvidence, include only NEID-validated results from
   get_entity_profile_record tool output.
 - Any NEID surfaced in focusEntity/topEntities/topEvents/relationships/
