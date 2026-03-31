@@ -578,36 +578,31 @@ export function useCollectionWorkspace() {
                 entityNeidSet.value.has(relationship.targetNeid)
         )
     );
-    const enrichmentGraphSeedEntityNeids = computed(
+    const enrichmentGraphEntityNeids = computed(
         () =>
             new Set([
                 ...documentEntities.value.map((entity) => entity.neid),
                 ...enrichedEntitiesDegree1.value.map((entity) => entity.neid),
             ])
     );
-    const enrichmentGraphRelationships = computed(() =>
-        collection.value.relationships.filter((relationship) => {
-            const sourceInSeed = enrichmentGraphSeedEntityNeids.value.has(relationship.sourceNeid);
-            const targetInSeed = enrichmentGraphSeedEntityNeids.value.has(relationship.targetNeid);
-            if (!sourceInSeed && !targetInSeed) return false;
-            if (relationship.origin === 'enriched' && (relationship.enrichmentDepth ?? 1) > 1) {
-                return false;
-            }
-            return true;
-        })
-    );
-    const enrichmentGraphEntityNeids = computed(() => {
-        const neids = new Set<string>(enrichmentGraphSeedEntityNeids.value);
-        for (const relationship of enrichmentGraphRelationships.value) {
-            neids.add(relationship.sourceNeid);
-            neids.add(relationship.targetNeid);
-        }
-        return neids;
-    });
     const enrichmentGraphEntities = computed(() =>
         collection.value.entities.filter((entity) =>
             enrichmentGraphEntityNeids.value.has(entity.neid)
         )
+    );
+    const enrichmentGraphRelationships = computed(() =>
+        collection.value.relationships.filter((relationship) => {
+            if (
+                !enrichmentGraphEntityNeids.value.has(relationship.sourceNeid) ||
+                !enrichmentGraphEntityNeids.value.has(relationship.targetNeid)
+            ) {
+                return false;
+            }
+            return (
+                relationship.origin === 'document' ||
+                (relationship.origin === 'enriched' && (relationship.enrichmentDepth ?? 1) <= 1)
+            );
+        })
     );
     const collapsedExpandedProjection = computed(() =>
         projectCollapsedOrganizationLineage(
