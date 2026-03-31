@@ -81,35 +81,34 @@
                     <v-col cols="12" md="4">
                         <v-card>
                             <v-card-item>
-                                <v-card-title class="text-body-2">2-Hop Reference</v-card-title>
+                                <v-card-title class="text-body-2"
+                                    >Raw 1-Hop Reference (Audit)</v-card-title
+                                >
                             </v-card-item>
                             <v-card-text>
                                 <div class="metric-row">
-                                    <span>Outside nodes @ 1-hop</span>
+                                    <span>Reference entities</span>
                                     <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.twoHopReference
-                                                .oneHopOutsideNodeCount
-                                        )
+                                        formatNumber(enrichmentComparison.rawOneHop.entityCount)
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
-                                    <span>Additional nodes @ 2-hop</span>
+                                    <span>Reference events</span>
                                     <strong>{{
-                                        formatNumber(
-                                            enrichmentComparison.twoHopReference
-                                                .additionalOutsideNodeCount
-                                        )
+                                        formatNumber(enrichmentComparison.rawOneHop.eventCount)
                                     }}</strong>
                                 </div>
                                 <div class="metric-row">
-                                    <span>Total outside nodes @ 2-hop</span>
+                                    <span>Reference relationships</span>
                                     <strong>{{
                                         formatNumber(
-                                            enrichmentComparison.twoHopReference
-                                                .totalOutsideNodeCount
+                                            enrichmentComparison.rawOneHop.relationshipCount
                                         )
                                     }}</strong>
+                                </div>
+                                <div class="text-caption text-medium-emphasis mt-2">
+                                    Audit/reference counts show uncapped one-hop neighborhood scale.
+                                    In-product cards use curated one-hop counts for readability.
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -133,9 +132,9 @@
                             </v-btn>
                         </template>
                         <v-card-subtitle>
-                            The app uses a curated 1-hop graph in-product. The 2-hop numbers are
-                            shown only as a reference for how much larger the broader graph would
-                            get.
+                            The app uses a curated 1-hop graph in-product. The audit/reference
+                            counts show full one-hop scale from the quad audit and can be much
+                            larger than curated in-product counts.
                         </v-card-subtitle>
                     </v-card-item>
                     <v-card-text>

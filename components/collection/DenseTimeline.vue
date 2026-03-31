@@ -114,6 +114,7 @@
     const hoverEvt = ref<EventRecord | null>(null);
     const tooltipX = ref(0);
     const tooltipY = ref(0);
+    const timelineWidth = ref(0);
     const { colorMode } = useAppColorMode();
 
     const marginLeft = 100;
@@ -140,7 +141,10 @@
     const svgHeight = computed(
         () => marginTop + axisY + 24 + swimLanes.value.length * laneHeight + 16
     );
-    const svgWidth = computed(() => Math.max(800, window?.innerWidth ?? 800));
+    const svgWidth = computed(() => {
+        const measured = timelineWidth.value > 0 ? timelineWidth.value : 960;
+        return Math.max(640, measured);
+    });
 
     const fullDateRange = computed(() => {
         const dates = filteredEvents.value
@@ -264,6 +268,21 @@
     function onScroll() {
         hoverEvt.value = null;
     }
+
+    let resizeObserver: ResizeObserver | null = null;
+    const updateWidth = () => {
+        timelineWidth.value = Math.floor(timelineRoot.value?.clientWidth ?? 0);
+    };
+    onMounted(() => {
+        updateWidth();
+        if (timelineRoot.value && typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => updateWidth());
+            resizeObserver.observe(timelineRoot.value);
+        }
+    });
+    onBeforeUnmount(() => {
+        resizeObserver?.disconnect();
+    });
 </script>
 
 <style scoped>
@@ -272,7 +291,7 @@
     }
 
     .timeline-scroll-wrapper {
-        overflow-x: auto;
+        overflow-x: hidden;
         overflow-y: hidden;
         background: color-mix(in srgb, var(--dynamic-surface) 92%, var(--dynamic-background) 8%);
         border: 1px solid var(--app-divider);

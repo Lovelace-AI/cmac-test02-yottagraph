@@ -43,18 +43,6 @@
                     <template v-slot:item.category="{ item }">
                         <span class="text-body-2">{{ item.category || 'Uncategorized' }}</span>
                     </template>
-                    <template v-slot:item.severity="{ item }">
-                        <v-chip
-                            size="x-small"
-                            variant="tonal"
-                            :color="severityColor(item.severity)"
-                        >
-                            {{ item.severity }}
-                        </v-chip>
-                    </template>
-                    <template v-slot:item.likelihood="{ item }">
-                        <span class="text-body-2">{{ item.likelihood || 'unknown' }}</span>
-                    </template>
                     <template v-slot:item.participantNeids="{ item }">
                         <div class="d-flex flex-wrap ga-1 align-center">
                             <span
@@ -83,7 +71,10 @@
                         </span>
                     </template>
                     <template v-slot:item.description="{ item }">
-                        <span class="text-caption text-medium-emphasis">
+                        <span
+                            class="text-caption text-medium-emphasis"
+                            :title="item.description || ''"
+                        >
                             {{ truncate(item.description || '', 100) }}
                         </span>
                     </template>
@@ -114,7 +105,6 @@
                 ...eventItem,
                 date: resolvedDate ?? eventItem.date,
                 significance,
-                severity: severityForSignificance(significance),
             };
         });
         return list.sort((a, b) => {
@@ -132,24 +122,10 @@
         { title: 'Event', key: 'name', sortable: true },
         { title: 'Type', key: 'category', sortable: true },
         { title: 'Date', key: 'date', sortable: true },
-        { title: 'Severity', key: 'severity', sortable: true },
-        { title: 'Confidence', key: 'likelihood', sortable: true },
         { title: 'Key participants', key: 'participantNeids', sortable: false },
         { title: 'Sources', key: 'sourceDocuments', sortable: false },
         { title: 'Summary', key: 'description', sortable: false },
     ];
-
-    function severityForSignificance(significance: number): EventSeverity {
-        if (significance >= 10) return 'high';
-        if (significance >= 6) return 'medium';
-        return 'low';
-    }
-
-    function severityColor(severity: EventSeverity): string {
-        if (severity === 'high') return 'error';
-        if (severity === 'medium') return 'warning';
-        return 'success';
-    }
 
     function computeSignificance(eventItem: (typeof events.value)[number]): number {
         const participantWeight = eventItem.participantNeids.length * 2;

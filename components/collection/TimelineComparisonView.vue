@@ -141,6 +141,16 @@
         }))
     );
 
+    watch(
+        entityOptions,
+        (options) => {
+            if (selectedEntityId.value) return;
+            if (!options.length) return;
+            selectedEntityId.value = options[0].value;
+        },
+        { immediate: true }
+    );
+
     const selectedEntity = computed(
         () => entities.value.find((entity) => entity.neid === selectedEntityId.value) ?? null
     );

@@ -753,7 +753,31 @@
         const eventCount = selectedEntityEvents.value.length;
         const sourceCount = selectedEntity.value.sourceDocuments.length;
         const flavor = selectedEntity.value.flavor.replace(/_/g, ' ');
-        return `${selectedEntity.value.name} is a ${flavor} connected by ${formatCount(relCount)} relationship${relCount === 1 ? '' : 's'}, participating in ${formatCount(eventCount)} event${eventCount === 1 ? '' : 's'}, and backed by ${formatCount(sourceCount)} source document${sourceCount === 1 ? '' : 's'}.`;
+        const relationshipHighlights = strongestRelationships.value.slice(0, 3).map((rel) => {
+            const inbound = rel.targetNeid === selectedEntity.value!.neid;
+            const otherNeid = inbound ? rel.sourceNeid : rel.targetNeid;
+            const direction = inbound ? 'from' : 'to';
+            return `${normalizeRelationshipType(rel.type)} ${direction} ${resolveEntityName(otherNeid)}`;
+        });
+        const eventHighlights = entityEventsSorted.value
+            .slice(0, 3)
+            .map(
+                (eventItem) =>
+                    `${eventItem.name}${eventItem.date ? ` (${eventItem.date.slice(0, 10)})` : ''}`
+            );
+        const sourceHighlights = selectedEntity.value.sourceDocuments
+            .slice(0, 4)
+            .map((docNeid) => resolveEntityName(docNeid));
+        const relationshipText = relationshipHighlights.length
+            ? `Key relationships include ${relationshipHighlights.join('; ')}.`
+            : 'No named relationship counterparties are currently linked.';
+        const eventText = eventHighlights.length
+            ? `Related events: ${eventHighlights.join('; ')}.`
+            : 'No linked events are currently available.';
+        const sourceText = sourceHighlights.length
+            ? `Source documents: ${sourceHighlights.join(', ')}.`
+            : 'No source documents are currently linked.';
+        return `${selectedEntity.value.name} is a ${flavor} connected by ${formatCount(relCount)} relationship${relCount === 1 ? '' : 's'}, participating in ${formatCount(eventCount)} event${eventCount === 1 ? '' : 's'}, and backed by ${formatCount(sourceCount)} source document${sourceCount === 1 ? '' : 's'}. ${relationshipText} ${eventText} ${sourceText}`;
     });
 
     const sourcesNarrative = computed(() => {

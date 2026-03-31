@@ -136,8 +136,7 @@ export default defineEventHandler(async () => {
         .slice(0, 3)
         .map(([kind, count]) => `${count} ${kind}`)
         .join(', ');
-    const fallbackSummaryLine =
-        meta.description || 'Corpus-level view describing what these source documents are about.';
+    const fallbackSummaryLine = `${meta.name} captures a ${dealAmount} ${financingType} for ${projectName}, involving ${issuerLabel}.`;
     const fallbackCollectionSummary = `${documents.length} source document${
         documents.length === 1 ? '' : 's'
     } produced ${entities.length} entities and ${events.length} events. ${topEntityLine(entities)} ${topEventLine(events)}`;
@@ -191,7 +190,7 @@ export default defineEventHandler(async () => {
                 `Municipal bond anchor name: ${municipalBondLabel}`,
                 topEntityLine(entities),
                 topEventLine(events),
-                'Tone requirements: plain English, explain corpus meaning, explicitly mention the financing anchor by name when it is human-readable, never include NEID identifiers or raw matter numbers, do not describe ingestion/extraction process, no backend/tool references.',
+                'Tone requirements: plain English, explain corpus meaning, explicitly mention deal amount, project name, financing type, and issuer before secondary anchor details, never include NEID identifiers or raw matter numbers, do not describe ingestion/extraction process, no backend/tool references, and do not center the narrative on reserve/liquidity account labels.',
             ].join('\n'),
             temperature: 0.3,
             maxOutputTokens: 520,

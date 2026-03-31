@@ -175,14 +175,6 @@ export function useInsightsWorkspace() {
         isReady,
         primaryMeta,
     } = useCollectionWorkspace();
-    const { fetchConfig: fetchTenantConfig, config: tenantConfig } = useTenantConfig();
-    const {
-        sendMessage: sendAgentMessage,
-        selectAgent: selectGatewayAgent,
-        currentAgentId,
-        messages: agentMessages,
-    } = useAgentChat();
-
     const allQuestions = computed(() => categories.flatMap((category) => category.questions));
     const totalQuestions = computed(() => allQuestions.value.length);
     const answeredCount = computed(
@@ -269,21 +261,25 @@ export function useInsightsWorkspace() {
         };
 
         try {
-            if (!currentAgentId.value) {
-                const config = tenantConfig.value ?? (await fetchTenantConfig());
-                const agentId = config?.agents?.[0]?.engine_id;
-                if (!agentId) {
-                    throw new Error(
-                        'No deployed agents found for this tenant. Deploy an agent or verify tenant config.'
-                    );
-                }
-                selectGatewayAgent(agentId);
-            }
-            await sendAgentMessage(question.text);
-            const latestAgentMessage = [...agentMessages.value]
-                .reverse()
-                .find((message) => message.role === 'agent');
-            const output = latestAgentMessage?.text?.trim() || 'No answer returned.';
+            const result = await $fetch<{
+                output: string;
+                generationSource?: 'gemini' | 'fallback' | 'gateway';
+                generationNote?: string;
+                usage?: {
+                    model: string;
+                    promptTokens: number;
+                    completionTokens: number;
+                    totalTokens: number;
+                    costUsd: number;
+                };
+            }>('/api/collection/answer', {
+                method: 'POST',
+                body: {
+                    action: 'insight_question',
+                    question: question.text,
+                },
+            });
+            const output = result?.output?.trim() || 'No answer returned.';
 
             answers.value[question.id] = {
                 status: 'answered',
@@ -291,7 +287,7 @@ export function useInsightsWorkspace() {
                 citations: [],
                 error: null,
                 cached: false,
-                usage: undefined,
+                usage: result?.usage,
                 matchedEntityNeids: detectEntityMentions(output, entities.value),
                 updatedAt: new Date().toISOString(),
             };

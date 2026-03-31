@@ -225,12 +225,28 @@ const enrichmentLastRun = ref<{
     ranAt: string;
 } | null>(null);
 const agentLoading = ref(false);
-const agentResult = ref<{
+interface AgentAnswerStep {
+    step: number;
+    status: 'pending' | 'working' | 'completed';
+    label: string;
+    detail?: string;
+    durationMs?: number;
+}
+interface AgentAnswerResult {
     output: string;
     citations: any[];
     generationSource?: 'gemini' | 'fallback' | 'gateway';
     generationNote?: string;
-} | null>(null);
+    usage?: {
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+        costUsd: number;
+    };
+    agentSteps?: AgentAnswerStep[];
+}
+const agentResult = ref<AgentAnswerResult | null>(null);
 const mcpLog = ref<McpLogEntry[]>([]);
 const geminiLog = ref<GeminiUsageEntry[]>([]);
 let _geminiIdCounter = 0;
@@ -253,13 +269,6 @@ const enrichmentEconomicError = ref<string | null>(null);
 const enrichmentRelatedDeals = ref<EnrichmentRelatedDealInsight[]>([]);
 const enrichmentRelatedDealsLoading = ref(false);
 const enrichmentRelatedDealsError = ref<string | null>(null);
-const { fetchConfig: fetchTenantConfig, config: tenantConfig } = useTenantConfig();
-const {
-    sendMessage: sendAgentMessage,
-    selectAgent: selectGatewayAgent,
-    currentAgentId,
-    messages: agentMessages,
-} = useAgentChat();
 
 function gatewayPromptForAction(
     action: string,
@@ -483,20 +492,20 @@ export function useCollectionWorkspace() {
             eventCount: documentEvents.value.length,
             relationshipCount: documentRelationships.value.length,
         };
+        const rawOneHop = collection.value.meta.rawOneHopCounts ?? {
+            entityCount: 0,
+            eventCount: 0,
+            relationshipCount: 0,
+        };
         const oneHopContext = collection.value.meta.curatedOneHopCounts ?? {
             entityCount: enrichedEntities.value.length,
             eventCount: outsideEvents.value.length,
             relationshipCount: enrichedRelationships.value.length,
         };
-        const twoHopReference = {
-            oneHopOutsideNodeCount: 692,
-            additionalOutsideNodeCount: 996,
-            totalOutsideNodeCount: 1226,
-        };
         return {
             document: documentCounts,
+            rawOneHop,
             oneHopContext,
-            twoHopReference,
             netAdditions: {
                 entityCount: oneHopContext.entityCount,
                 eventCount: oneHopContext.eventCount,
@@ -1853,6 +1862,42 @@ export function useCollectionWorkspace() {
                 if (!card?.id || !card?.plainSummary) continue;
                 byId[card.id] = card;
             }
+
+            // Run lineage cards through the same answer orchestration used by Ask Yotta.
+            const lineageCards = cards
+                .filter((card) => card.kind === 'corporate_lineage')
+                .slice(0, 6);
+            for (const card of lineageCards) {
+                try {
+                    const lineageQuestion = [
+                        `Write a clear narrative for this lineage relationship: ${card.title}.`,
+                        `Document context: ${card.documentContext}`,
+                        `Graph context: ${card.kgContext}`,
+                        `Evidence: ${card.evidence.slice(0, 3).join(' | ')}`,
+                        'Return 1-2 plain sentences for an analyst. Be specific about the transition and why it matters.',
+                    ].join(' ');
+                    const lineageAnswer = await $fetch<AgentAnswerResult>(
+                        '/api/collection/answer',
+                        {
+                            method: 'POST',
+                            body: {
+                                action: 'lineage_narrative',
+                                question: lineageQuestion,
+                            },
+                        }
+                    );
+                    if (!lineageAnswer?.output?.trim()) continue;
+                    const existing = byId[card.id];
+                    byId[card.id] = {
+                        id: card.id,
+                        plainSummary: lineageAnswer.output.trim(),
+                        relevanceLabel: existing?.relevanceLabel ?? 'adjacent',
+                        sizeLabel: existing?.sizeLabel ?? null,
+                    };
+                } catch {
+                    // Keep fallback/generated card text when lineage orchestration fails.
+                }
+            }
             enrichmentLanguageByInsightId.value = byId;
             enrichmentLanguageError.value = result.generationNote ?? null;
         } catch (error: any) {
@@ -1870,7 +1915,10 @@ export function useCollectionWorkspace() {
         try {
             const data = await $fetch<CollectionState>('/api/collection/bootstrap');
             collection.value = data;
-            if (data.status === 'ready') await loadEnrichmentContextData();
+            if (data.status === 'ready') {
+                await generateEnrichmentLanguage();
+                await loadEnrichmentContextData();
+            }
         } catch (e: any) {
             collection.value.error = e.message || 'Failed to bootstrap';
         }
@@ -2289,27 +2337,36 @@ export function useCollectionWorkspace() {
         agentLoading.value = true;
         agentResult.value = null;
         try {
-            if (!currentAgentId.value) {
-                const config = tenantConfig.value ?? (await fetchTenantConfig());
-                const agentId = config?.agents?.[0]?.engine_id;
-                if (!agentId) {
-                    throw new Error(
-                        'No deployed agents found for this tenant. Deploy an agent or verify tenant config.'
-                    );
-                }
-                selectGatewayAgent(agentId);
-            }
             const prompt = gatewayPromptForAction(action, params, resolveEntityName);
-            await sendAgentMessage(prompt);
-            const latestAgentMessage = [...agentMessages.value]
-                .reverse()
-                .find((message) => message.role === 'agent');
-            const output = latestAgentMessage?.text?.trim() || 'Agent returned no text response.';
+            const result = await $fetch<AgentAnswerResult>('/api/collection/answer', {
+                method: 'POST',
+                body: {
+                    action,
+                    question: prompt,
+                    entityNeid: params?.entityNeid,
+                },
+            });
+            const output = result?.output?.trim() || 'Agent returned no text response.';
             agentResult.value = {
                 output,
-                citations: [],
-                generationSource: 'gateway',
+                citations: result?.citations ?? [],
+                generationSource: result?.generationSource ?? 'fallback',
+                generationNote: result?.generationNote,
+                usage: result?.usage,
+                agentSteps: result?.agentSteps ?? [],
             };
+            if (result?.usage) {
+                addGeminiUsage({
+                    model: result.usage.model,
+                    promptTokens: result.usage.promptTokens,
+                    completionTokens: result.usage.completionTokens,
+                    totalTokens: result.usage.totalTokens,
+                    costUsd: result.usage.costUsd,
+                    latencyMs: 0,
+                    timestamp: new Date().toISOString(),
+                    label: `collection_answer:${action}`,
+                });
+            }
         } catch (e: any) {
             agentResult.value = {
                 output: e.data?.statusMessage || e.message || 'Agent action failed',

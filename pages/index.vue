@@ -146,7 +146,7 @@
             location="right"
             width="430"
             temporary
-            class="pa-2"
+            class="pa-2 chat-overlay-top"
         >
             <v-card class="chat-drawer-card" elevation="0">
                 <v-card-item>
@@ -462,7 +462,9 @@
     const chatDialogFullscreen = computed(() => xs.value);
 
     const tabQuickActions = computed(() =>
-        currentTab.value === 'graph' || currentTab.value === 'insights'
+        currentTab.value === 'graph' ||
+        currentTab.value === 'insights' ||
+        currentTab.value === 'events'
             ? []
             : recommendedActions.value.filter((action) => action.tab === currentTab.value)
     );
@@ -523,28 +525,23 @@
                 step: 3,
                 status: 'pending',
                 label: 'Composition Agent',
-                detail: 'Generating answer with deployed agent...',
+                detail: 'Generating answer...',
             },
         ];
-
-        let idx = 0;
-        const timer = setInterval(() => {
-            if (!agentLoading.value || idx >= askYottaSteps.value.length - 1) {
-                clearInterval(timer);
-                if (!agentLoading.value) {
-                    askYottaSteps.value.forEach((step, stepIdx) => {
-                        step.status = 'completed';
-                        step.durationMs = 600 * (stepIdx + 1);
-                    });
-                }
-                return;
-            }
-            askYottaSteps.value[idx].status = 'completed';
-            askYottaSteps.value[idx].durationMs = 600 * (idx + 1);
-            idx += 1;
-            askYottaSteps.value[idx].status = 'working';
-        }, 600);
     });
+    watch(
+        () => agentResult.value?.agentSteps,
+        (steps) => {
+            if (!steps?.length) return;
+            askYottaSteps.value = steps.map((step) => ({
+                step: step.step,
+                status: step.status,
+                label: step.label,
+                detail: step.detail,
+                durationMs: step.durationMs,
+            }));
+        }
+    );
 
     function resolveAskAction(prompt: string): 'summarize_collection' | 'answer_question' {
         const lowered = prompt.toLowerCase();
@@ -595,8 +592,19 @@
         await rebuild();
     }
 
+    const handleGlobalEsc = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return;
+        if (entityDrawerOpen.value) {
+            entityDrawerOpen.value = false;
+        }
+    };
+
     onMounted(() => {
         bootstrap();
+        window.addEventListener('keydown', handleGlobalEsc);
+    });
+    onBeforeUnmount(() => {
+        window.removeEventListener('keydown', handleGlobalEsc);
     });
 
     watch(
@@ -701,7 +709,7 @@
         position: fixed;
         right: 18px;
         bottom: 58px;
-        z-index: 10010;
+        z-index: 12050;
         text-transform: none;
         letter-spacing: 0;
     }
@@ -748,6 +756,11 @@
 
     :deep(.entity-drawer.v-navigation-drawer) {
         width: min(480px, 94vw) !important;
+        z-index: 12020 !important;
+    }
+
+    :deep(.chat-overlay-top.v-navigation-drawer) {
+        z-index: 12040 !important;
     }
 
     .entity-dialog-shell {

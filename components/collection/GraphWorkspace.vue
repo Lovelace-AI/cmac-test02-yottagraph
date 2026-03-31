@@ -1121,7 +1121,15 @@
             tooltip.value = null;
             if (kind !== 'entity') return;
             selectEntity(node);
-            void runAgentAction('explain_entity', { entityNeid: node });
+            const label = String(g.getNodeAttribute(node, 'label') ?? node);
+            void runAgentAction('explain_entity', {
+                entityNeid: node,
+                question: [
+                    `Explain the role of ${label} in this collection.`,
+                    'Include specific relationship types, named counterparties, linked events, and source document titles.',
+                    'If evidence is limited, state what is known and what should be verified next.',
+                ].join(' '),
+            });
         });
 
         sigmaInstance.on('clickStage', () => {
