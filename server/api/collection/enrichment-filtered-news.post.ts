@@ -47,6 +47,84 @@ const DEFAULT_EVENT_CATEGORIES = [
     'Layoffs',
 ];
 
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+    bankruptcy: ['bankruptcy', 'chapter 11', 'chapter 7', 'restructuring advisor'],
+    default: ['default', 'delinquency', 'missed payment', 'payment miss'],
+    insolvency: ['insolvency', 'insolvent', 'liquidation', 'going concern'],
+    'mergers & acquisitions': [
+        'merger',
+        'acquisition',
+        'acquire',
+        'takeover',
+        'buyout',
+        'combination',
+        'sell business',
+        'asset sale',
+    ],
+    'hostile takeover': ['hostile takeover', 'proxy fight', 'unsolicited bid'],
+    'significant legal judgement': [
+        'judgment',
+        'verdict',
+        'lawsuit',
+        'litigation',
+        'settlement',
+        'court ruling',
+        'legal dispute',
+        'legal challenge',
+    ],
+    seizure: ['seizure', 'asset seizure', 'frozen assets', 'foreclosure'],
+    expropriation: ['expropriation', 'nationalized', 'nationalisation', 'asset confiscation'],
+    'credit rating downgrade': ['downgrade', 'credit rating cut', 'rating lowered'],
+    'credit rating upgrade': ['upgrade', 'credit rating raised', 'rating improved'],
+    'corporate restructuring': [
+        'corporate restructuring',
+        'restructuring plan',
+        'spin-off',
+        'spinoff',
+        'divestiture',
+        'reorganization',
+    ],
+    'new funding or investment': [
+        'funding',
+        'investment',
+        'capital raise',
+        'raised',
+        'series a',
+        'series b',
+        'private equity',
+        'venture capital',
+        'debt financing',
+        'credit facility',
+        'term loan',
+        'revolving credit',
+        'bond issuance',
+        'bond sale',
+        'loan facility',
+    ],
+    ipo: ['ipo', 'initial public offering', 'public offering', 'listed on'],
+    'customer loss': [
+        'customer loss',
+        'lost customer',
+        'contract termination',
+        'terminated contract',
+    ],
+    'win of long-term, high-value contract': [
+        'awarded contract',
+        'wins contract',
+        'long-term contract',
+        'multi-year contract',
+    ],
+    'insider trading': ['insider trading', 'sec probe', 'sec investigation', 'trading probe'],
+    'cybersecurity breach': [
+        'cybersecurity breach',
+        'data breach',
+        'ransomware',
+        'hack',
+        'cyber attack',
+    ],
+    layoffs: ['layoff', 'layoffs', 'job cuts', 'workforce reduction', 'redundancies'],
+};
+
 function firstString(source: Record<string, any>, keys: string[]): string | undefined {
     for (const key of keys) {
         const value = source[key]?.value ?? source[key];
@@ -125,6 +203,16 @@ function categoryMatchesTopic(category: string, topic: string): boolean {
     return topicLower.includes(categoryLower) || categoryLower.includes(topicLower);
 }
 
+function normalizeSearchText(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+}
+
+function categoryMatchesKeywords(category: string, text: string): boolean {
+    const normalizedCategory = category.toLowerCase();
+    const categoryKeywords = CATEGORY_KEYWORDS[normalizedCategory] ?? [normalizedCategory];
+    return categoryKeywords.some((keyword) => text.includes(normalizeSearchText(keyword)));
+}
+
 export default defineEventHandler(async (event) => {
     const body = await readBody<FilteredNewsRequest>(event);
     const entityNeids = Array.isArray(body?.entityNeids) ? body.entityNeids : [];
@@ -194,6 +282,19 @@ export default defineEventHandler(async (event) => {
                     const matchedCategories = categories.filter((category) =>
                         topics.some((topic) => categoryMatchesTopic(category, topic))
                     );
+                    const keywordText = normalizeSearchText(
+                        [
+                            title,
+                            firstString(props, ['snippet', 'summary', 'description']),
+                            sourceName,
+                            url,
+                        ]
+                            .filter((value): value is string => Boolean(value))
+                            .join(' ')
+                    );
+                    const fallbackCategories = categories.filter((category) =>
+                        categoryMatchesKeywords(category, keywordText)
+                    );
                     const mapped: FilteredNewsCandidate = {
                         articleNeid: String(article?.neid ?? ''),
                         title,
@@ -212,7 +313,8 @@ export default defineEventHandler(async (event) => {
                         citations,
                         linkedEntityNames: [],
                         topics,
-                        matchedCategories,
+                        matchedCategories:
+                            matchedCategories.length > 0 ? matchedCategories : fallbackCategories,
                     };
                     return mapped;
                 })
