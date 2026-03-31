@@ -5,7 +5,9 @@ import {
     resolveAskYottaAgentIds,
 } from '~/server/utils/agentGateway';
 import type {
+    AskYottaHistoryTurn,
     AskYottaPipelineResponse,
+    AgentRunDetails,
     CompositionAgentInput,
     CompositionAgentOutput,
     ContextAgentOutput,
@@ -32,6 +34,7 @@ interface AskYottaRequest {
     action?: string;
     question?: string;
     entityNeid?: string;
+    conversationHistory?: AskYottaHistoryTurn[];
 }
 
 const NEID_LIKE_RE = /^\d{1,20}$/;
@@ -62,6 +65,34 @@ function deterministicFallbackText(args: {
             topEvents ? `Linked events: ${topEvents}.` : 'No linked events were identified.',
             `Analyst focus: ${args.question}`,
         ].join(' ');
+    }
+    if (args.context.answerStyle === 'risk_gaps') {
+        return [
+            baseline,
+            args.context.evidenceLines
+                .filter((line) =>
+                    /coverage score|evidence-backed|inferred|grounding|sparse/i.test(line)
+                )
+                .slice(0, 4)
+                .join(' '),
+            `Analyst focus: ${args.question}`,
+        ]
+            .filter(Boolean)
+            .join(' ');
+    }
+    if (args.context.answerStyle === 'executive_summary') {
+        return [
+            baseline,
+            topEntities
+                ? `This collection centers on the following entities and instruments: ${topEntities}.`
+                : 'This collection has limited entity grounding.',
+            topEvents
+                ? `Key milestones include ${topEvents}.`
+                : 'No major document-backed milestones were identified.',
+            'The available evidence suggests these documents describe a connected financial process rather than isolated records.',
+        ]
+            .filter(Boolean)
+            .join(' ');
     }
     return [
         baseline,
@@ -159,11 +190,206 @@ function topEvents(events: EventRecord[]): EventRecord[] {
         .slice(0, 6);
 }
 
+function sanitizeConversationHistory(input: unknown): AskYottaHistoryTurn[] {
+    if (!Array.isArray(input)) return [];
+    return input
+        .map((row) => ({
+            role: (row as any)?.role === 'assistant' ? 'assistant' : 'user',
+            text: String((row as any)?.text ?? '').trim(),
+        }))
+        .filter((row) => row.text)
+        .slice(-6);
+}
+
+function isBriefingQuestion(action: string, question: string): boolean {
+    if (action === 'summarize_collection') return true;
+    const lowered = question.toLowerCase();
+    return [
+        'brief',
+        'summary',
+        'summarize',
+        'plain english',
+        'what is this collection about',
+        'executive insight',
+        'briefing',
+    ].some((token) => lowered.includes(token));
+}
+
+function isGapQuestion(question: string): boolean {
+    const lowered = question.toLowerCase();
+    return [
+        'thin',
+        'incomplete',
+        'gap',
+        'missing',
+        'uncertain',
+        'weak evidence',
+        'inferred',
+        'source-backed',
+        'coverage',
+    ].some((token) => lowered.includes(token));
+}
+
+function inferAnswerStyle(action: string, question: string): PlanningAgentOutput['answerStyle'] {
+    if (action === 'explain_entity') return 'entity_explanation';
+    if (isGapQuestion(question)) return 'risk_gaps';
+    if (isBriefingQuestion(action, question)) return 'executive_summary';
+    if (question.toLowerCase().includes('timeline')) return 'timeline_analysis';
+    return 'qa';
+}
+
+function defaultRequestedEvidence(answerStyle: PlanningAgentOutput['answerStyle']): string[] {
+    if (answerStyle === 'risk_gaps') {
+        return [
+            'coverage metrics and evidence-backed ratios',
+            'inferred versus source-backed relationship examples',
+            'property-history coverage or missingness',
+            'high-impact entities or events with sparse grounding',
+        ];
+    }
+    if (answerStyle === 'executive_summary') {
+        return [
+            'core process or deal narrative',
+            'most consequential entities and role relationships',
+            'milestone events and why they matter',
+            'uncertainty notes when evidence is thin',
+        ];
+    }
+    if (answerStyle === 'timeline_analysis') {
+        return ['chronological milestone events', 'date-backed evidence', 'major state changes'];
+    }
+    if (answerStyle === 'entity_explanation') {
+        return [
+            'focus entity profile',
+            'key relationships',
+            'linked events',
+            'supporting evidence',
+        ];
+    }
+    return ['top entities', 'top events', 'top relationships'];
+}
+
+function normalizePlanningOutput(args: {
+    action: string;
+    question: string;
+    entityNeid?: string;
+    candidate?: PlanningAgentOutput | null;
+}): PlanningAgentOutput {
+    const inferredStyle = inferAnswerStyle(args.action, args.question);
+    const rawStyle = args.candidate?.answerStyle;
+    const answerStyle =
+        rawStyle && rawStyle !== 'qa'
+            ? rawStyle
+            : inferredStyle === 'qa'
+              ? rawStyle || 'qa'
+              : inferredStyle;
+    const requestedEvidence = Array.isArray(args.candidate?.requestedEvidence)
+        ? args
+              .candidate!.requestedEvidence.map((value) => String(value ?? '').trim())
+              .filter(Boolean)
+              .slice(0, 6)
+        : [];
+    const focusEntityNeids = Array.isArray(args.candidate?.focusEntityNeids)
+        ? args
+              .candidate!.focusEntityNeids.map((value) => normalizeNeid(value))
+              .filter((value) => NEID_RE.test(value))
+              .slice(0, 6)
+        : [];
+    if (
+        args.entityNeid &&
+        isValidNeid(args.entityNeid) &&
+        !focusEntityNeids.includes(args.entityNeid)
+    ) {
+        focusEntityNeids.unshift(normalizeNeid(args.entityNeid));
+    }
+    return {
+        intent: String(args.candidate?.intent ?? '').trim() || args.action,
+        answerStyle,
+        focusEntityNeids,
+        requestedEvidence:
+            requestedEvidence.length > 0
+                ? requestedEvidence
+                : defaultRequestedEvidence(answerStyle),
+        confidenceNote: String(args.candidate?.confidenceNote ?? '').trim() || undefined,
+    };
+}
+
+function coverageEvidenceLines(
+    collection: CollectionState,
+    scoped: ReturnType<typeof documentScopedState>
+): string[] {
+    const evidenceBackedRelationships = scoped.relationships.filter(
+        (relationship) =>
+            Boolean(relationship.sourceDocumentNeid) || (relationship.citations?.length ?? 0) > 0
+    ).length;
+    const inferredRelationships = Math.max(
+        0,
+        scoped.relationships.length - evidenceBackedRelationships
+    );
+    const sourceBackedEntities = scoped.entities.filter(
+        (entity) => Array.isArray(entity.sourceDocuments) && entity.sourceDocuments.length > 0
+    ).length;
+    const totalEntities = Math.max(scoped.entities.length, 1);
+    const sourceCoverageShare = Math.round((sourceBackedEntities / totalEntities) * 100);
+    const coverageScore = Math.round(
+        (sourceBackedEntities / totalEntities) * 60 +
+            (scoped.relationships.length > 0
+                ? (evidenceBackedRelationships / scoped.relationships.length) * 40
+                : 20)
+    );
+    const notes = [
+        `Coverage score ${coverageScore}/100 based on source-backed entities and relationships.`,
+        `${evidenceBackedRelationships} evidence-backed relationships versus ${inferredRelationships} inferred relationships.`,
+        `${sourceBackedEntities} of ${scoped.entities.length} document entities have direct source-document grounding (${sourceCoverageShare}%).`,
+    ];
+    if (collection.propertySeries.length === 0) {
+        notes.push(
+            'Historical property-series coverage is sparse or unavailable in the current collection cache.'
+        );
+    }
+    if (inferredRelationships > evidenceBackedRelationships) {
+        notes.push('Inferred relationships currently outnumber source-backed relationships.');
+    }
+    return notes;
+}
+
+function relationshipEvidenceLines(
+    scoped: ReturnType<typeof documentScopedState>,
+    topEntityRows: ReturnType<typeof toContextEntityRow>[]
+): string[] {
+    const entityNames = new Map(topEntityRows.map((row) => [row.neid, row.name]));
+    return scoped.relationships.slice(0, 8).map((relationship) => {
+        const source = entityNames.get(relationship.sourceNeid) || relationship.sourceNeid;
+        const target = entityNames.get(relationship.targetNeid) || relationship.targetNeid;
+        return `${source} --${relationship.type.replace(/^schema::relationship::/, '')}--> ${target}`;
+    });
+}
+
+function eventEvidenceLines(events: EventRecord[]): string[] {
+    return topEvents(events).map(
+        (eventItem) =>
+            `${eventItem.name} (${eventItem.date ? eventItem.date.slice(0, 10) : 'date not available'}) with ${eventItem.participantNeids.length} participants`
+    );
+}
+
+function historyEvidenceLines(history: AskYottaHistoryTurn[]): string[] {
+    if (!history.length) return [];
+    return history
+        .slice(-4)
+        .map(
+            (turn) =>
+                `${turn.role === 'assistant' ? 'Prior answer' : 'Prior question'}: ${turn.text}`
+        )
+        .slice(0, 4);
+}
+
 function contextFallbackBundle(
     collection: CollectionState,
     action: string,
     question: string,
-    entityNeid?: string
+    entityNeid?: string,
+    answerStyle?: PlanningAgentOutput['answerStyle'],
+    conversationHistory: AskYottaHistoryTurn[] = []
 ): ContextAgentOutput {
     const scoped = documentScopedState(collection);
     const topEntityRows = topEntities(scoped.entities, scoped.relationships, scoped.events).map(
@@ -185,15 +411,21 @@ function contextFallbackBundle(
             ? `Focus entity: ${targetEntity.name} (${targetEntity.flavor})`
             : 'No focus entity',
         `Action: ${action}`,
+        `Answer style: ${answerStyle || inferAnswerStyle(action, question)}`,
+        ...coverageEvidenceLines(collection, scoped),
+        ...relationshipEvidenceLines(scoped, topEntityRows),
+        ...eventEvidenceLines(scoped.events),
+        ...historyEvidenceLines(conversationHistory),
     ];
     return {
         collectionName: collection.meta.name,
         question,
+        answerStyle: answerStyle || inferAnswerStyle(action, question),
         focusEntity: targetEntity ? toContextEntityRow(targetEntity) : undefined,
         topEntities: topEntityRows,
         topEvents: topEventRows,
         relationships: relationshipRows,
-        evidenceLines,
+        evidenceLines: Array.from(new Set(evidenceLines.filter(Boolean))).slice(0, 40),
         stats: {
             documentCount: collection.documents.length,
             entityCount: scoped.entities.length,
@@ -413,6 +645,7 @@ function mergeContextOutput(
     return {
         collectionName: fallback.collectionName,
         question: fallback.question,
+        answerStyle: candidate.answerStyle || fallback.answerStyle,
         focusEntity,
         topEntities,
         topEvents,
@@ -432,7 +665,11 @@ function buildPlanningPrompt(input: PlanningAgentInput): string {
     return [
         'Return strict JSON only.',
         'Map explain_entity requests to answerStyle "entity_explanation".',
+        'Map summarize_collection and broad briefing requests to answerStyle "executive_summary".',
+        'Map questions about thin, weak, missing, inferred, or incomplete evidence to answerStyle "risk_gaps".',
         'Prefer evidence-oriented styles over generic qa when the action is specific.',
+        'Do not fall back to qa for summarization or evidence-gap questions unless the request is truly ambiguous.',
+        'Use conversationHistory only for continuity; the latest question should govern the plan.',
         JSON.stringify(input),
     ].join('\n');
 }
@@ -442,11 +679,15 @@ function buildContextPrompt(input: {
     question: string;
     plan: PlanningAgentOutput;
     fallbackContext: ContextAgentOutput;
+    conversationHistory: AskYottaHistoryTurn[];
 }): string {
     return [
         'Return strict JSON only with the context bundle schema.',
         'Treat fallbackContext as authoritative for collection-grounded entities/events/relationships and stats.',
         'Add profileEvidence only from tool-grounded scalar retrieval, and prefer provided NEIDs over name re-resolution whenever possible.',
+        'For executive_summary, prioritize narrative-ready evidence: core process, consequential entities, role relationships, milestone events, and uncertainty notes.',
+        'For risk_gaps, prioritize coverage signals, sparse grounding, inferred links, and concrete examples of what is well-supported versus weakly supported.',
+        'Do not respond with frequency-ranked entities/events alone when the user asked for a brief.',
         JSON.stringify(input),
     ].join('\n');
 }
@@ -456,7 +697,10 @@ function buildCompositionPrompt(input: CompositionAgentInput): string {
         'Return strict JSON only.',
         'Write concise narrative prose, not a bullet list of fields.',
         'For explain_entity, explain the entities purpose in the graph, how relationships/events connect it, and why those links matter in collection context.',
+        'For executive_summary, give a short brief with a through-line: what the collection is about, which actors and instruments matter most, what the major milestones are, and why they matter. Do not merely enumerate entities or dates.',
+        'For risk_gaps, distinguish what is strongly supported, what is weakly supported, and what appears missing or incomplete.',
         'Prefer concrete relationship/event/property details when present in context.evidenceLines, context.relationships, or context.profileEvidence.',
+        'Use conversationHistory only to maintain continuity for follow-up questions.',
         JSON.stringify(input),
     ].join('\n');
 }
@@ -470,6 +714,7 @@ export default defineEventHandler(async (event) => {
     const action = String(body.action ?? 'answer_question').trim() || 'answer_question';
     const question = String(body.question ?? '').trim() || 'Provide a grounded answer.';
     const entityNeid = String(body.entityNeid ?? '').trim() || undefined;
+    const conversationHistory = sanitizeConversationHistory(body.conversationHistory);
 
     const cached = await readCollectionCache();
     const collection = cached.state;
@@ -487,6 +732,9 @@ export default defineEventHandler(async (event) => {
             generationSource: 'fallback',
             generationNote: 'Returned pre-analysis fallback because collection state is not ready.',
             agentSteps: stepSeed,
+            evidenceLines: conversationHistory.length
+                ? historyEvidenceLines(conversationHistory)
+                : ['Collection analysis is not ready yet.'],
         };
         return sseEvent('result', result) + sseEvent('done', {});
     }
@@ -505,6 +753,7 @@ export default defineEventHandler(async (event) => {
             generationNote:
                 fallback.generationNote ||
                 'Agent trio is not fully deployed/configured; served response from fallback route.',
+            evidenceLines: fallback.evidenceLines ?? historyEvidenceLines(conversationHistory),
         };
         return sseEvent('result', result) + sseEvent('done', {});
     }
@@ -529,28 +778,38 @@ export default defineEventHandler(async (event) => {
                     action,
                     question,
                     entityNeid,
+                    conversationHistory,
                     collection: summarizeCollection(collection),
                 };
                 const planningResult = await callAgentQuery({
                     agentId: agentIds.planningAgentId!,
                     message: buildPlanningPrompt(planningInput),
                 });
-                const planning =
-                    parseAgentJson<PlanningAgentOutput>(planningResult.text) ??
-                    ({
-                        intent: action,
-                        answerStyle: 'qa',
-                        focusEntityNeids: entityNeid ? [entityNeid] : [],
-                        requestedEvidence: ['top entities', 'top events', 'top relationships'],
-                    } as PlanningAgentOutput);
+                const planning = normalizePlanningOutput({
+                    action,
+                    question,
+                    entityNeid,
+                    candidate: parseAgentJson<PlanningAgentOutput>(planningResult.text),
+                });
                 startedAt = completeStep(steps, 1, startedAt);
                 send('steps', steps);
+                const planningDetail: AgentRunDetails['planning'] = {
+                    agent: 'planning',
+                    intent: planning.intent,
+                    answerStyle: planning.answerStyle,
+                    focusEntityNeids: planning.focusEntityNeids,
+                    requestedEvidence: planning.requestedEvidence,
+                    confidenceNote: planning.confidenceNote,
+                };
+                send('agent-detail', planningDetail);
 
                 const fallbackContext = contextFallbackBundle(
                     collection,
                     action,
                     question,
-                    entityNeid
+                    entityNeid,
+                    planning.answerStyle,
+                    conversationHistory
                 );
                 const contextResult = await callAgentQuery({
                     agentId: agentIds.contextAgentId!,
@@ -559,6 +818,7 @@ export default defineEventHandler(async (event) => {
                         question,
                         plan: planning,
                         fallbackContext,
+                        conversationHistory,
                     }),
                 });
                 const context = mergeContextOutput(
@@ -567,10 +827,33 @@ export default defineEventHandler(async (event) => {
                 );
                 startedAt = completeStep(steps, 2, startedAt);
                 send('steps', steps);
+                const contextDetail: AgentRunDetails['context'] = {
+                    agent: 'context',
+                    stats: context.stats,
+                    topEntityNames: context.topEntities
+                        .slice(0, 6)
+                        .map((entity) => entity.name)
+                        .filter(Boolean),
+                    evidenceLineCount: context.evidenceLines.length,
+                    hasProfileEvidence: Boolean(context.profileEvidence?.length),
+                    toolsUsed: [
+                        'get_schema',
+                        'find_entities',
+                        'get_properties',
+                        'lookup_entity',
+                        'search_entities_batch',
+                        'find_entities_batch',
+                        'get_entity_profile_record',
+                        'get_entity_profile',
+                        'build_entity_profile_context_bundle',
+                    ],
+                };
+                send('agent-detail', contextDetail);
 
                 const compositionInput: CompositionAgentInput = {
                     action,
                     question,
+                    conversationHistory,
                     plan: planning,
                     context,
                 };
@@ -583,6 +866,14 @@ export default defineEventHandler(async (event) => {
                 const citations = sanitizeCitations(composition?.citations);
                 completeStep(steps, 3, startedAt);
                 send('steps', steps);
+                const compositionDetail: AgentRunDetails['composition'] = {
+                    agent: 'composition',
+                    citationCount: citations.length,
+                    outputLength: output.length,
+                    generationSource: 'gateway',
+                    outputPreview: output ? output.slice(0, 220) : undefined,
+                };
+                send('agent-detail', compositionDetail);
 
                 if (!output || /^agent returned no text response\.?$/i.test(output)) {
                     try {
@@ -596,6 +887,8 @@ export default defineEventHandler(async (event) => {
                         send('result', {
                             ...fallback,
                             agentSteps: steps,
+                            evidenceLines:
+                                fallback.evidenceLines ?? context.evidenceLines.slice(0, 10),
                             generationNote:
                                 fallback.generationNote ||
                                 'Composition agent returned empty text; served deterministic fallback answer.',
@@ -605,7 +898,9 @@ export default defineEventHandler(async (event) => {
                             collection,
                             action,
                             question,
-                            entityNeid
+                            entityNeid,
+                            planning.answerStyle,
+                            conversationHistory
                         );
                         send('result', {
                             output: deterministicFallbackText({
@@ -618,6 +913,7 @@ export default defineEventHandler(async (event) => {
                             generationNote:
                                 'Composition agent returned empty text and fallback route was unavailable; served local deterministic answer.',
                             agentSteps: steps,
+                            evidenceLines: fbContext.evidenceLines.slice(0, 10),
                         });
                     }
                 } else {
@@ -626,6 +922,7 @@ export default defineEventHandler(async (event) => {
                         citations,
                         generationSource: 'gateway',
                         agentSteps: steps,
+                        evidenceLines: context.evidenceLines.slice(0, 10),
                     } satisfies AskYottaPipelineResponse);
                 }
             } catch (error: any) {
@@ -639,6 +936,8 @@ export default defineEventHandler(async (event) => {
                     );
                     send('result', {
                         ...fallback,
+                        evidenceLines:
+                            fallback.evidenceLines ?? historyEvidenceLines(conversationHistory),
                         generationNote:
                             error?.data?.statusMessage ||
                             error?.message ||
@@ -655,6 +954,7 @@ export default defineEventHandler(async (event) => {
                             error?.message ||
                             'Three-agent orchestration and fallback both failed.',
                         agentSteps: steps,
+                        evidenceLines: historyEvidenceLines(conversationHistory),
                     } satisfies AskYottaPipelineResponse);
                 }
             }

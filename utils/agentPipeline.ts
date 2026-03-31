@@ -14,7 +14,51 @@ export interface AgentPipelineStep {
     status: PipelineStepStatus;
     label: PipelineAgentName;
     detail: string;
+    icon?: string;
+    color?: string;
     durationMs?: number;
+}
+
+export interface PlanningAgentRunDetail {
+    agent: 'planning';
+    intent: string;
+    answerStyle: PlanningAgentOutput['answerStyle'];
+    focusEntityNeids: string[];
+    requestedEvidence: string[];
+    confidenceNote?: string;
+}
+
+export interface ContextAgentRunDetail {
+    agent: 'context';
+    stats: {
+        documentCount: number;
+        entityCount: number;
+        eventCount: number;
+        relationshipCount: number;
+    };
+    topEntityNames: string[];
+    evidenceLineCount: number;
+    hasProfileEvidence: boolean;
+    toolsUsed: string[];
+}
+
+export interface CompositionAgentRunDetail {
+    agent: 'composition';
+    citationCount: number;
+    outputLength: number;
+    generationSource?: AskYottaPipelineResponse['generationSource'];
+    outputPreview?: string;
+}
+
+export type AgentRunDetail =
+    | PlanningAgentRunDetail
+    | ContextAgentRunDetail
+    | CompositionAgentRunDetail;
+
+export interface AgentRunDetails {
+    planning?: PlanningAgentRunDetail;
+    context?: ContextAgentRunDetail;
+    composition?: CompositionAgentRunDetail;
 }
 
 export interface AgentUsage {
@@ -32,6 +76,11 @@ export interface AgentCitation {
     label: string;
 }
 
+export interface AskYottaHistoryTurn {
+    role: 'user' | 'assistant';
+    text: string;
+}
+
 export interface AskYottaPipelineResponse {
     output: string;
     citations: AgentCitation[];
@@ -39,12 +88,14 @@ export interface AskYottaPipelineResponse {
     generationNote?: string;
     usage?: AgentUsage;
     agentSteps?: AgentPipelineStep[];
+    evidenceLines?: string[];
 }
 
 export interface PlanningAgentInput {
     action: string;
     question: string;
     entityNeid?: string;
+    conversationHistory?: AskYottaHistoryTurn[];
     collection: {
         name: string;
         documentCount: number;
@@ -100,6 +151,7 @@ export interface ContextProfileEvidenceRow {
 export interface ContextAgentOutput {
     collectionName: string;
     question: string;
+    answerStyle?: PlanningAgentOutput['answerStyle'];
     focusEntity?: ContextEntityRow;
     topEntities: ContextEntityRow[];
     topEvents: ContextEventRow[];
@@ -117,6 +169,7 @@ export interface ContextAgentOutput {
 export interface CompositionAgentInput {
     action: string;
     question: string;
+    conversationHistory?: AskYottaHistoryTurn[];
     plan: PlanningAgentOutput;
     context: ContextAgentOutput;
 }
@@ -133,18 +186,24 @@ export function seedAskYottaPipelineSteps(): AgentPipelineStep[] {
             status: 'working',
             label: 'Planning Agent',
             detail: 'Interpreting your question and selecting a retrieval strategy...',
+            icon: 'mdi-head-question',
+            color: 'deep-purple',
         },
         {
             step: 2,
             status: 'pending',
             label: 'Context Agent',
             detail: 'Gathering grounded evidence from collection and graph context...',
+            icon: 'mdi-database-search',
+            color: 'teal',
         },
         {
             step: 3,
             status: 'pending',
             label: 'Composition Agent',
             detail: 'Composing a concise grounded answer...',
+            icon: 'mdi-file-document-edit-outline',
+            color: 'amber-darken-2',
         },
     ];
 }

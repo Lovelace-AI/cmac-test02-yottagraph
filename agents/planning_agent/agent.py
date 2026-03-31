@@ -32,7 +32,10 @@ Rules:
 - Do not include markdown, code fences, or prose outside JSON.
 - Keep requestedEvidence concise and specific (3-6 bullets).
 - Preserve any provided focus entity NEID when relevant.
-- If uncertain, use answerStyle=qa.
+- Map broad briefing and summarize-the-collection requests to answerStyle=executive_summary.
+- Map questions about thin, missing, weak, inferred, or incomplete evidence to answerStyle=risk_gaps.
+- Use conversation history only for continuity; the latest user question should govern the plan.
+- Use answerStyle=qa only when the request is genuinely open-ended and not better described as a brief, gap analysis, timeline, or entity explanation.
 - Never mention internal tools or implementation details.
 """,
 )

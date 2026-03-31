@@ -12,7 +12,7 @@ documents.
 **Created:** 2026-03-25  
 **App ID:** cmac-test02  
 **Description:** Document Collection Intelligence workspace  
-**Last updated:** 2026-03-31 (overview corpus narrative upgraded with richer relationship/property grounding; enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, Graph & Entities header cleanup; rebuild pipeline now hydrates flavor-specific core entity/event properties and context-agent guidance documents explicit schema-to-PID property retrieval)
+**Last updated:** 2026-03-31 (Ask Yotta now preserves a scrolling multi-turn conversation with follow-up context, evidence-used callouts, and stronger brief/gap-answer routing; overview corpus narrative upgraded with richer relationship/property grounding; enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, Graph & Entities header cleanup; corporate lineage tab redesigned into a compact evidence-first analyst view with structured expandable support panels and scan controls; rebuild pipeline now hydrates flavor-specific core entity/event properties and context-agent guidance documents explicit schema-to-PID property retrieval)
 
 ## Vision
 
@@ -94,11 +94,15 @@ Details:
 - Overview supports complete, pending, and partial extraction states with intentional product copy and guided placeholders instead of empty analytics panels.
 - Graph tab now supports analytical view modes, relationship filters, evidence-focused toggles, and shortest-path inspection between entities.
 - Timeline tab emphasizes significance and confidence, supports richer filtering (domain, confidence, participant, source document, date), and keeps table/episode/timeline views aligned.
+- Timeline Financials now includes a structured Notable Changes analysis module with grouped-by-metric and feed modes, severity-ranked deltas, summary stats, expandable provenance details, and an optional Gemini narrative with deterministic fallback.
 - Agreements tab reduces metadata clutter and uses expandable related-party summaries for easier scanning.
 - Trust & Coverage tab reframes validation into completeness, partial coverage, provenance, and next recommended checks.
+- Ask Yotta now behaves as a true in-session conversation: new questions append to a scrolling thread instead of replacing the prior answer, and follow-up turns carry compact recent chat context into orchestration.
+- Ask Yotta surfaces evidence-used lines alongside each answer so users can see what collection grounding informed the response instead of only seeing a final narrative.
 - Ask Yotta tab offers contextual prompts, confidence framing, and evidence-linked outputs grounded in entities/events/documents.
 - Insights tab now provides a curated multi-category question deck, per-question execution, cache restoration, citation-first answer panels, entity pivots, and Markdown/HTML export with PDF graceful fallback.
 - Enrichment now opens with an Enriched Graph comparison view that separates document truth from live 1-degree and 2-degree context, and it breaks out enrichable entities/events by type.
+- Corporate Lineage in enrichment now uses a compact conclusion-first list with structured metadata (relationship type, date, support, confidence) and expandable evidence sections (documents, event anchors, referenced entities, grounding notes) instead of chip-heavy narrative cards.
 - Full 2-hop enrichment context is loaded during the main rebuild pipeline so enrichment views are available immediately after analysis, while primary tabs remain strict document-backed projections.
 - The enrichment Graph tab now renders the full curated 1-degree entity/event neighborhood without the previous collapsed simplified default, while lineage remains available as its own subview.
 - Recent Coverage in enrichment now uses article-backed results for key organizations, people, and verified project-linked locations instead of reusing graph events as a press proxy.
@@ -112,6 +116,14 @@ Details:
 - In Ask Yotta orchestration, treat deterministic collection context as
   authoritative and only merge context-agent additions that pass NEID and row
   shape validation.
+- Ask Yotta planning now heuristically routes broad briefing prompts toward
+  `executive_summary` and evidence-quality questions toward `risk_gaps` when
+  planner output is too generic, so the context/composition stages avoid
+  devolving into top-entity/top-event inventories.
+- Ask Yotta fallback context now includes coverage heuristics, relationship
+  examples, event milestones, and recent turn history hints so the composition
+  stage has narrative-ready evidence for both briefing and gap-analysis
+  questions.
 - For context-agent retrieval, once a valid NEID exists (from planner input,
   fallback context, or prior tool call), reuse that NEID directly and do not
   re-resolve by name unless identity verification is explicitly requested.

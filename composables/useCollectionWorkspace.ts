@@ -14,6 +14,7 @@ import { emptyCollectionState } from '~/utils/collectionTypes';
 import { mapCollectionToOverviewViewModel } from '~/utils/overviewBriefing';
 import { projectCollapsedOrganizationLineage } from '~/utils/enrichmentLineage';
 import type {
+    AgentRunDetails,
     AskYottaHistoryTurn,
     AskYottaPipelineResponse,
     AgentPipelineStep,
@@ -276,6 +277,7 @@ const agentLoading = ref(false);
 type AgentAnswerResult = AskYottaPipelineResponse;
 const agentResult = ref<AgentAnswerResult | null>(null);
 const agentStepsLive = ref<AgentPipelineStep[] | null>(null);
+const agentRunDetails = ref<AgentRunDetails>({});
 type AskYottaAnswerResult = AskYottaPipelineResponse;
 interface AskYottaThreadTurn {
     id: string;
@@ -283,6 +285,7 @@ interface AskYottaThreadTurn {
     answer: AskYottaAnswerResult | null;
     status: 'loading' | 'completed' | 'error';
     steps: AgentPipelineStep[];
+    agentDetails: AgentRunDetails;
     askedAt: string;
     completedAt?: string;
 }
@@ -2992,6 +2995,7 @@ export function useCollectionWorkspace() {
         agentLoading.value = true;
         agentResult.value = null;
         agentStepsLive.value = null;
+        agentRunDetails.value = {};
         try {
             const prompt = gatewayPromptForAction(action, params, resolveEntityName);
             const response = await fetch('/api/collection/agent-orchestrator', {
@@ -3047,6 +3051,24 @@ export function useCollectionWorkspace() {
                         agentStepsLive.value = (payload as AgentPipelineStep[]).map((s) => ({
                             ...s,
                         }));
+                    } else if (eventType === 'agent-detail') {
+                        const detail = payload as AgentRunDetails[keyof AgentRunDetails];
+                        if (detail?.agent === 'planning') {
+                            agentRunDetails.value = {
+                                ...agentRunDetails.value,
+                                planning: detail,
+                            };
+                        } else if (detail?.agent === 'context') {
+                            agentRunDetails.value = {
+                                ...agentRunDetails.value,
+                                context: detail,
+                            };
+                        } else if (detail?.agent === 'composition') {
+                            agentRunDetails.value = {
+                                ...agentRunDetails.value,
+                                composition: detail,
+                            };
+                        }
                     } else if (eventType === 'result') {
                         const result = payload as AgentAnswerResult;
                         const output = result?.output?.trim() || 'Agent returned no text response.';
@@ -3119,6 +3141,7 @@ export function useCollectionWorkspace() {
                     detail: 'Composing a concise grounded answer...',
                 },
             ],
+            agentDetails: {},
             askedAt: new Date().toISOString(),
         };
         askYottaThread.value.push(turn);
@@ -3178,6 +3201,24 @@ export function useCollectionWorkspace() {
 
                     if (eventType === 'steps') {
                         turn.steps = (payload as AgentPipelineStep[]).map((step) => ({ ...step }));
+                    } else if (eventType === 'agent-detail') {
+                        const detail = payload as AgentRunDetails[keyof AgentRunDetails];
+                        if (detail?.agent === 'planning') {
+                            turn.agentDetails = {
+                                ...turn.agentDetails,
+                                planning: detail,
+                            };
+                        } else if (detail?.agent === 'context') {
+                            turn.agentDetails = {
+                                ...turn.agentDetails,
+                                context: detail,
+                            };
+                        } else if (detail?.agent === 'composition') {
+                            turn.agentDetails = {
+                                ...turn.agentDetails,
+                                composition: detail,
+                            };
+                        }
                     } else if (eventType === 'result') {
                         const result = payload as AskYottaAnswerResult;
                         turn.answer = {
@@ -3266,6 +3307,7 @@ export function useCollectionWorkspace() {
         agentLoading: computed(() => agentLoading.value),
         agentResult: computed(() => agentResult.value),
         agentStepsLive: computed(() => agentStepsLive.value),
+        agentRunDetails: computed(() => agentRunDetails.value),
         askYottaLoading: computed(() => askYottaLoading.value),
         askYottaThread: computed(() => askYottaThread.value),
         mcpLog: computed(() => mcpLog.value),
