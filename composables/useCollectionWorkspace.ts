@@ -2274,8 +2274,11 @@ export function useCollectionWorkspace() {
         // Watchdog guardrails for stream stalls.
         // Keep these intentionally generous so slower MCP event windows
         // do not prematurely force fallback rebuilds.
-        const STREAM_PROGRESS_TIMEOUT_MS = 90_000;
-        const STREAM_TOTAL_TIMEOUT_MS = 300_000;
+        const isDeployedRuntime =
+            typeof window !== 'undefined' &&
+            !/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(window.location.hostname);
+        const STREAM_PROGRESS_TIMEOUT_MS = isDeployedRuntime ? 180_000 : 90_000;
+        const STREAM_TOTAL_TIMEOUT_MS = isDeployedRuntime ? 480_000 : 300_000;
         let timeoutPoll: ReturnType<typeof setInterval> | null = null;
         rebuilding.value = true;
         collection.value.status = 'loading';

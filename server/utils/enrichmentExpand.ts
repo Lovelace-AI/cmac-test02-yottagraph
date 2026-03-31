@@ -11,6 +11,22 @@ export interface EnrichmentExpandRequest {
     maxEventHubs?: number;
 }
 
+export interface EnrichmentExpandProgress {
+    phase: 'relationships' | 'events';
+    detail: string;
+    elapsedMs: number;
+    depth?: number;
+    completedTasks: number;
+    totalTasks: number;
+    entityCount: number;
+    relationshipCount: number;
+    eventCount: number;
+}
+
+export interface EnrichmentExpandOptions {
+    onProgress?: (update: EnrichmentExpandProgress) => void;
+}
+
 export interface EnrichmentExpandResult {
     entities: EntityRecord[];
     relationships: RelationshipRecord[];
@@ -104,6 +120,7 @@ const RELATED_TOOL_TIMEOUT_MS = 8_000;
 const EVENTS_TOOL_TIMEOUT_MS = 8_000;
 const RELATED_CALL_CONCURRENCY = 10;
 const EVENT_CALL_CONCURRENCY = 4;
+const PROGRESS_REPORT_INTERVAL_MS = 12_000;
 const EVENT_TIME_WINDOWS: Array<{ time_range?: { after?: string; before?: string } }> = [
     { time_range: { after: '2018-01-01', before: '2026-12-31' } },
     { time_range: { before: '2018-01-01' } },
@@ -230,7 +247,8 @@ async function pMap<T>(
 }
 
 export async function runEnrichmentExpansion(
-    body: EnrichmentExpandRequest
+    body: EnrichmentExpandRequest,
+    options: EnrichmentExpandOptions = {}
 ): Promise<EnrichmentExpandResult> {
     const hops = Math.max(1, Math.min(body.hops ?? 1, MAX_HOPS));
     const includeEvents = body.includeEvents !== false;
@@ -277,6 +295,27 @@ export async function runEnrichmentExpansion(
     const rawPropertyCandidatesByDepth = new Map<number, number>();
     const capsReached = () =>
         entities.length >= maxEntities || relationships.length >= maxRelationships;
+    let lastProgressReportAt = 0;
+
+    function reportProgress(
+        update: Omit<
+            EnrichmentExpandProgress,
+            'elapsedMs' | 'entityCount' | 'relationshipCount' | 'eventCount'
+        >,
+        force = false
+    ): void {
+        if (!options.onProgress) return;
+        const now = Date.now();
+        if (!force && now - lastProgressReportAt < PROGRESS_REPORT_INTERVAL_MS) return;
+        lastProgressReportAt = now;
+        options.onProgress({
+            ...update,
+            elapsedMs: now - runStartedAt,
+            entityCount: entities.length,
+            relationshipCount: relationships.length,
+            eventCount: events.length,
+        });
+    }
 
     function addRawEntityCandidate(neid: string, depth: number): void {
         const normalized = normalizeNeid(neid);
@@ -448,6 +487,17 @@ export async function runEnrichmentExpansion(
         const tasks = sortedUniqueNeids(sourceNeids).flatMap((neid) =>
             ENRICHMENT_FLAVORS.map((flavor) => ({ neid, flavor }))
         );
+        let completedTasks = 0;
+        reportProgress(
+            {
+                phase: 'relationships',
+                depth,
+                completedTasks,
+                totalTasks: tasks.length,
+                detail: `Hop ${depth}/${hops}: starting ${tasks.length.toLocaleString()} related lookups from ${sourceNeids.length.toLocaleString()} anchors.`,
+            },
+            true
+        );
         await pMap(
             tasks,
             async ({ neid, flavor }) => {
@@ -488,9 +538,30 @@ export async function runEnrichmentExpansion(
                     }
                 } catch {
                     relatedErrors += 1;
+                } finally {
+                    completedTasks += 1;
+                    reportProgress({
+                        phase: 'relationships',
+                        depth,
+                        completedTasks,
+                        totalTasks: tasks.length,
+                        detail:
+                            `Hop ${depth}/${hops}: processed ${completedTasks.toLocaleString()}/${tasks.length.toLocaleString()} related lookups, discovered ` +
+                            `${discovered.size.toLocaleString()} candidates so far.`,
+                    });
                 }
             },
             RELATED_CALL_CONCURRENCY
+        );
+        reportProgress(
+            {
+                phase: 'relationships',
+                depth,
+                completedTasks,
+                totalTasks: tasks.length,
+                detail: `Hop ${depth}/${hops}: finished ${tasks.length.toLocaleString()} related lookups, discovered ${discovered.size.toLocaleString()} candidates.`,
+            },
+            true
         );
         return Array.from(discovered).sort();
     }
@@ -523,6 +594,20 @@ export async function runEnrichmentExpansion(
         const prioritizedHubNeids = uniqueOrderedNeids([...body.anchorNeids, ...sortedHubNeids]);
         const eventHubNeids = prioritizedHubNeids.slice(0, maxEventHubs);
         eventHubsTruncated = sortedHubNeids.length > eventHubNeids.length;
+        let completedEventTasks = 0;
+        reportProgress(
+            {
+                phase: 'events',
+                completedTasks: completedEventTasks,
+                totalTasks: eventHubNeids.length,
+                detail:
+                    `Events: starting ${eventHubNeids.length.toLocaleString()} event hub lookups` +
+                    (eventHubsTruncated
+                        ? ` (trimmed from ${sortedHubNeids.length.toLocaleString()} hubs).`
+                        : '.'),
+            },
+            true
+        );
         await pMap(
             eventHubNeids,
             async (hubNeid) => {
@@ -600,11 +685,30 @@ export async function runEnrichmentExpansion(
                     }
                 } catch {
                     eventErrors += 1;
+                } finally {
+                    completedEventTasks += 1;
+                    reportProgress({
+                        phase: 'events',
+                        completedTasks: completedEventTasks,
+                        totalTasks: eventHubNeids.length,
+                        detail:
+                            `Events: processed ${completedEventTasks.toLocaleString()}/${eventHubNeids.length.toLocaleString()} event hubs, collected ` +
+                            `${events.length.toLocaleString()} curated events so far.`,
+                    });
                 }
             },
             EVENT_CALL_CONCURRENCY
         );
         eventsMs = Date.now() - eventsStartedAt;
+        reportProgress(
+            {
+                phase: 'events',
+                completedTasks: completedEventTasks,
+                totalTasks: eventHubNeids.length,
+                detail: `Events: finished ${eventHubNeids.length.toLocaleString()} event hub lookups, collected ${events.length.toLocaleString()} curated events.`,
+            },
+            true
+        );
     }
 
     const summarizeByDepth = (maxDepth: number) => {

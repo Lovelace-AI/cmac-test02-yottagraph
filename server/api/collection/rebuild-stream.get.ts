@@ -970,15 +970,27 @@ export default defineEventHandler(async (event) => {
 
         const documentEntities = Array.from(entityByKey.values());
         const documentEvents = Array.from(eventByKey.values());
-        const enrichmentResult = await runEnrichmentExpansion({
-            anchorNeids: documentEntities.map((entity) => entity.neid),
-            hops: 2,
-            includeEvents: true,
-            maxEntities: ENRICHMENT_MAX_ENTITIES,
-            maxRelationships: ENRICHMENT_MAX_RELATIONSHIPS,
-            maxEvents: ENRICHMENT_MAX_EVENTS,
-            maxEventHubs: ENRICHMENT_MAX_EVENT_HUBS,
-        });
+        const enrichmentResult = await runEnrichmentExpansion(
+            {
+                anchorNeids: documentEntities.map((entity) => entity.neid),
+                hops: 2,
+                includeEvents: true,
+                maxEntities: ENRICHMENT_MAX_ENTITIES,
+                maxRelationships: ENRICHMENT_MAX_RELATIONSHIPS,
+                maxEvents: ENRICHMENT_MAX_EVENTS,
+                maxEventHubs: ENRICHMENT_MAX_EVENT_HUBS,
+            },
+            {
+                onProgress: (progress) => {
+                    sendStep(
+                        6,
+                        'working',
+                        'Preparing Workspace',
+                        `${progress.detail} Current graph: ${formatCount(progress.entityCount)} entities, ${formatCount(progress.relationshipCount)} edges, ${formatCount(progress.eventCount)} events.`
+                    );
+                },
+            }
+        );
         for (const relationship of enrichmentResult.relationships) {
             upsertRelationship(relationshipMap, relationship);
         }
