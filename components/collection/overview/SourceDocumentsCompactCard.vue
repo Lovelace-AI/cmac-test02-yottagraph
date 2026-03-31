@@ -8,12 +8,6 @@
         </v-card-item>
         <v-card-text class="pt-0 pb-3">
             <v-table density="compact" class="documents-table">
-                <thead>
-                    <tr>
-                        <th>Document</th>
-                        <th>Date</th>
-                    </tr>
-                </thead>
                 <tbody>
                     <tr v-for="doc in visibleDocuments" :key="doc.id">
                         <td class="cell-document">{{ doc.filename }}</td>
