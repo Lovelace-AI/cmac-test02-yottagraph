@@ -1,4 +1,5 @@
 import { getCachedCollection } from '~/server/api/collection/bootstrap.get';
+import { readCollectionCache } from '~/server/utils/collectionCache';
 import { generateGeminiText } from '~/server/utils/gemini';
 import type {
     EntityRecord,
@@ -235,7 +236,9 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
 }
 
 export default defineEventHandler(async () => {
-    const collection = getCachedCollection();
+    const inMemoryCollection = getCachedCollection();
+    const collection =
+        inMemoryCollection ?? (await readCollectionCache()).state ?? inMemoryCollection;
     if (!collection) {
         throw createError({
             statusCode: 409,
