@@ -133,19 +133,31 @@
             <section v-if="activeTab === 'properties'" class="d-flex flex-column ga-3">
                 <v-card variant="tonal" class="panel-section-card">
                     <v-card-text class="py-2 px-3">
-                        <div class="text-caption text-medium-emphasis mb-1">
-                            Why this entity matters
-                        </div>
+                        <div class="text-caption text-medium-emphasis mb-1">Description</div>
                         <div class="text-body-2">{{ entityRoleSummary }}</div>
+                        <v-progress-linear
+                            v-if="entityRoleSummaryRewriteLoading"
+                            class="mt-2"
+                            color="primary"
+                            indeterminate
+                            rounded
+                            height="4"
+                        />
+                        <div v-if="entityRoleSummaryRewriteLoading" class="text-caption mt-1">
+                            Generating contextual narrative from graph evidence...
+                        </div>
                         <div
-                            v-if="entityRoleSummaryRewriteLoading || entityRoleSummaryRewrite"
-                            class="text-caption text-medium-emphasis mt-1"
+                            v-if="descriptionSnippetPreview.length"
+                            class="d-flex flex-column ga-1 mt-2"
                         >
-                            {{
-                                entityRoleSummaryRewriteLoading
-                                    ? 'Polishing narrative for readability...'
-                                    : 'AI-edited readability pass applied.'
-                            }}
+                            <div class="text-caption text-medium-emphasis">Evidence snippets</div>
+                            <div
+                                v-for="snippet in descriptionSnippetPreview"
+                                :key="snippet"
+                                class="text-body-2 text-medium-emphasis"
+                            >
+                                "{{ snippet }}"
+                            </div>
                         </div>
                     </v-card-text>
                 </v-card>
@@ -610,6 +622,9 @@
     const entityDescription = computed(() =>
         readPropertyText('description', 'entity_description', 'summary', 'notes')
     );
+    const entityWikipediaUrl = computed(() =>
+        readPropertyText('wikipedia_url', 'wikipedia', 'wiki_url', 'wiki', 'external_url', 'url')
+    );
     const aliasChips = computed(() => {
         const aliasValue = readPropertyRaw('aliases', 'alias', 'aka', 'also_known_as');
         if (!aliasValue) return [];
@@ -923,6 +938,12 @@
                 pageRef: extractPageRef(citation.excerpt ?? ''),
             }));
     });
+    const descriptionSnippetPreview = computed(() =>
+        sourceSnippetRows.value
+            .map((row) => row.excerpt.trim())
+            .filter(Boolean)
+            .slice(0, 2)
+    );
 
     function originColor(origin: string): string {
         if (origin === 'document') return 'success';
@@ -1076,6 +1097,16 @@
 
     function buildEntityRoleSummaryKey(): string {
         if (!selectedEntity.value) return '';
+        const relationshipPropertyAnchors = strongestRelationships.value
+            .slice(0, 4)
+            .map((rel) => {
+                const propertyKeys = Object.keys(rel.properties ?? {})
+                    .sort()
+                    .slice(0, 4)
+                    .join(',');
+                return `${rel.type}:${propertyKeys}`;
+            })
+            .join('|');
         const relationshipAnchors = strongestRelationships.value
             .slice(0, 4)
             .map((rel) => `${rel.type}:${rel.sourceNeid}:${rel.targetNeid}`)
@@ -1090,7 +1121,11 @@
             selectedEntityEvents.value.length,
             selectedEntity.value.sourceDocuments.length,
             relationshipAnchors,
+            relationshipPropertyAnchors,
             eventAnchors,
+            entityDescription.value ?? '',
+            entityWikipediaUrl.value ?? '',
+            descriptionSnippetPreview.value.join('|'),
         ].join('::');
     }
 
@@ -1119,16 +1154,37 @@
                 .slice(0, 5)
                 .map((docNeid) => resolveEntityName(docNeid))
                 .join(' | ') || 'none';
+        const relationshipPropertyContext =
+            strongestRelationships.value
+                .slice(0, 4)
+                .map((rel) => {
+                    const propertyText = Object.entries(rel.properties ?? {})
+                        .slice(0, 2)
+                        .map(([key, value]) => `${key}: ${formatValue(value)}`)
+                        .join(', ');
+                    if (!propertyText) return null;
+                    const inbound = rel.targetNeid === selectedEntity.value!.neid;
+                    const peerNeid = inbound ? rel.sourceNeid : rel.targetNeid;
+                    return `${normalizeRelationshipType(rel.type)} with ${resolveEntityName(peerNeid)} (${propertyText})`;
+                })
+                .filter((row): row is string => Boolean(row))
+                .join(' | ') || 'none';
+        const snippetContext = descriptionSnippetPreview.value.join(' | ') || 'none';
         return [
-            'Rewrite this collection-grounded entity role summary for readability and analyst use.',
-            'Write in concise financial-journal style (Economist/WSJ tone): precise, neutral, and specific.',
-            'Output plain text only, 2-4 sentences, no bullets.',
+            'Write a contextual entity description grounded in the collection evidence.',
+            'Use concise financial-journal tone (Economist/WSJ style): specific, neutral, and readable.',
+            'Output plain text only, 3-5 sentences, no bullets.',
+            'Do not output a list. Integrate facts into narrative.',
             'Do not invent facts. Use only provided evidence.',
             `Entity: ${selectedEntity.value.name} (${selectedEntity.value.flavor.replace(/_/g, ' ')}).`,
+            `Known background description: ${entityDescription.value || 'none'}.`,
+            `Reference URL (if available): ${entityWikipediaUrl.value || 'none'}.`,
             `Current summary: ${entityRoleSummaryBase.value}`,
             `Key relationships: ${relationshipContext}.`,
+            `Relationship property details: ${relationshipPropertyContext}.`,
             `Related events: ${eventContext}.`,
             `Source documents: ${documentContext}.`,
+            `Evidence snippets: ${snippetContext}.`,
         ].join('\n');
     }
 
@@ -1163,7 +1219,7 @@
             const response = await $fetch<{ output?: string }>('/api/collection/answer', {
                 method: 'POST',
                 body: {
-                    action: 'explain_entity',
+                    action: 'entity_description',
                     entityNeid: selectedEntity.value.neid,
                     question: prompt,
                 },
@@ -1196,9 +1252,24 @@
 
     async function runExplainEntity() {
         if (!selectedEntity.value) return;
+        const relationshipPropertyContext =
+            strongestRelationships.value
+                .slice(0, 6)
+                .map((rel) => {
+                    const inbound = rel.targetNeid === selectedEntity.value!.neid;
+                    const peerNeid = inbound ? rel.sourceNeid : rel.targetNeid;
+                    const props = Object.entries(rel.properties ?? {})
+                        .slice(0, 3)
+                        .map(([key, value]) => `${key}: ${formatValue(value)}`)
+                        .join(', ');
+                    return `${normalizeRelationshipType(rel.type)} ${inbound ? 'from' : 'to'} ${resolveEntityName(peerNeid)}${props ? ` (${props})` : ''}`;
+                })
+                .join(' | ') || 'none';
         const prompt = [
             `Explain the role of ${selectedEntity.value.name} in this collection.`,
             `Entity type: ${selectedEntity.value.flavor}.`,
+            `Background description: ${entityDescription.value || 'none'}.`,
+            `Reference URL: ${entityWikipediaUrl.value || 'none'}.`,
             `Document corpus links: ${selectedEntity.value.sourceDocuments.map((docNeid) => resolveEntityName(docNeid)).join(', ') || 'none'}.`,
             `Relationship count: ${selectedEntityRelationships.value.length}.`,
             `Event count: ${selectedEntityEvents.value.length}.`,
@@ -1208,8 +1279,11 @@
                     .slice(0, 6)
                     .join(', ') || 'none'
             }.`,
+            `Relationship property evidence: ${relationshipPropertyContext}.`,
+            `Evidence snippets: ${descriptionSnippetPreview.value.join(' | ') || 'none'}.`,
             `Document-graph context: ${documentCorpusRelationshipLines.value.join(' ') || 'No additional document-graph linkage summary available.'}`,
             `Role summary: ${entityRoleSummaryBase.value}`,
+            "Explain this entity's purpose in the graph: what function it serves, how it connects counterparties/events, and why those links matter in this deal context.",
             'Answer using the supplied collection context. Do not ask for more context unless the data above is actually insufficient.',
         ].join(' ');
         await runAgentAction('explain_entity', {

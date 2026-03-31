@@ -9,6 +9,7 @@ import type {
     CompositionAgentInput,
     CompositionAgentOutput,
     ContextAgentOutput,
+    ContextProfileEvidenceRow,
     PlanningAgentInput,
     PlanningAgentOutput,
     AgentPipelineStep,
@@ -32,6 +33,9 @@ interface AskYottaRequest {
     question?: string;
     entityNeid?: string;
 }
+
+const NEID_LIKE_RE = /^\d{1,20}$/;
+const NEID_RE = /^\d{20}$/;
 
 function deterministicFallbackText(args: {
     action: string;
@@ -215,8 +219,222 @@ function sanitizeCitations(input: unknown): AskYottaPipelineResponse['citations'
         .slice(0, 20);
 }
 
+function normalizeNeid(input: unknown): string {
+    const raw = String(input ?? '').trim();
+    if (!NEID_LIKE_RE.test(raw)) return '';
+    return raw.padStart(20, '0');
+}
+
+function isValidNeid(input: unknown): boolean {
+    return NEID_RE.test(normalizeNeid(input));
+}
+
+function sanitizeEntityRow(input: unknown) {
+    const neid = normalizeNeid((input as any)?.neid);
+    if (!NEID_RE.test(neid)) return null;
+    const name = String((input as any)?.name ?? '').trim();
+    const flavor = String((input as any)?.flavor ?? '').trim();
+    const docs = Number((input as any)?.docs);
+    return {
+        neid,
+        name: name || `Entity ${neid}`,
+        flavor: flavor || 'unknown',
+        docs: Number.isFinite(docs) ? Math.max(0, Math.trunc(docs)) : 0,
+    };
+}
+
+function sanitizeEventRow(input: unknown) {
+    const neid = normalizeNeid((input as any)?.neid);
+    if (!NEID_RE.test(neid)) return null;
+    const name = String((input as any)?.name ?? '').trim() || `Event ${neid}`;
+    const date = String((input as any)?.date ?? '').trim() || 'date not available';
+    const participants = Number((input as any)?.participants);
+    return {
+        neid,
+        name,
+        date,
+        participants: Number.isFinite(participants) ? Math.max(0, Math.trunc(participants)) : 0,
+    };
+}
+
+function sanitizeRelationshipRow(input: unknown) {
+    const type = String((input as any)?.type ?? '').trim();
+    const sourceNeid = normalizeNeid((input as any)?.sourceNeid);
+    const targetNeid = normalizeNeid((input as any)?.targetNeid);
+    if (!type || !NEID_RE.test(sourceNeid) || !NEID_RE.test(targetNeid)) return null;
+    const sourceDocumentNeidRaw = String((input as any)?.sourceDocumentNeid ?? '').trim();
+    const sourceDocumentNeid = isValidNeid(sourceDocumentNeidRaw)
+        ? normalizeNeid(sourceDocumentNeidRaw)
+        : undefined;
+    return {
+        type,
+        sourceNeid,
+        targetNeid,
+        sourceDocumentNeid,
+    };
+}
+
+function sanitizeProfileEvidenceRow(input: unknown): ContextProfileEvidenceRow | null {
+    const neid = normalizeNeid((input as any)?.neid);
+    if (!NEID_RE.test(neid)) return null;
+    const name = String((input as any)?.name ?? '').trim();
+    const flavor = String((input as any)?.flavor ?? '').trim();
+    const resolutionRaw = String((input as any)?.resolution ?? '').trim();
+    const resolution = resolutionRaw === 'provided_neid' ? 'provided_neid' : 'name_search';
+    const propertiesInput = (input as any)?.properties;
+    const propertyEntries = Object.entries(
+        propertiesInput && typeof propertiesInput === 'object' ? propertiesInput : {}
+    )
+        .map(([key, values]) => {
+            const propName = String(key ?? '').trim();
+            if (!propName) return null;
+            const normalizedValues = Array.isArray(values)
+                ? values
+                      .map((value) => String(value ?? '').trim())
+                      .filter(Boolean)
+                      .slice(0, 10)
+                : [];
+            return normalizedValues.length > 0 ? [propName, normalizedValues] : null;
+        })
+        .filter((row): row is [string, string[]] => Array.isArray(row));
+    const missingProperties = Array.isArray((input as any)?.missingProperties)
+        ? (input as any).missingProperties
+              .map((value: unknown) => String(value ?? '').trim())
+              .filter(Boolean)
+              .slice(0, 40)
+        : [];
+
+    return {
+        neid,
+        name: name || `Entity ${neid}`,
+        flavor: flavor || 'unknown',
+        resolution,
+        properties: Object.fromEntries(propertyEntries),
+        missingProperties,
+    };
+}
+
+function mergeContextOutput(
+    fallback: ContextAgentOutput,
+    candidate: ContextAgentOutput | null | undefined
+): ContextAgentOutput {
+    if (!candidate || typeof candidate !== 'object') return fallback;
+
+    const fallbackEntities = fallback.topEntities.map(sanitizeEntityRow).filter(Boolean);
+    const candidateEntities = (Array.isArray(candidate.topEntities) ? candidate.topEntities : [])
+        .map(sanitizeEntityRow)
+        .filter(Boolean);
+    const entityByNeid = new Map(fallbackEntities.map((row) => [row!.neid, row!]));
+    for (const row of candidateEntities) {
+        if (!row) continue;
+        const existing = entityByNeid.get(row.neid);
+        entityByNeid.set(row.neid, {
+            neid: row.neid,
+            name: existing?.name || row.name,
+            flavor: existing?.flavor || row.flavor,
+            docs: Math.max(existing?.docs ?? 0, row.docs),
+        });
+    }
+    const topEntities = Array.from(entityByNeid.values()).slice(0, 12);
+    const knownEntityNeids = new Set([
+        ...topEntities.map((row) => row.neid),
+        ...(fallback.focusEntity ? [fallback.focusEntity.neid] : []),
+    ]);
+
+    const fallbackEvents = fallback.topEvents.map(sanitizeEventRow).filter(Boolean);
+    const candidateEvents = (Array.isArray(candidate.topEvents) ? candidate.topEvents : [])
+        .map(sanitizeEventRow)
+        .filter(Boolean);
+    const eventByNeid = new Map(fallbackEvents.map((row) => [row!.neid, row!]));
+    for (const row of candidateEvents) {
+        if (!row) continue;
+        if (!eventByNeid.has(row.neid)) eventByNeid.set(row.neid, row);
+    }
+    const topEvents = Array.from(eventByNeid.values()).slice(0, 10);
+
+    const fallbackRelationships = fallback.relationships
+        .map(sanitizeRelationshipRow)
+        .filter(Boolean)
+        .filter(
+            (row) =>
+                row && knownEntityNeids.has(row.sourceNeid) && knownEntityNeids.has(row.targetNeid)
+        );
+    const candidateRelationships = (
+        Array.isArray(candidate.relationships) ? candidate.relationships : []
+    )
+        .map(sanitizeRelationshipRow)
+        .filter(Boolean)
+        .filter(
+            (row) =>
+                row && knownEntityNeids.has(row.sourceNeid) && knownEntityNeids.has(row.targetNeid)
+        );
+    const relationshipByKey = new Map(
+        fallbackRelationships.map((row) => [
+            `${row!.type}|${row!.sourceNeid}|${row!.targetNeid}`,
+            row!,
+        ])
+    );
+    for (const row of candidateRelationships) {
+        if (!row) continue;
+        const key = `${row.type}|${row.sourceNeid}|${row.targetNeid}`;
+        if (!relationshipByKey.has(key)) relationshipByKey.set(key, row);
+    }
+    const relationships = Array.from(relationshipByKey.values()).slice(0, 30);
+
+    const fallbackFocus = sanitizeEntityRow(fallback.focusEntity);
+    const candidateFocus = sanitizeEntityRow(candidate.focusEntity);
+    const focusEntity =
+        candidateFocus && knownEntityNeids.has(candidateFocus.neid)
+            ? candidateFocus
+            : fallbackFocus || undefined;
+
+    const candidateEvidenceLines = Array.isArray(candidate.evidenceLines)
+        ? candidate.evidenceLines
+              .map((line) => String(line ?? '').trim())
+              .filter(Boolean)
+              .slice(0, 20)
+        : [];
+    const evidenceLines = Array.from(
+        new Set([
+            ...fallback.evidenceLines.map((line) => String(line ?? '').trim()).filter(Boolean),
+            ...candidateEvidenceLines,
+        ])
+    ).slice(0, 40);
+
+    const candidateProfiles = Array.isArray(candidate.profileEvidence)
+        ? candidate.profileEvidence.map(sanitizeProfileEvidenceRow).filter(Boolean)
+        : [];
+    const profileEvidence = candidateProfiles
+        .filter(
+            (row) => row && (knownEntityNeids.has(row.neid) || row.resolution === 'provided_neid')
+        )
+        .slice(0, 12);
+
+    return {
+        collectionName: fallback.collectionName,
+        question: fallback.question,
+        focusEntity,
+        topEntities,
+        topEvents,
+        relationships,
+        profileEvidence: profileEvidence.length > 0 ? profileEvidence : undefined,
+        evidenceLines,
+        stats: {
+            documentCount: fallback.stats.documentCount,
+            entityCount: fallback.stats.entityCount,
+            eventCount: fallback.stats.eventCount,
+            relationshipCount: fallback.stats.relationshipCount,
+        },
+    };
+}
+
 function buildPlanningPrompt(input: PlanningAgentInput): string {
-    return ['Return strict JSON only.', JSON.stringify(input)].join('\n');
+    return [
+        'Return strict JSON only.',
+        'Map explain_entity requests to answerStyle "entity_explanation".',
+        'Prefer evidence-oriented styles over generic qa when the action is specific.',
+        JSON.stringify(input),
+    ].join('\n');
 }
 
 function buildContextPrompt(input: {
@@ -225,13 +443,22 @@ function buildContextPrompt(input: {
     plan: PlanningAgentOutput;
     fallbackContext: ContextAgentOutput;
 }): string {
-    return ['Return strict JSON only with the context bundle schema.', JSON.stringify(input)].join(
-        '\n'
-    );
+    return [
+        'Return strict JSON only with the context bundle schema.',
+        'Treat fallbackContext as authoritative for collection-grounded entities/events/relationships and stats.',
+        'Add profileEvidence only from tool-grounded scalar retrieval, and prefer provided NEIDs over name re-resolution whenever possible.',
+        JSON.stringify(input),
+    ].join('\n');
 }
 
 function buildCompositionPrompt(input: CompositionAgentInput): string {
-    return ['Return strict JSON only.', JSON.stringify(input)].join('\n');
+    return [
+        'Return strict JSON only.',
+        'Write concise narrative prose, not a bullet list of fields.',
+        'For explain_entity, explain the entities purpose in the graph, how relationships/events connect it, and why those links matter in collection context.',
+        'Prefer concrete relationship/event/property details when present in context.evidenceLines, context.relationships, or context.profileEvidence.',
+        JSON.stringify(input),
+    ].join('\n');
 }
 
 function sseEvent(eventType: string, data: unknown): string {
@@ -334,8 +561,10 @@ export default defineEventHandler(async (event) => {
                         fallbackContext,
                     }),
                 });
-                const context =
-                    parseAgentJson<ContextAgentOutput>(contextResult.text) ?? fallbackContext;
+                const context = mergeContextOutput(
+                    fallbackContext,
+                    parseAgentJson<ContextAgentOutput>(contextResult.text)
+                );
                 startedAt = completeStep(steps, 2, startedAt);
                 send('steps', steps);
 

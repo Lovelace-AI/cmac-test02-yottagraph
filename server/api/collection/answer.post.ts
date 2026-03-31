@@ -134,6 +134,89 @@ function docsForEntity(entity: EntityRecord, names: Map<string, string>): string
     return entity.sourceDocuments.slice(0, 5).map((docNeid) => names.get(docNeid) ?? docNeid);
 }
 
+function normalizePropertyValue(value: unknown): unknown {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const obj = value as Record<string, unknown>;
+        return obj.value ?? value;
+    }
+    return value;
+}
+
+function readEntityPropertyText(entity: EntityRecord, keys: string[]): string {
+    const properties = (entity.properties ?? {}) as Record<string, unknown>;
+    for (const key of keys) {
+        if (!(key in properties)) continue;
+        const value = normalizePropertyValue(properties[key]);
+        if (value === null || value === undefined) continue;
+        const text = String(value).trim();
+        if (text) return text;
+    }
+    return '';
+}
+
+function entityRelationshipPropertyDetails(
+    entity: EntityRecord,
+    relationships: RelationshipRecord[],
+    names: Map<string, string>
+): string[] {
+    return relationships
+        .filter(
+            (relationship) =>
+                relationship.sourceNeid === entity.neid || relationship.targetNeid === entity.neid
+        )
+        .sort((a, b) => {
+            const scoreA = (a.citations?.length ?? 0) + (a.sourceDocumentNeid ? 1 : 0);
+            const scoreB = (b.citations?.length ?? 0) + (b.sourceDocumentNeid ? 1 : 0);
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return (b.recordedAt || '').localeCompare(a.recordedAt || '');
+        })
+        .slice(0, 5)
+        .map((relationship) => {
+            const inbound = relationship.targetNeid === entity.neid;
+            const peerNeid = inbound ? relationship.sourceNeid : relationship.targetNeid;
+            const peerName = names.get(peerNeid) ?? peerNeid;
+            const relation = normalizeType(relationship.type);
+            const date = relationship.recordedAt
+                ? ` (${relationship.recordedAt.slice(0, 10)})`
+                : '';
+            const propertyBits = Object.entries(relationship.properties ?? {})
+                .slice(0, 2)
+                .map(([key, value]) => `${key}: ${String(normalizePropertyValue(value))}`);
+            const propertyText = propertyBits.length ? `; details: ${propertyBits.join(', ')}` : '';
+            return `${relation} ${inbound ? 'from' : 'to'} ${peerName}${date}${propertyText}`;
+        });
+}
+
+function entityEvidenceSnippets(
+    entity: EntityRecord,
+    relationships: RelationshipRecord[],
+    events: EventRecord[]
+): string[] {
+    const snippets = new Set<string>();
+    for (const relationship of relationships) {
+        if (relationship.sourceNeid !== entity.neid && relationship.targetNeid !== entity.neid)
+            continue;
+        for (const citation of relationship.citations ?? []) {
+            const text = citation.trim();
+            if (text) snippets.add(text);
+            if (snippets.size >= 3) break;
+        }
+        if (snippets.size >= 3) break;
+    }
+    if (snippets.size < 3) {
+        for (const eventItem of events) {
+            if (!eventItem.participantNeids.includes(entity.neid)) continue;
+            for (const citation of eventItem.citations ?? []) {
+                const text = citation.trim();
+                if (text) snippets.add(text);
+                if (snippets.size >= 3) break;
+            }
+            if (snippets.size >= 3) break;
+        }
+    }
+    return Array.from(snippets).slice(0, 3);
+}
+
 function documentScopedState(collection: CollectionState): {
     entities: EntityRecord[];
     relationships: RelationshipRecord[];
@@ -236,21 +319,40 @@ function fallbackResponse(
     relationships: string[],
     events: string[],
     documents: string[],
+    relationshipDetails: string[],
+    evidenceSnippets: string[],
+    backgroundDescription: string,
+    wikipediaUrl: string,
     topEntityRows: Array<{ neid: string; name: string; flavor: string; docs: number }>,
     topEventRows: Array<{ neid: string; name: string; date: string; participants: number }>,
     docCount: number
 ): string {
-    if (action === 'explain_entity' && entity) {
-        const relText = relationships.length
-            ? `Key relationship lines: ${relationships.slice(0, 3).join(' | ')}.`
-            : 'No relationship lines were available.';
-        const eventText = events.length
-            ? `Linked events: ${events.slice(0, 3).join('; ')}.`
-            : 'No linked events were found.';
-        const docText = documents.length
-            ? `Source documents: ${documents.join(', ')}.`
-            : 'No source documents were linked.';
-        return `${entity.name} is a ${entity.flavor.replace(/_/g, ' ')} in this collection. ${relText} ${eventText} ${docText}`;
+    if ((action === 'explain_entity' || action === 'entity_description') && entity) {
+        const flavor = entity.flavor.replace(/_/g, ' ');
+        const intro = backgroundDescription
+            ? `${entity.name} is a ${flavor} in this collection. ${backgroundDescription}`
+            : `${entity.name} is a ${flavor} in this collection.`;
+        const networkLine = relationshipDetails.length
+            ? `${entity.name}'s graph role is anchored by ${relationshipDetails
+                  .slice(0, 2)
+                  .join(' and ')}.`
+            : relationships.length
+              ? `The strongest visible links are ${relationships.slice(0, 2).join(' and ')}.`
+              : 'Direct relationship detail is limited in the current graph slice.';
+        const timelineLine = events.length
+            ? `Timeline context includes ${events.slice(0, 2).join('; ')}.`
+            : 'No directly linked events are currently surfaced.';
+        const evidenceLine = [
+            documents.length ? `Evidence is sourced from ${documents.join(', ')}` : '',
+            evidenceSnippets.length ? `including citations such as "${evidenceSnippets[0]}"` : '',
+            wikipediaUrl ? `and reference context at ${wikipediaUrl}` : '',
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+        return [intro, networkLine, timelineLine, evidenceLine ? `${evidenceLine}.` : '']
+            .filter(Boolean)
+            .join(' ');
     }
     const topEntities = topEntityRows
         .slice(0, 4)
@@ -331,6 +433,31 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
         ? eventMentionsForEntity(targetEntity.neid, scoped.events)
         : [];
     const entityDocLines = targetEntity ? docsForEntity(targetEntity, names) : [];
+    const entityRelationshipDetailLines = targetEntity
+        ? entityRelationshipPropertyDetails(targetEntity, scoped.relationships, names)
+        : [];
+    const entityEvidenceSnippetLines = targetEntity
+        ? entityEvidenceSnippets(targetEntity, scoped.relationships, scoped.events)
+        : [];
+    const entityBackgroundDescription = targetEntity
+        ? readEntityPropertyText(targetEntity, [
+              'description',
+              'entity_description',
+              'summary',
+              'notes',
+              'bio',
+          ])
+        : '';
+    const entityWikipediaUrl = targetEntity
+        ? readEntityPropertyText(targetEntity, [
+              'wikipedia_url',
+              'wikipedia',
+              'wiki_url',
+              'wiki',
+              'external_url',
+              'url',
+          ])
+        : '';
     const topEntityRows = topEntities(scoped.entities, scoped.relationships, scoped.events).map(
         (entity) => ({
             neid: entity.neid,
@@ -376,18 +503,32 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
                     ? `Entity relationship evidence: ${entityRelationshipLines.join(' | ') || 'none'}`
                     : 'Entity relationship evidence: n/a',
                 targetEntity
+                    ? `Entity relationship property evidence: ${entityRelationshipDetailLines.join(' | ') || 'none'}`
+                    : 'Entity relationship property evidence: n/a',
+                targetEntity
                     ? `Entity event evidence: ${entityEventLines.join(' | ') || 'none'}`
                     : 'Entity event evidence: n/a',
                 targetEntity
                     ? `Entity source documents: ${entityDocLines.join(', ') || 'none'}`
                     : 'Entity source documents: n/a',
+                targetEntity
+                    ? `Entity background description: ${entityBackgroundDescription || 'none'}`
+                    : 'Entity background description: n/a',
+                targetEntity
+                    ? `Entity reference URL: ${entityWikipediaUrl || 'none'}`
+                    : 'Entity reference URL: n/a',
+                targetEntity
+                    ? `Entity citation snippets: ${entityEvidenceSnippetLines.join(' | ') || 'none'}`
+                    : 'Entity citation snippets: n/a',
                 '',
                 `Top entities: ${JSON.stringify(topEntityRows)}`,
                 `Top events: ${JSON.stringify(topEventRows)}`,
                 '',
                 'Requirements:',
-                '- Explain in plain language.',
+                '- Explain in plain language with narrative flow, not a raw list.',
                 '- Include specific relationships, event names, and document titles when available.',
+                "- For explain_entity or entity_description, describe the entity's function in the graph and why the links are consequential.",
+                '- For explain_entity or entity_description, prefer contextual prose with 3-5 sentences and include at least one concrete relationship or event detail.',
                 '- If data is limited, say what is known rather than refusing.',
                 '- Do not mention internal tools, prompts, or missing tool capability.',
             ].join('\n'),
@@ -403,6 +544,10 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
                 entityRelationshipLines,
                 entityEventLines,
                 entityDocLines,
+                entityRelationshipDetailLines,
+                entityEvidenceSnippetLines,
+                entityBackgroundDescription,
+                entityWikipediaUrl,
                 topEntityRows,
                 topEventRows,
                 collection.documents.length
@@ -439,6 +584,10 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
             entityRelationshipLines,
             entityEventLines,
             entityDocLines,
+            entityRelationshipDetailLines,
+            entityEvidenceSnippetLines,
+            entityBackgroundDescription,
+            entityWikipediaUrl,
             topEntityRows,
             topEventRows,
             collection.documents.length
