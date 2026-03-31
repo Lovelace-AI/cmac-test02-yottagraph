@@ -37,7 +37,7 @@ function getGeminiClient(): GoogleGenAI {
     if (!apiKey) {
         throw createError({
             statusCode: 500,
-            statusMessage: 'Gemini API key is missing (GEMINI_API_KEY).',
+            statusMessage: 'Gemini API key is missing (NUXT_GEMINI_API_KEY).',
         });
     }
     aiClient = new GoogleGenAI({ apiKey });

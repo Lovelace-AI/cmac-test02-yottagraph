@@ -164,7 +164,7 @@ export default defineNuxtConfig({
     // See: https://nuxt.com/docs/guide/going-further/runtime-config
     runtimeConfig: {
         qsApiKey: process.env.QS_API_KEY || '',
-        geminiApiKey: process.env.GEMINI_API_KEY || '',
+        geminiApiKey: process.env.NUXT_GEMINI_API_KEY || '',
         geminiModel: 'gemini-2.5-pro',
         geminiTemperature: 3,
         geminiTimeoutMs: 25000,
