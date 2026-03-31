@@ -167,119 +167,8 @@
                 </v-card-item>
                 <v-card-text class="pt-0 chat-content">
                     <div class="chat-scroll-region">
-                        <div v-if="agentLoading" class="mb-2">
-                            <SummaryAgentSteps :steps="askYottaSteps" />
-                        </div>
-                        <div class="text-caption text-medium-emphasis mb-2">Starter questions</div>
-                        <div class="d-flex flex-wrap ga-1 mb-2">
-                            <v-btn
-                                v-for="prompt in askYottaPrompts"
-                                :key="prompt"
-                                size="x-small"
-                                variant="outlined"
-                                :disabled="!isReady || agentLoading"
-                                @click="runAskYottaPrompt(prompt)"
-                            >
-                                {{ prompt }}
-                            </v-btn>
-                        </div>
-                        <div
-                            v-if="agentResult?.generationSource || lastAskUsage"
-                            class="d-flex align-center ga-1 flex-wrap mt-2"
-                        >
-                            <v-chip size="x-small" variant="tonal" color="deep-purple">
-                                {{
-                                    lastAskUsage?.model ||
-                                    (agentResult?.generationSource === 'gateway'
-                                        ? 'gateway-agent'
-                                        : 'model unavailable')
-                                }}
-                            </v-chip>
-                            <v-chip
-                                v-if="lastAskUsage"
-                                size="x-small"
-                                variant="tonal"
-                                color="blue-grey"
-                            >
-                                {{ lastAskUsage.totalTokens.toLocaleString() }} tokens
-                            </v-chip>
-                            <v-chip
-                                v-if="agentResult?.generationSource === 'fallback'"
-                                size="x-small"
-                                variant="tonal"
-                                color="error"
-                            >
-                                Gemini fallback
-                            </v-chip>
-                        </div>
-                        <div
-                            v-if="
-                                agentResult?.generationSource === 'fallback' &&
-                                agentResult?.generationNote
-                            "
-                            class="text-caption text-error mt-1"
-                        >
-                            {{ agentResult.generationNote }}
-                        </div>
-                        <div
-                            v-if="agentResult?.output"
-                            ref="askYottaOutputEl"
-                            class="ask-yotta-output mt-2 text-caption"
-                        >
-                            {{ agentResult.output }}
-                        </div>
-                    </div>
-                    <div class="chat-composer">
-                        <div class="d-flex ga-1">
-                            <v-text-field
-                                v-model="askYottaQuestion"
-                                density="compact"
-                                variant="outlined"
-                                hide-details
-                                label="Ask grounded question"
-                                :disabled="!isReady || agentLoading"
-                                @keydown.enter="runAskYottaQuestion"
-                            />
-                            <v-btn
-                                size="small"
-                                color="primary"
-                                :loading="agentLoading"
-                                :disabled="!isReady || !askYottaQuestion"
-                                @click="runAskYottaQuestion"
-                            >
-                                Ask
-                            </v-btn>
-                        </div>
-                    </div>
-                </v-card-text>
-            </v-card>
-        </v-navigation-drawer>
-
-        <v-dialog
-            v-else
-            v-model="chatDrawerOpen"
-            :fullscreen="chatDialogFullscreen"
-            max-width="720"
-            scrollable
-            class="chat-dialog"
-        >
-            <div class="chat-dialog-shell">
-                <v-card class="chat-drawer-card" elevation="0">
-                    <v-card-item>
-                        <v-card-title class="text-body-2 d-flex align-center ga-2">
-                            <v-icon size="16" color="warning">mdi-robot</v-icon>
-                            Ask Yotta
-                            <v-chip size="x-small" variant="tonal">{{ currentTabLabel }}</v-chip>
-                        </v-card-title>
-                        <v-card-subtitle
-                            >Evidence-backed chat scoped to this collection.</v-card-subtitle
-                        >
-                    </v-card-item>
-                    <v-card-text class="pt-0 chat-content">
-                        <div class="chat-scroll-region">
-                            <div v-if="agentLoading" class="mb-2">
-                                <SummaryAgentSteps :steps="askYottaSteps" />
-                            </div>
+                        <!-- Starter questions (shown when idle) -->
+                        <template v-if="!agentLoading && !agentResult">
                             <div class="text-caption text-medium-emphasis mb-2">
                                 Starter questions
                             </div>
@@ -295,6 +184,38 @@
                                     {{ prompt }}
                                 </v-btn>
                             </div>
+                        </template>
+
+                        <!-- Conversation thread -->
+                        <template v-if="submittedQuestion && (agentLoading || agentResult)">
+                            <!-- User message (right) -->
+                            <div class="chat-bubble-row chat-bubble-row--user">
+                                <div class="chat-bubble chat-bubble--user text-caption">
+                                    {{ submittedQuestion }}
+                                </div>
+                            </div>
+
+                            <!-- Agent steps -->
+                            <div class="chat-bubble-row chat-bubble-row--assistant mt-2">
+                                <div class="chat-agent-steps">
+                                    <SummaryAgentSteps :steps="askYottaSteps" />
+                                </div>
+                            </div>
+
+                            <!-- Assistant message (left) -->
+                            <div
+                                v-if="agentResult?.output"
+                                class="chat-bubble-row chat-bubble-row--assistant mt-1"
+                            >
+                                <div
+                                    ref="askYottaOutputEl"
+                                    class="chat-bubble chat-bubble--assistant text-caption"
+                                    @click="handleOutputClick"
+                                    v-html="linkedOutput"
+                                />
+                            </div>
+
+                            <!-- Meta chips -->
                             <div
                                 v-if="agentResult?.generationSource || lastAskUsage"
                                 class="d-flex align-center ga-1 flex-wrap mt-2"
@@ -333,13 +254,172 @@
                             >
                                 {{ agentResult.generationNote }}
                             </div>
+
+                            <!-- Follow-up starters -->
                             <div
-                                v-if="agentResult?.output"
-                                ref="askYottaOutputEl"
-                                class="ask-yotta-output mt-2 text-caption"
+                                v-if="agentResult && !agentLoading"
+                                class="d-flex flex-wrap ga-1 mt-3"
                             >
-                                {{ agentResult.output }}
+                                <v-btn
+                                    v-for="prompt in askYottaPrompts"
+                                    :key="prompt"
+                                    size="x-small"
+                                    variant="outlined"
+                                    :disabled="!isReady || agentLoading"
+                                    @click="runAskYottaPrompt(prompt)"
+                                >
+                                    {{ prompt }}
+                                </v-btn>
                             </div>
+                        </template>
+                    </div>
+                    <div class="chat-composer">
+                        <div class="d-flex ga-1">
+                            <v-text-field
+                                v-model="askYottaQuestion"
+                                density="compact"
+                                variant="outlined"
+                                hide-details
+                                placeholder="Ask a question..."
+                                :disabled="!isReady || agentLoading"
+                                @keydown.enter="runAskYottaQuestion"
+                            />
+                            <v-btn
+                                icon
+                                size="small"
+                                color="primary"
+                                :loading="agentLoading"
+                                :disabled="!isReady || !askYottaQuestion"
+                                @click="runAskYottaQuestion"
+                            >
+                                <v-icon size="18">mdi-send</v-icon>
+                            </v-btn>
+                        </div>
+                    </div>
+                </v-card-text>
+            </v-card>
+        </v-navigation-drawer>
+
+        <v-dialog
+            v-else
+            v-model="chatDrawerOpen"
+            :fullscreen="chatDialogFullscreen"
+            max-width="720"
+            scrollable
+            class="chat-dialog"
+        >
+            <div class="chat-dialog-shell">
+                <v-card class="chat-drawer-card" elevation="0">
+                    <v-card-item>
+                        <v-card-title class="text-body-2 d-flex align-center ga-2">
+                            <v-icon size="16" color="warning">mdi-robot</v-icon>
+                            Ask Yotta
+                            <v-chip size="x-small" variant="tonal">{{ currentTabLabel }}</v-chip>
+                        </v-card-title>
+                        <v-card-subtitle
+                            >Evidence-backed chat scoped to this collection.</v-card-subtitle
+                        >
+                    </v-card-item>
+                    <v-card-text class="pt-0 chat-content">
+                        <div class="chat-scroll-region">
+                            <template v-if="!agentLoading && !agentResult">
+                                <div class="text-caption text-medium-emphasis mb-2">
+                                    Starter questions
+                                </div>
+                                <div class="d-flex flex-wrap ga-1 mb-2">
+                                    <v-btn
+                                        v-for="prompt in askYottaPrompts"
+                                        :key="prompt"
+                                        size="x-small"
+                                        variant="outlined"
+                                        :disabled="!isReady || agentLoading"
+                                        @click="runAskYottaPrompt(prompt)"
+                                    >
+                                        {{ prompt }}
+                                    </v-btn>
+                                </div>
+                            </template>
+
+                            <template v-if="submittedQuestion && (agentLoading || agentResult)">
+                                <div class="chat-bubble-row chat-bubble-row--user">
+                                    <div class="chat-bubble chat-bubble--user text-caption">
+                                        {{ submittedQuestion }}
+                                    </div>
+                                </div>
+
+                                <div class="chat-bubble-row chat-bubble-row--assistant mt-2">
+                                    <div class="chat-agent-steps">
+                                        <SummaryAgentSteps :steps="askYottaSteps" />
+                                    </div>
+                                </div>
+
+                                <div
+                                    v-if="agentResult?.output"
+                                    class="chat-bubble-row chat-bubble-row--assistant mt-1"
+                                >
+                                    <div
+                                        ref="askYottaOutputEl"
+                                        class="chat-bubble chat-bubble--assistant text-caption"
+                                        @click="handleOutputClick"
+                                        v-html="linkedOutput"
+                                    />
+                                </div>
+
+                                <div
+                                    v-if="agentResult?.generationSource || lastAskUsage"
+                                    class="d-flex align-center ga-1 flex-wrap mt-2"
+                                >
+                                    <v-chip size="x-small" variant="tonal" color="deep-purple">
+                                        {{
+                                            lastAskUsage?.model ||
+                                            (agentResult?.generationSource === 'gateway'
+                                                ? 'gateway-agent'
+                                                : 'model unavailable')
+                                        }}
+                                    </v-chip>
+                                    <v-chip
+                                        v-if="lastAskUsage"
+                                        size="x-small"
+                                        variant="tonal"
+                                        color="blue-grey"
+                                    >
+                                        {{ lastAskUsage.totalTokens.toLocaleString() }} tokens
+                                    </v-chip>
+                                    <v-chip
+                                        v-if="agentResult?.generationSource === 'fallback'"
+                                        size="x-small"
+                                        variant="tonal"
+                                        color="error"
+                                    >
+                                        Gemini fallback
+                                    </v-chip>
+                                </div>
+                                <div
+                                    v-if="
+                                        agentResult?.generationSource === 'fallback' &&
+                                        agentResult?.generationNote
+                                    "
+                                    class="text-caption text-error mt-1"
+                                >
+                                    {{ agentResult.generationNote }}
+                                </div>
+
+                                <div
+                                    v-if="agentResult && !agentLoading"
+                                    class="d-flex flex-wrap ga-1 mt-3"
+                                >
+                                    <v-btn
+                                        v-for="prompt in askYottaPrompts"
+                                        :key="prompt"
+                                        size="x-small"
+                                        variant="outlined"
+                                        :disabled="!isReady || agentLoading"
+                                        @click="runAskYottaPrompt(prompt)"
+                                    >
+                                        {{ prompt }}
+                                    </v-btn>
+                                </div>
+                            </template>
                         </div>
                         <div class="chat-composer">
                             <div class="d-flex ga-1">
@@ -348,18 +428,19 @@
                                     density="compact"
                                     variant="outlined"
                                     hide-details
-                                    label="Ask grounded question"
+                                    placeholder="Ask a question..."
                                     :disabled="!isReady || agentLoading"
                                     @keydown.enter="runAskYottaQuestion"
                                 />
                                 <v-btn
+                                    icon
                                     size="small"
                                     color="primary"
                                     :loading="agentLoading"
                                     :disabled="!isReady || !askYottaQuestion"
                                     @click="runAskYottaQuestion"
                                 >
-                                    Ask
+                                    <v-icon size="18">mdi-send</v-icon>
                                 </v-btn>
                             </div>
                         </div>
@@ -393,6 +474,7 @@
         runAgentAction,
         agentLoading,
         agentResult,
+        agentStepsLive,
         selectedEntity,
         selectEntity,
     } = useCollectionWorkspace();
@@ -403,6 +485,7 @@
     });
     const { mdAndUp, xs } = useDisplay();
     const askYottaQuestion = ref('');
+    const submittedQuestion = ref('');
     const askYottaOutputEl = ref<HTMLElement | null>(null);
     const entityPanelRoot = ref<HTMLElement | null>(null);
     const askYottaSteps = ref<
@@ -412,6 +495,7 @@
             label: string;
             detail?: string;
             durationMs?: number;
+            startedAtMs?: number;
         }>
     >([
         {
@@ -430,7 +514,7 @@
             step: 3,
             status: 'pending',
             label: 'Composition Agent',
-            detail: 'Generating answer with deployed agent...',
+            detail: 'Generating answer...',
         },
     ]);
 
@@ -511,40 +595,140 @@
         return entries[entries.length - 1];
     });
 
+    function escapeHtml(text: string): string {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    const linkedOutput = computed(() => {
+        const output = agentResult.value?.output;
+        if (!output) return '';
+        const citations = agentResult.value?.citations ?? [];
+        const entityCitations = citations.filter(
+            (c) => (c.type === 'entity' || c.type === 'event') && c.label && c.neid
+        );
+        if (!entityCitations.length) return escapeHtml(output);
+
+        const sorted = [...entityCitations].sort((a, b) => b.label.length - a.label.length);
+        type Segment = { text: string; linked: boolean; neid?: string; label?: string };
+        let segments: Segment[] = [{ text: output, linked: false }];
+
+        for (const citation of sorted) {
+            const pattern = new RegExp(citation.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+            const next: Segment[] = [];
+            for (const seg of segments) {
+                if (seg.linked) {
+                    next.push(seg);
+                    continue;
+                }
+                let lastIndex = 0;
+                let match: RegExpExecArray | null;
+                let found = false;
+                while ((match = pattern.exec(seg.text)) !== null) {
+                    found = true;
+                    if (match.index > lastIndex) {
+                        next.push({ text: seg.text.slice(lastIndex, match.index), linked: false });
+                    }
+                    next.push({
+                        text: match[0],
+                        linked: true,
+                        neid: citation.neid,
+                        label: citation.label,
+                    });
+                    lastIndex = match.index + match[0].length;
+                }
+                if (!found) {
+                    next.push(seg);
+                } else if (lastIndex < seg.text.length) {
+                    next.push({ text: seg.text.slice(lastIndex), linked: false });
+                }
+            }
+            segments = next;
+        }
+
+        return segments
+            .map((seg) => {
+                if (seg.linked && seg.neid) {
+                    return `<a class="entity-link" data-neid="${escapeHtml(seg.neid)}" title="Open ${escapeHtml(seg.label ?? seg.text)}">${escapeHtml(seg.text)}</a>`;
+                }
+                return escapeHtml(seg.text);
+            })
+            .join('');
+    });
+
+    function handleOutputClick(e: MouseEvent) {
+        const target = e.target as HTMLElement;
+        if (!target.classList.contains('entity-link')) return;
+        const neid = target.dataset.neid;
+        if (neid) selectEntity(neid);
+    }
+
+    const stepLabels: Record<number, { label: string; detail: string }> = {
+        1: { label: 'Dialogue Agent', detail: 'Interpreting your question...' },
+        2: { label: 'Context Assembly Agent', detail: 'Collecting graph evidence...' },
+        3: { label: 'Composition Agent', detail: 'Generating answer...' },
+    };
+
     watch(agentLoading, (loading) => {
         if (!loading) return;
+        const now = Date.now();
         askYottaSteps.value = [
-            {
-                step: 1,
-                status: 'working',
-                label: 'Dialogue Agent',
-                detail: 'Interpreting your question...',
-            },
-            {
-                step: 2,
-                status: 'pending',
-                label: 'Context Assembly Agent',
-                detail: 'Collecting graph evidence...',
-            },
-            {
-                step: 3,
-                status: 'pending',
-                label: 'Composition Agent',
-                detail: 'Generating answer...',
-            },
+            { step: 1, status: 'working', ...stepLabels[1], startedAtMs: now },
+            { step: 2, status: 'pending', ...stepLabels[2] },
+            { step: 3, status: 'pending', ...stepLabels[3] },
         ];
     });
+
+    watch(
+        () => agentStepsLive.value,
+        (serverSteps) => {
+            if (!serverSteps?.length) return;
+            const now = Date.now();
+            askYottaSteps.value = serverSteps.map((s) => {
+                const existing = askYottaSteps.value.find((e) => e.step === s.step);
+                const display = stepLabels[s.step] ?? { label: s.label, detail: s.detail };
+                if (s.status === 'working') {
+                    return {
+                        ...s,
+                        label: display.label,
+                        detail: display.detail,
+                        startedAtMs: existing?.startedAtMs ?? now,
+                    };
+                }
+                if (s.status === 'completed') {
+                    return {
+                        ...s,
+                        label: display.label,
+                        detail: display.detail,
+                        startedAtMs: undefined,
+                    };
+                }
+                return { ...s, label: display.label, detail: display.detail };
+            });
+        },
+        { deep: true }
+    );
+
     watch(
         () => agentResult.value?.agentSteps,
         (steps) => {
             if (!steps?.length) return;
-            askYottaSteps.value = steps.map((step) => ({
-                step: step.step,
-                status: step.status,
-                label: step.label,
-                detail: step.detail,
-                durationMs: step.durationMs,
-            }));
+            askYottaSteps.value = steps.map((step) => {
+                const display = stepLabels[step.step] ?? {
+                    label: step.label,
+                    detail: step.detail,
+                };
+                return {
+                    step: step.step,
+                    status: step.status,
+                    label: display.label,
+                    detail: display.detail,
+                    durationMs: step.durationMs,
+                };
+            });
         }
     );
 
@@ -559,6 +743,7 @@
     async function runAskYottaPrompt(prompt: string) {
         if (agentLoading.value) return;
         askYottaQuestion.value = prompt;
+        submittedQuestion.value = prompt;
         const action = resolveAskAction(prompt);
         if (action === 'summarize_collection') {
             await runAgentAction('summarize_collection');
@@ -569,6 +754,7 @@
 
     async function runAskYottaQuestion() {
         if (!askYottaQuestion.value || agentLoading.value) return;
+        submittedQuestion.value = askYottaQuestion.value;
         const action = resolveAskAction(askYottaQuestion.value);
         if (action === 'summarize_collection') {
             await runAgentAction('summarize_collection');
@@ -730,18 +916,61 @@
         );
     }
 
-    .ask-yotta-output {
-        border: 1px solid var(--app-divider);
-        border-radius: 12px;
-        padding: 10px;
+    .chat-bubble-row {
+        display: flex;
+    }
+
+    .chat-bubble-row--user {
+        justify-content: flex-end;
+    }
+
+    .chat-bubble-row--assistant {
+        justify-content: flex-start;
+    }
+
+    .chat-bubble {
+        max-width: 88%;
+        padding: 8px 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.45;
+    }
+
+    .chat-bubble--user {
+        background: color-mix(in srgb, rgb(var(--v-theme-primary)) 18%, transparent);
+        border: 1px solid color-mix(in srgb, rgb(var(--v-theme-primary)) 30%, transparent);
+        border-radius: 14px 14px 4px 14px;
+        color: rgb(var(--v-theme-on-surface));
+    }
+
+    .chat-bubble--assistant {
         background: color-mix(
             in srgb,
             var(--dynamic-panel-background) 88%,
             var(--dynamic-background) 12%
         );
-        max-height: 300px;
+        border: 1px solid var(--app-divider);
+        border-radius: 14px 14px 14px 4px;
+        max-height: 340px;
         overflow-y: auto;
-        white-space: pre-wrap;
+    }
+
+    .chat-agent-steps {
+        max-width: 88%;
+    }
+
+    .chat-bubble--assistant :deep(.entity-link) {
+        color: rgb(var(--v-theme-primary));
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-underline-offset: 2px;
+        cursor: pointer;
+        transition: opacity 0.15s ease;
+    }
+
+    .chat-bubble--assistant :deep(.entity-link:hover) {
+        opacity: 0.8;
+        text-decoration-style: solid;
     }
 
     .chat-content {

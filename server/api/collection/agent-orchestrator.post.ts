@@ -234,7 +234,11 @@ function buildCompositionPrompt(input: CompositionAgentInput): string {
     return ['Return strict JSON only.', JSON.stringify(input)].join('\n');
 }
 
-export default defineEventHandler(async (event): Promise<AskYottaPipelineResponse> => {
+function sseEvent(eventType: string, data: unknown): string {
+    return `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+export default defineEventHandler(async (event) => {
     const body = (await readBody<AskYottaRequest>(event)) ?? {};
     const action = String(body.action ?? 'answer_question').trim() || 'answer_question';
     const question = String(body.question ?? '').trim() || 'Provide a grounded answer.';
@@ -247,134 +251,189 @@ export default defineEventHandler(async (event): Promise<AskYottaPipelineRespons
             ...step,
             status: 'completed' as const,
         }));
-        return {
+        setResponseHeader(event, 'Content-Type', 'text/event-stream');
+        setResponseHeader(event, 'Cache-Control', 'no-cache');
+        setResponseHeader(event, 'Connection', 'keep-alive');
+        const result: AskYottaPipelineResponse = {
             output: 'Collection analysis is not ready yet. Run Initial Analysis first, then ask again for a grounded answer with entities, events, and relationships.',
             citations: [],
             generationSource: 'fallback',
             generationNote: 'Returned pre-analysis fallback because collection state is not ready.',
             agentSteps: stepSeed,
         };
+        return sseEvent('result', result) + sseEvent('done', {});
     }
 
     const agentIds = await resolveAskYottaAgentIds();
     if (!agentIds.planningAgentId || !agentIds.contextAgentId || !agentIds.compositionAgentId) {
+        setResponseHeader(event, 'Content-Type', 'text/event-stream');
+        setResponseHeader(event, 'Cache-Control', 'no-cache');
+        setResponseHeader(event, 'Connection', 'keep-alive');
         const fallback = await $fetch<AskYottaPipelineResponse>('/api/collection/answer', {
             method: 'POST',
             body: { action, question, entityNeid },
         });
-        return {
+        const result: AskYottaPipelineResponse = {
             ...fallback,
             generationNote:
                 fallback.generationNote ||
                 'Agent trio is not fully deployed/configured; served response from fallback route.',
         };
+        return sseEvent('result', result) + sseEvent('done', {});
     }
+
+    setResponseHeader(event, 'Content-Type', 'text/event-stream');
+    setResponseHeader(event, 'Cache-Control', 'no-cache');
+    setResponseHeader(event, 'Connection', 'keep-alive');
 
     const steps = seedAskYottaPipelineSteps();
     let startedAt = nowMs();
 
-    try {
-        const planningInput: PlanningAgentInput = {
-            action,
-            question,
-            entityNeid,
-            collection: summarizeCollection(collection),
-        };
-        const planningResult = await callAgentQuery({
-            agentId: agentIds.planningAgentId,
-            message: buildPlanningPrompt(planningInput),
-        });
-        const planning =
-            parseAgentJson<PlanningAgentOutput>(planningResult.text) ??
-            ({
-                intent: action,
-                answerStyle: 'qa',
-                focusEntityNeids: entityNeid ? [entityNeid] : [],
-                requestedEvidence: ['top entities', 'top events', 'top relationships'],
-            } as PlanningAgentOutput);
-        startedAt = completeStep(steps, 1, startedAt);
+    const stream = new ReadableStream({
+        async start(controller) {
+            const send = (eventType: string, data: unknown) => {
+                controller.enqueue(new TextEncoder().encode(sseEvent(eventType, data)));
+            };
 
-        const fallbackContext = contextFallbackBundle(collection, action, question, entityNeid);
-        const contextResult = await callAgentQuery({
-            agentId: agentIds.contextAgentId,
-            message: buildContextPrompt({
-                action,
-                question,
-                plan: planning,
-                fallbackContext,
-            }),
-        });
-        const context = parseAgentJson<ContextAgentOutput>(contextResult.text) ?? fallbackContext;
-        startedAt = completeStep(steps, 2, startedAt);
+            send('steps', steps);
 
-        const compositionInput: CompositionAgentInput = {
-            action,
-            question,
-            plan: planning,
-            context,
-        };
-        const compositionResult = await callAgentQuery({
-            agentId: agentIds.compositionAgentId,
-            message: buildCompositionPrompt(compositionInput),
-        });
-        const composition = parseAgentJson<CompositionAgentOutput>(compositionResult.text);
-        const output = String(composition?.output ?? compositionResult.text ?? '').trim();
-        const citations = sanitizeCitations(composition?.citations);
-        completeStep(steps, 3, startedAt);
-
-        if (!output || /^agent returned no text response\.?$/i.test(output)) {
             try {
-                const fallback = await $fetch<AskYottaPipelineResponse>('/api/collection/answer', {
-                    method: 'POST',
-                    body: { action, question, entityNeid },
-                });
-                return {
-                    ...fallback,
-                    agentSteps: steps,
-                    generationNote:
-                        fallback.generationNote ||
-                        'Composition agent returned empty text; served deterministic fallback answer.',
+                const planningInput: PlanningAgentInput = {
+                    action,
+                    question,
+                    entityNeid,
+                    collection: summarizeCollection(collection),
                 };
-            } catch {
+                const planningResult = await callAgentQuery({
+                    agentId: agentIds.planningAgentId!,
+                    message: buildPlanningPrompt(planningInput),
+                });
+                const planning =
+                    parseAgentJson<PlanningAgentOutput>(planningResult.text) ??
+                    ({
+                        intent: action,
+                        answerStyle: 'qa',
+                        focusEntityNeids: entityNeid ? [entityNeid] : [],
+                        requestedEvidence: ['top entities', 'top events', 'top relationships'],
+                    } as PlanningAgentOutput);
+                startedAt = completeStep(steps, 1, startedAt);
+                send('steps', steps);
+
                 const fallbackContext = contextFallbackBundle(
                     collection,
                     action,
                     question,
                     entityNeid
                 );
-                return {
-                    output: deterministicFallbackText({
+                const contextResult = await callAgentQuery({
+                    agentId: agentIds.contextAgentId!,
+                    message: buildContextPrompt({
                         action,
                         question,
-                        context: fallbackContext,
+                        plan: planning,
+                        fallbackContext,
                     }),
-                    citations: [],
-                    generationSource: 'fallback',
-                    generationNote:
-                        'Composition agent returned empty text and fallback route was unavailable; served local deterministic answer.',
-                    agentSteps: steps,
-                };
-            }
-        }
+                });
+                const context =
+                    parseAgentJson<ContextAgentOutput>(contextResult.text) ?? fallbackContext;
+                startedAt = completeStep(steps, 2, startedAt);
+                send('steps', steps);
 
-        return {
-            output: output || 'No response returned from composition agent.',
-            citations,
-            generationSource: 'gateway',
-            agentSteps: steps,
-        };
-    } catch (error: any) {
-        const fallback = await $fetch<AskYottaPipelineResponse>('/api/collection/answer', {
-            method: 'POST',
-            body: { action, question, entityNeid },
-        });
-        return {
-            ...fallback,
-            generationNote:
-                error?.data?.statusMessage ||
-                error?.message ||
-                fallback.generationNote ||
-                'Three-agent orchestration failed; served response from fallback route.',
-        };
-    }
+                const compositionInput: CompositionAgentInput = {
+                    action,
+                    question,
+                    plan: planning,
+                    context,
+                };
+                const compositionResult = await callAgentQuery({
+                    agentId: agentIds.compositionAgentId!,
+                    message: buildCompositionPrompt(compositionInput),
+                });
+                const composition = parseAgentJson<CompositionAgentOutput>(compositionResult.text);
+                const output = String(composition?.output ?? compositionResult.text ?? '').trim();
+                const citations = sanitizeCitations(composition?.citations);
+                completeStep(steps, 3, startedAt);
+                send('steps', steps);
+
+                if (!output || /^agent returned no text response\.?$/i.test(output)) {
+                    try {
+                        const fallback = await $fetch<AskYottaPipelineResponse>(
+                            '/api/collection/answer',
+                            {
+                                method: 'POST',
+                                body: { action, question, entityNeid },
+                            }
+                        );
+                        send('result', {
+                            ...fallback,
+                            agentSteps: steps,
+                            generationNote:
+                                fallback.generationNote ||
+                                'Composition agent returned empty text; served deterministic fallback answer.',
+                        });
+                    } catch {
+                        const fbContext = contextFallbackBundle(
+                            collection,
+                            action,
+                            question,
+                            entityNeid
+                        );
+                        send('result', {
+                            output: deterministicFallbackText({
+                                action,
+                                question,
+                                context: fbContext,
+                            }),
+                            citations: [],
+                            generationSource: 'fallback',
+                            generationNote:
+                                'Composition agent returned empty text and fallback route was unavailable; served local deterministic answer.',
+                            agentSteps: steps,
+                        });
+                    }
+                } else {
+                    send('result', {
+                        output: output || 'No response returned from composition agent.',
+                        citations,
+                        generationSource: 'gateway',
+                        agentSteps: steps,
+                    } satisfies AskYottaPipelineResponse);
+                }
+            } catch (error: any) {
+                try {
+                    const fallback = await $fetch<AskYottaPipelineResponse>(
+                        '/api/collection/answer',
+                        {
+                            method: 'POST',
+                            body: { action, question, entityNeid },
+                        }
+                    );
+                    send('result', {
+                        ...fallback,
+                        generationNote:
+                            error?.data?.statusMessage ||
+                            error?.message ||
+                            fallback.generationNote ||
+                            'Three-agent orchestration failed; served response from fallback route.',
+                    });
+                } catch {
+                    send('result', {
+                        output: 'Agent action failed. Please try again.',
+                        citations: [],
+                        generationSource: 'fallback',
+                        generationNote:
+                            error?.data?.statusMessage ||
+                            error?.message ||
+                            'Three-agent orchestration and fallback both failed.',
+                        agentSteps: steps,
+                    } satisfies AskYottaPipelineResponse);
+                }
+            }
+
+            send('done', {});
+            controller.close();
+        },
+    });
+
+    return stream;
 });

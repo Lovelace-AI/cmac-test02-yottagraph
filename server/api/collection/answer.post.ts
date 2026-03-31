@@ -359,7 +359,7 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
             timeoutMs: 40000,
             retries: 2,
             systemInstruction:
-                'You are Ask Yotta. Answer with collection-grounded evidence only. Be specific: name relationships, events, and source documents when available. Never claim tools are unavailable.',
+                'You are Ask Yotta. Answer with collection-grounded evidence only. Be specific: name relationships, events, and source documents when available. Never claim tools are unavailable. Do not include recommendations, suggested next steps, or action items unless the user explicitly asks for them.',
             prompt: [
                 'Return strict JSON only with this schema:',
                 '{"output":"","citations":[{"type":"entity|event|document","neid":"","label":""}]}',

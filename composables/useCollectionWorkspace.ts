@@ -258,17 +258,17 @@ const rebuilding = ref(false);
 const rebuildSteps = ref<RebuildStep[]>(INITIAL_STEPS.map((s) => ({ ...s })));
 const enriching = ref(false);
 const enrichmentAnchorNeids = ref<string[]>([]);
-const enrichmentHops = ref<1 | 2>(1);
 const enrichmentIncludeEvents = ref(true);
 const enrichmentLastRun = ref<{
     anchorNeids: string[];
-    hops: 1 | 2;
+    hops: 1;
     includeEvents: boolean;
     ranAt: string;
 } | null>(null);
 const agentLoading = ref(false);
 type AgentAnswerResult = AskYottaPipelineResponse;
 const agentResult = ref<AgentAnswerResult | null>(null);
+const agentStepsLive = ref<AgentPipelineStep[] | null>(null);
 const mcpLog = ref<McpLogEntry[]>([]);
 const geminiLog = ref<GeminiUsageEntry[]>([]);
 let _geminiIdCounter = 0;
@@ -302,7 +302,7 @@ function gatewayPromptForAction(
     resolveName?: (neid: string) => string
 ): string {
     if (action === 'summarize_collection') {
-        return 'Summarize this collection in plain English, highlight central entities/events, and end with three recommended checks.';
+        return 'Summarize this collection in plain English. Highlight the most central entities and significant events. Do not include recommendations or suggested next steps.';
     }
     if (action === 'explain_entity' && params?.entityNeid) {
         if (params?.question?.trim()) return params.question.trim();
@@ -580,32 +580,23 @@ export function useCollectionWorkspace() {
                 enrichedEventsDegree1.value
             ),
         };
-        const fallbackRaw2Degrees = {
-            entityCount: enrichedEntitiesDegree2.value.length,
-            eventCount: enrichedEventsDegree2.value.length,
-            relationshipCount: enrichedRelationshipsDegree2.value.length,
-            propertyCount: derivePropertyCount(
-                enrichedEntitiesDegree2.value,
-                enrichedEventsDegree2.value
-            ),
-        };
         const persisted = collection.value.meta.enrichmentCounts;
         return {
             document: persisted?.document ?? fallbackDocument,
             raw1Degree: persisted?.raw1Degree ?? persisted?.degree1 ?? fallbackRaw1Degree,
-            raw2Degrees: persisted?.raw2Degrees ?? persisted?.degree2 ?? fallbackRaw2Degrees,
+            kgOneHop: persisted?.kgOneHop ?? persisted?.raw1Degree ?? fallbackRaw1Degree,
         };
     });
     const enrichmentComparison = computed(() => {
+        const kgOneHop = enrichmentCounts.value.kgOneHop ?? enrichmentCounts.value.raw1Degree;
         return {
             documentTruth: enrichmentCounts.value.document,
-            raw1Degree: enrichmentCounts.value.raw1Degree,
-            raw2Degrees: enrichmentCounts.value.raw2Degrees,
+            kgOneHop,
             netAdditions: {
-                entityCount: enrichmentCounts.value.raw1Degree.entityCount,
-                eventCount: enrichmentCounts.value.raw1Degree.eventCount,
-                relationshipCount: enrichmentCounts.value.raw1Degree.relationshipCount,
-                propertyCount: enrichmentCounts.value.raw1Degree.propertyCount,
+                entityCount: kgOneHop.entityCount,
+                eventCount: kgOneHop.eventCount,
+                relationshipCount: kgOneHop.relationshipCount,
+                propertyCount: kgOneHop.propertyCount,
             },
         };
     });
@@ -1530,50 +1521,14 @@ export function useCollectionWorkspace() {
         outsideEventCount: outsideEvents.value.length,
         takeawayBullets: enrichmentTakeawayBullets.value,
     }));
-    const enrichableExtractedEntityGroups = computed<EnrichableExtractedEntityGroup[]>(() => {
-        const documentNeids = new Set(documentEntities.value.map((entity) => entity.neid));
-        const enrichableDocumentNeids = new Set<string>();
-        for (const relationship of enrichedRelationships.value) {
-            if (documentNeids.has(relationship.sourceNeid))
-                enrichableDocumentNeids.add(relationship.sourceNeid);
-            if (documentNeids.has(relationship.targetNeid))
-                enrichableDocumentNeids.add(relationship.targetNeid);
-        }
-        for (const eventItem of enrichedEventsDegree2.value) {
-            for (const participantNeid of eventItem.participantNeids) {
-                if (documentNeids.has(participantNeid))
-                    enrichableDocumentNeids.add(participantNeid);
-            }
-        }
-        const grouped = new Map<string, EntityRecord[]>();
-        const buckets = [
-            { key: 'organization', label: 'Organizations' },
-            { key: 'person', label: 'People' },
-            { key: 'financial_instrument', label: 'Financial Instruments' },
-            { key: 'fund_account', label: 'Fund Accounts' },
-            { key: 'location', label: 'Locations' },
-        ];
-        for (const entity of documentEntities.value) {
-            if (!enrichableDocumentNeids.has(entity.neid)) continue;
-            const flavorKey = entity.flavor.replace(/^schema::flavor::/, '');
-            if (!buckets.some((bucket) => bucket.key === flavorKey)) continue;
-            const existing = grouped.get(flavorKey) ?? [];
-            existing.push(entity);
-            grouped.set(flavorKey, existing);
-        }
-        return buckets.map((bucket) => ({
-            key: bucket.key,
-            label: bucket.label,
-            entities: (grouped.get(bucket.key) ?? [])
-                .slice()
-                .sort((a, b) => a.name.localeCompare(b.name)),
-        }));
-    });
     const topConnectedExtractedEntities = computed<TopConnectedExtractedEntity[]>(() => {
         const documentNeids = new Set(documentEntities.value.map((entity) => entity.neid));
         const neighborByEntity = new Map<string, Set<string>>();
-        const relationshipCountByEntity = new Map<string, number>();
-        const eventCountByEntity = new Map<string, number>();
+        const fallbackRelationshipCountByEntity = new Map<string, number>();
+        const fallbackEventCountByEntity = new Map<string, number>();
+        const kgCountsByEntity = new Map(
+            (collection.value.meta.kgPerEntity ?? []).map((entry) => [entry.neid, entry] as const)
+        );
 
         const addNeighbor = (source: string, target: string) => {
             if (!neighborByEntity.has(source)) neighborByEntity.set(source, new Set());
@@ -1592,8 +1547,8 @@ export function useCollectionWorkspace() {
             }
             addNeighbor(relationship.sourceNeid, relationship.targetNeid);
             addNeighbor(relationship.targetNeid, relationship.sourceNeid);
-            increment(relationshipCountByEntity, relationship.sourceNeid);
-            increment(relationshipCountByEntity, relationship.targetNeid);
+            increment(fallbackRelationshipCountByEntity, relationship.sourceNeid);
+            increment(fallbackRelationshipCountByEntity, relationship.targetNeid);
         }
 
         for (const eventItem of documentEvents.value) {
@@ -1601,7 +1556,7 @@ export function useCollectionWorkspace() {
                 new Set(eventItem.participantNeids.filter((neid) => documentNeids.has(neid)))
             );
             for (const participantNeid of participants) {
-                increment(eventCountByEntity, participantNeid);
+                increment(fallbackEventCountByEntity, participantNeid);
             }
             for (let index = 0; index < participants.length; index += 1) {
                 for (let inner = index + 1; inner < participants.length; inner += 1) {
@@ -1619,8 +1574,14 @@ export function useCollectionWorkspace() {
                 name: entity.name,
                 flavor: entity.flavor,
                 linkedEntityCount: neighborByEntity.get(entity.neid)?.size ?? 0,
-                relationshipCount: relationshipCountByEntity.get(entity.neid) ?? 0,
-                eventCount: eventCountByEntity.get(entity.neid) ?? 0,
+                relationshipCount:
+                    kgCountsByEntity.get(entity.neid)?.relationshipCount ??
+                    fallbackRelationshipCountByEntity.get(entity.neid) ??
+                    0,
+                eventCount:
+                    kgCountsByEntity.get(entity.neid)?.eventCount ??
+                    fallbackEventCountByEntity.get(entity.neid) ??
+                    0,
                 sourceCount: entity.sourceDocuments.length,
             }))
             .filter(
@@ -1630,12 +1591,12 @@ export function useCollectionWorkspace() {
                     entity.eventCount > 0
             )
             .sort((a, b) => {
-                const linkedDelta = b.linkedEntityCount - a.linkedEntityCount;
-                if (linkedDelta !== 0) return linkedDelta;
                 const relationshipDelta = b.relationshipCount - a.relationshipCount;
                 if (relationshipDelta !== 0) return relationshipDelta;
                 const eventDelta = b.eventCount - a.eventCount;
                 if (eventDelta !== 0) return eventDelta;
+                const linkedDelta = b.linkedEntityCount - a.linkedEntityCount;
+                if (linkedDelta !== 0) return linkedDelta;
                 return a.name.localeCompare(b.name);
             })
             .slice(0, 12);
@@ -2302,9 +2263,9 @@ export function useCollectionWorkspace() {
         const isDeployedRuntime =
             typeof window !== 'undefined' &&
             !/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(window.location.hostname);
-        const STREAM_PROGRESS_TIMEOUT_MS = isDeployedRuntime ? 180_000 : 90_000;
+        const STREAM_PROGRESS_TIMEOUT_MS = isDeployedRuntime ? 180_000 : 120_000;
         const STREAM_TOTAL_TIMEOUT_MS = isDeployedRuntime ? 480_000 : 300_000;
-        const STREAM_RECOVERY_TIMEOUT_MS = isDeployedRuntime ? 30_000 : 8_000;
+        const STREAM_RECOVERY_TIMEOUT_MS = isDeployedRuntime ? 30_000 : 15_000;
         const STREAM_RECOVERY_POLL_MS = 2_000;
         let timeoutPoll: ReturnType<typeof setInterval> | null = null;
         rebuilding.value = true;
@@ -2464,7 +2425,7 @@ export function useCollectionWorkspace() {
                 if (workingStepIdx >= 0) {
                     rebuildSteps.value[workingStepIdx] = {
                         ...rebuildSteps.value[workingStepIdx],
-                        detail: `Stream recovery failed, switching to fallback rebuild… (${fallbackReason})`,
+                        detail: `Stream recovery failed, running fallback rebuild now… (${fallbackReason})`,
                     };
                 }
                 await runFallbackRebuild(fallbackReason);
@@ -2534,12 +2495,10 @@ export function useCollectionWorkspace() {
         geminiLog.value.push({ id: ++_geminiIdCounter, ...entry });
     }
 
-    async function enrich(anchorNeids: string[], hops = 1, includeEvents = true): Promise<void> {
+    async function enrich(anchorNeids: string[], includeEvents = true): Promise<void> {
         enriching.value = true;
         try {
-            const boundedHops: 1 | 2 = hops >= 2 ? 2 : 1;
             enrichmentAnchorNeids.value = [...anchorNeids];
-            enrichmentHops.value = boundedHops;
             enrichmentIncludeEvents.value = includeEvents;
             enrichmentWatchlistThemes.value = [];
             enrichmentWatchlistError.value = null;
@@ -2595,9 +2554,22 @@ export function useCollectionWorkspace() {
                         propertyCount?: number;
                     };
                 };
+                kgTotals?: {
+                    oneHop?: {
+                        entityCount: number;
+                        eventCount: number;
+                        relationshipCount: number;
+                        propertyCount: number;
+                    };
+                    perEntity?: Array<{
+                        neid: string;
+                        relationshipCount: number;
+                        eventCount: number;
+                    }>;
+                };
             }>('/api/collection/enrich', {
                 method: 'POST',
-                body: { anchorNeids, hops: boundedHops, includeEvents },
+                body: { anchorNeids, includeEvents },
             });
 
             const existingNeids = new Set(collection.value.entities.map((e) => e.neid));
@@ -2627,7 +2599,7 @@ export function useCollectionWorkspace() {
             collection.value.meta.entityCount = collection.value.entities.length;
             collection.value.meta.relationshipCount = collection.value.relationships.length;
             collection.value.meta.eventCount = collection.value.events.length;
-            if (result.counts?.rawByDepth || result.counts?.byDepth) {
+            if (result.counts?.rawByDepth || result.counts?.byDepth || result.kgTotals?.oneHop) {
                 collection.value.meta.enrichmentCounts = {
                     document:
                         collection.value.meta.enrichmentCounts?.document ??
@@ -2637,12 +2609,14 @@ export function useCollectionWorkspace() {
                         result.counts?.byDepth?.degree1 ??
                         collection.value.meta.enrichmentCounts?.raw1Degree ??
                         enrichmentCounts.value.raw1Degree,
-                    raw2Degrees:
-                        result.counts?.rawByDepth?.degree2 ??
-                        result.counts?.byDepth?.degree2 ??
-                        collection.value.meta.enrichmentCounts?.raw2Degrees ??
-                        enrichmentCounts.value.raw2Degrees,
+                    kgOneHop:
+                        result.kgTotals?.oneHop ??
+                        collection.value.meta.enrichmentCounts?.kgOneHop ??
+                        enrichmentCounts.value.kgOneHop,
                 };
+            }
+            if (result.kgTotals?.perEntity) {
+                collection.value.meta.kgPerEntity = result.kgTotals.perEntity;
             }
             if (result.caps) {
                 collection.value.meta.enrichmentCaps = {
@@ -2662,7 +2636,7 @@ export function useCollectionWorkspace() {
             }
             enrichmentLastRun.value = {
                 anchorNeids: [...anchorNeids],
-                hops: boundedHops,
+                hops: 1,
                 includeEvents,
                 ranAt: new Date().toISOString(),
             };
@@ -2746,36 +2720,89 @@ export function useCollectionWorkspace() {
     ): Promise<void> {
         agentLoading.value = true;
         agentResult.value = null;
+        agentStepsLive.value = null;
         try {
             const prompt = gatewayPromptForAction(action, params, resolveEntityName);
-            const result = await $fetch<AgentAnswerResult>('/api/collection/agent-orchestrator', {
+            const response = await fetch('/api/collection/agent-orchestrator', {
                 method: 'POST',
-                body: {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     action,
                     question: prompt,
                     entityNeid: params?.entityNeid,
-                },
+                }),
             });
-            const output = result?.output?.trim() || 'Agent returned no text response.';
-            agentResult.value = {
-                output,
-                citations: result?.citations ?? [],
-                generationSource: result?.generationSource ?? 'fallback',
-                generationNote: result?.generationNote,
-                usage: result?.usage,
-                agentSteps: (result?.agentSteps ?? []) as AgentPipelineStep[],
-            };
-            if (result?.usage) {
-                addGeminiUsage({
-                    model: result.usage.model,
-                    promptTokens: result.usage.promptTokens,
-                    completionTokens: result.usage.completionTokens,
-                    totalTokens: result.usage.totalTokens,
-                    costUsd: result.usage.costUsd,
-                    latencyMs: 0,
-                    timestamp: new Date().toISOString(),
-                    label: `collection_answer:${action}`,
-                });
+
+            if (!response.ok || !response.body) {
+                const text = await response.text();
+                agentResult.value = {
+                    output: text || 'Agent action failed',
+                    citations: [],
+                };
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                let boundary = buffer.indexOf('\n\n');
+                while (boundary !== -1) {
+                    const chunk = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+
+                    const eventMatch = chunk.match(/^event:\s*(.+)/m);
+                    const dataMatch = chunk.match(/^data:\s*(.+)/m);
+                    if (!eventMatch || !dataMatch) {
+                        boundary = buffer.indexOf('\n\n');
+                        continue;
+                    }
+
+                    const eventType = eventMatch[1].trim();
+                    let payload: any;
+                    try {
+                        payload = JSON.parse(dataMatch[1]);
+                    } catch {
+                        boundary = buffer.indexOf('\n\n');
+                        continue;
+                    }
+
+                    if (eventType === 'steps') {
+                        agentStepsLive.value = (payload as AgentPipelineStep[]).map((s) => ({
+                            ...s,
+                        }));
+                    } else if (eventType === 'result') {
+                        const result = payload as AgentAnswerResult;
+                        const output = result?.output?.trim() || 'Agent returned no text response.';
+                        agentResult.value = {
+                            output,
+                            citations: result?.citations ?? [],
+                            generationSource: result?.generationSource ?? 'fallback',
+                            generationNote: result?.generationNote,
+                            usage: result?.usage,
+                            agentSteps: (result?.agentSteps ?? []) as AgentPipelineStep[],
+                        };
+                        if (result?.usage) {
+                            addGeminiUsage({
+                                model: result.usage.model,
+                                promptTokens: result.usage.promptTokens,
+                                completionTokens: result.usage.completionTokens,
+                                totalTokens: result.usage.totalTokens,
+                                costUsd: result.usage.costUsd,
+                                latencyMs: 0,
+                                timestamp: new Date().toISOString(),
+                                label: `collection_answer:${action}`,
+                            });
+                        }
+                    }
+
+                    boundary = buffer.indexOf('\n\n');
+                }
             }
         } catch (e: any) {
             agentResult.value = {
@@ -2784,6 +2811,7 @@ export function useCollectionWorkspace() {
             };
         } finally {
             agentLoading.value = false;
+            agentStepsLive.value = null;
         }
     }
 
@@ -2797,10 +2825,6 @@ export function useCollectionWorkspace() {
 
     function setEnrichmentAnchors(anchorNeids: string[]): void {
         enrichmentAnchorNeids.value = [...new Set(anchorNeids)];
-    }
-
-    function setEnrichmentHops(hops: 1 | 2): void {
-        enrichmentHops.value = hops;
     }
 
     function setEnrichmentIncludeEvents(includeEvents: boolean): void {
@@ -2830,6 +2854,7 @@ export function useCollectionWorkspace() {
         enriching: computed(() => enriching.value),
         agentLoading: computed(() => agentLoading.value),
         agentResult: computed(() => agentResult.value),
+        agentStepsLive: computed(() => agentStepsLive.value),
         mcpLog: computed(() => mcpLog.value),
         geminiLog: computed(() => geminiLog.value),
         documents,
@@ -2853,7 +2878,6 @@ export function useCollectionWorkspace() {
         enrichedRelationshipsDegree1,
         enrichedRelationshipsDegree2,
         enrichmentAnchorNeids: computed(() => enrichmentAnchorNeids.value),
-        enrichmentHops: computed(() => enrichmentHops.value),
         enrichmentIncludeEvents: computed(() => enrichmentIncludeEvents.value),
         enrichmentLastRun: computed(() => enrichmentLastRun.value),
         hasEnrichmentRun,
@@ -2878,7 +2902,6 @@ export function useCollectionWorkspace() {
         enrichmentLanguageError: computed(() => enrichmentLanguageError.value),
         enrichmentCounts,
         enrichmentComparison,
-        enrichableExtractedEntityGroups,
         topConnectedExtractedEntities,
         strictProjectLocationEntities,
         recentCoverageAnchors,
@@ -2930,7 +2953,6 @@ export function useCollectionWorkspace() {
         selectEntity,
         setTab,
         setEnrichmentAnchors,
-        setEnrichmentHops,
         setEnrichmentIncludeEvents,
         resolveEntityName,
     };
