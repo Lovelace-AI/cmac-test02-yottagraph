@@ -108,7 +108,10 @@
                     />
 
                     <CollectionOverview v-if="currentTab === 'overview'" />
-                    <GraphWorkspace v-else-if="currentTab === 'graph'" />
+                    <GraphWorkspace
+                        v-else-if="currentTab === 'graph'"
+                        :initial-source-backed-only="true"
+                    />
                     <EventsView v-else-if="currentTab === 'events'" />
                     <InsightsView
                         v-else-if="currentTab === 'insights'"
@@ -128,7 +131,8 @@
             </div>
             <div v-if="showEntityAsDrawer && entityDrawerOpen" class="entity-overlay-layer pa-2">
                 <div ref="entityPanelRoot" class="entity-panel-shell entity-panel-shell--desktop">
-                    <EntityDetailPanel />
+                    <EventDetailPanel v-if="selectedEvent" />
+                    <EntityDetailPanel v-else />
                 </div>
             </div>
         </div>
@@ -142,7 +146,8 @@
             class="entity-dialog"
         >
             <div ref="entityPanelRoot" class="entity-dialog-shell entity-panel-shell">
-                <EntityDetailPanel />
+                <EventDetailPanel v-if="selectedEvent" />
+                <EntityDetailPanel v-else />
             </div>
         </v-dialog>
 
@@ -511,6 +516,7 @@
         askYottaLoading,
         askYottaThread,
         selectedEntity,
+        selectedEvent,
         selectEntity,
     } = useCollectionWorkspace();
 
@@ -538,7 +544,7 @@
     >;
     const currentTabLabel = computed(() => tabLabelByValue[currentTab.value] ?? 'Overview');
     const entityDrawerOpen = computed<boolean>({
-        get: () => Boolean(selectedEntity.value),
+        get: () => Boolean(selectedEntity.value || selectedEvent.value),
         set: (isOpen) => {
             if (!isOpen) selectEntity(null);
         },

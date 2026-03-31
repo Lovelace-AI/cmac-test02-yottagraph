@@ -350,6 +350,7 @@
         relationshipsOverride?: RelationshipRecord[];
         showEnrichedEntities?: boolean;
         showEnrichedRelationships?: boolean;
+        initialSourceBackedOnly?: boolean;
         initialAnalysisMode?:
             | 'centrality'
             | 'relationship'
@@ -457,7 +458,7 @@
         | 'edge_cluster'
     >(props.initialAnalysisMode ?? 'centrality');
     const relationshipTypeFilter = ref<string | null>(null);
-    const sourceBackedOnly = ref(false);
+    const sourceBackedOnly = ref(props.initialSourceBackedOnly ?? false);
     const highConfidenceOnly = ref(false);
     const includeContextEndpoints = ref(true);
     const pathStart = ref<string | null>(null);

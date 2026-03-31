@@ -33,9 +33,7 @@
                     :items-per-page="20"
                     density="compact"
                     hover
-                    @click:row="
-                        (_: any, row: any) => selectEntity(row.item.participantNeids[0] ?? null)
-                    "
+                    @click:row="(_: any, row: any) => selectEvent(row.item.neid)"
                 >
                     <template v-slot:item.name="{ item }">
                         <span class="text-body-2">{{ item.name }}</span>
@@ -85,14 +83,19 @@
         <div v-else-if="viewMode === 'timeline'" style="position: relative">
             <DenseTimeline
                 :events="filteredEventsSorted"
-                @select="(eventItem) => selectEntity(eventItem.participantNeids[0] ?? null)"
+                @select="(eventItem) => selectEvent(eventItem.neid)"
             />
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
-    const { documentEvents: events, selectEntity, resolveEntityName } = useCollectionWorkspace();
+    const {
+        documentEvents: events,
+        selectEntity,
+        selectEvent,
+        resolveEntityName,
+    } = useCollectionWorkspace();
 
     type EventViewMode = 'timeline' | 'table';
     const viewMode = ref<EventViewMode>('timeline');
