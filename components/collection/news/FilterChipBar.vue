@@ -39,19 +39,19 @@
     .filter-bar {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 6px;
         overflow-x: auto;
         padding-bottom: 2px;
     }
 
     .filter-chip {
-        border: 1px solid var(--app-divider);
-        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--app-divider) 86%, transparent);
+        border-radius: 8px;
         background: color-mix(in srgb, var(--dynamic-surface) 86%, transparent);
         color: var(--dynamic-text-secondary);
-        font-size: 0.74rem;
+        font-size: 0.71rem;
         line-height: 1;
-        padding: 6px 10px;
+        padding: 5px 8px;
         white-space: nowrap;
         transition:
             background-color 0.15s ease,
@@ -74,6 +74,16 @@
     .filter-chip--active {
         border-color: color-mix(in srgb, var(--dynamic-primary) 44%, var(--app-divider));
         color: var(--dynamic-text-primary);
-        background: color-mix(in srgb, var(--dynamic-primary) 14%, var(--dynamic-surface));
+        background: color-mix(in srgb, var(--dynamic-primary) 11%, var(--dynamic-surface));
+    }
+
+    :global(:root[data-app-color-mode='dark']) .filter-chip {
+        border-color: color-mix(in srgb, var(--app-divider) 60%, transparent);
+        background: color-mix(in srgb, var(--dynamic-surface) 72%, var(--dynamic-background) 28%);
+    }
+
+    :global(:root[data-app-color-mode='dark']) .filter-chip--active {
+        border-color: color-mix(in srgb, var(--dynamic-primary) 28%, var(--app-divider));
+        background: color-mix(in srgb, var(--dynamic-primary) 10%, var(--dynamic-surface));
     }
 </style>

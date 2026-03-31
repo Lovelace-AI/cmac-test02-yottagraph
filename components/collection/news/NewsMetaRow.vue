@@ -1,6 +1,8 @@
 <template>
     <div class="meta-row">
-        <span class="meta-source">{{ sourceName || 'Unknown source' }}</span>
+        <span class="meta-source" :title="sourceName || 'Unknown source'">
+            {{ sourceName || 'Unknown source' }}
+        </span>
         <span class="meta-separator">•</span>
         <span :class="['meta-date', { 'meta-date--missing': datePresentation.isUnavailable }]">
             {{ datePresentation.absolute }}
@@ -9,9 +11,7 @@
         <span v-if="datePresentation.relative" class="meta-relative">
             {{ datePresentation.relative }}
         </span>
-        <v-chip v-if="categoryLabel" size="x-small" variant="flat" class="meta-badge">
-            {{ categoryLabel }}
-        </v-chip>
+        <span v-if="categoryLabel" class="meta-badge">{{ categoryLabel }}</span>
     </div>
 </template>
 
@@ -32,14 +32,18 @@
         display: flex;
         align-items: center;
         flex-wrap: wrap;
-        gap: 6px;
+        gap: 5px;
         min-width: 0;
-        font-size: 0.76rem;
+        font-size: 0.74rem;
         color: var(--dynamic-text-secondary);
     }
 
     .meta-source {
         font-weight: 500;
+        max-width: 220px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .meta-separator {
@@ -53,12 +57,22 @@
 
     .meta-relative {
         color: var(--dynamic-text-muted);
+        white-space: nowrap;
     }
 
     .meta-badge {
-        margin-left: 4px;
-        border: 1px solid var(--app-divider);
+        margin-left: 3px;
+        border: 1px solid color-mix(in srgb, var(--app-divider) 84%, transparent);
+        border-radius: 6px;
         color: var(--dynamic-text-secondary);
+        font-size: 0.68rem;
+        line-height: 1.1;
+        padding: 2px 5px;
         background: color-mix(in srgb, var(--dynamic-surface) 84%, transparent);
+    }
+
+    :global(:root[data-app-color-mode='dark']) .meta-badge {
+        border-color: color-mix(in srgb, var(--app-divider) 62%, transparent);
+        background: color-mix(in srgb, var(--dynamic-surface) 74%, var(--dynamic-background) 26%);
     }
 </style>

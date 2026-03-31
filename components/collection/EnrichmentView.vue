@@ -232,7 +232,6 @@
                                 :category-label="primaryTopic(item.topics)"
                                 grouped
                                 compact
-                                :fallback-entity-name="resolveEntityName(group.anchorNeid)"
                             />
                         </div>
                     </section>
@@ -301,7 +300,6 @@
                                 :key="item.articleNeid"
                                 :item="item"
                                 grouped
-                                :fallback-entity-name="resolveEntityName(group.anchorNeid)"
                             />
                         </div>
                     </section>
@@ -514,9 +512,15 @@
     }
 
     .news-group-block {
-        border: 1px solid var(--app-divider);
-        border-radius: 12px;
-        background: color-mix(in srgb, var(--dynamic-surface) 94%, var(--dynamic-background) 6%);
-        padding: 10px 12px 4px;
+        padding: 2px 2px 0;
+    }
+
+    .news-group-block + .news-group-block {
+        border-top: 1px solid color-mix(in srgb, var(--app-divider) 86%, transparent);
+        padding-top: 12px;
+    }
+
+    :global(:root[data-app-color-mode='dark']) .news-group-block + .news-group-block {
+        border-top-color: color-mix(in srgb, var(--app-divider) 62%, transparent);
     }
 </style>

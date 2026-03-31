@@ -83,7 +83,6 @@
         categoryLabel?: string;
         compact?: boolean;
         grouped?: boolean;
-        fallbackEntityName?: string;
     }>();
 
     const headlineText = computed(
@@ -101,7 +100,6 @@
     const visibleEntityNames = computed(() => {
         if (props.item.linkedEntityNames.length > 0)
             return props.item.linkedEntityNames.slice(0, 4);
-        if (props.fallbackEntityName?.trim()) return [props.fallbackEntityName.trim()];
         return [];
     });
     const hasFooterMeta = computed(
@@ -119,8 +117,8 @@
 
 <style scoped>
     .news-article-item {
-        border-bottom: 1px solid var(--app-divider);
-        padding: 10px 2px;
+        border-bottom: 1px solid color-mix(in srgb, var(--app-divider) 88%, transparent);
+        padding: 8px 2px;
     }
 
     .news-article-item--interactive {
@@ -132,8 +130,7 @@
     }
 
     .news-article-item--interactive:hover {
-        background: color-mix(in srgb, var(--dynamic-hover) 44%, transparent);
-        box-shadow: 0 1px 0 color-mix(in srgb, var(--dynamic-primary) 18%, transparent);
+        background: color-mix(in srgb, var(--dynamic-hover) 28%, transparent);
     }
 
     .news-article-item--interactive:focus-visible {
@@ -151,9 +148,9 @@
 
     .headline {
         margin: 0;
-        font-size: 0.9rem;
-        line-height: 1.35;
-        font-weight: 600;
+        font-size: 0.92rem;
+        line-height: 1.32;
+        font-weight: 650;
         color: var(--dynamic-text-primary);
     }
 
@@ -173,10 +170,10 @@
     }
 
     .summary {
-        margin-top: 6px;
+        margin-top: 5px;
         margin-bottom: 0;
-        font-size: 0.82rem;
-        line-height: 1.45;
+        font-size: 0.8rem;
+        line-height: 1.4;
         color: var(--dynamic-text-secondary);
         display: -webkit-box;
         -webkit-line-clamp: 2;
@@ -186,11 +183,11 @@
 
     .news-article-item--compact .summary {
         margin-top: 4px;
-        font-size: 0.78rem;
+        font-size: 0.76rem;
     }
 
     .news-article-item--grouped {
-        padding-left: 8px;
+        padding-left: 4px;
     }
 
     .footer-row {
@@ -198,7 +195,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        margin-top: 8px;
+        margin-top: 6px;
     }
 
     .entity-list {
@@ -219,10 +216,19 @@
     .aux-badge {
         font-size: 0.7rem;
         color: var(--dynamic-text-muted);
-        border: 1px solid var(--app-divider);
+        border: 1px solid color-mix(in srgb, var(--app-divider) 84%, transparent);
         border-radius: 999px;
         padding: 2px 7px;
         white-space: nowrap;
         background: color-mix(in srgb, var(--dynamic-surface) 82%, transparent);
+    }
+
+    :global(:root[data-app-color-mode='dark']) .news-article-item {
+        border-bottom-color: color-mix(in srgb, var(--app-divider) 64%, transparent);
+    }
+
+    :global(:root[data-app-color-mode='dark']) .aux-badge {
+        border-color: color-mix(in srgb, var(--app-divider) 62%, transparent);
+        background: color-mix(in srgb, var(--dynamic-surface) 74%, var(--dynamic-background) 26%);
     }
 </style>

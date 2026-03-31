@@ -18,7 +18,7 @@
 
 <style scoped>
     .news-group-header {
-        padding: 6px 2px 8px;
+        padding: 4px 2px 6px;
         border-bottom: 1px solid var(--app-divider);
     }
 
@@ -30,14 +30,14 @@
     }
 
     .group-title {
-        font-size: 0.94rem;
+        font-size: 0.9rem;
         font-weight: 600;
         color: var(--dynamic-text-primary);
         margin: 0;
     }
 
     .group-count {
-        font-size: 0.73rem;
+        font-size: 0.71rem;
         color: var(--dynamic-text-muted);
         white-space: nowrap;
     }

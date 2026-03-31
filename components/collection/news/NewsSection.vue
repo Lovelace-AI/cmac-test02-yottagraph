@@ -22,10 +22,10 @@
 
 <style scoped>
     .news-section {
-        border: 1px solid var(--app-divider);
-        border-radius: 14px;
-        background: color-mix(in srgb, var(--dynamic-surface) 96%, var(--dynamic-background) 4%);
-        padding: 12px 14px;
+        border: 1px solid color-mix(in srgb, var(--app-divider) 82%, transparent);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--dynamic-surface) 97%, var(--dynamic-background) 3%);
+        padding: 10px 12px;
     }
 
     .news-section-header {
@@ -37,23 +37,28 @@
 
     .news-section-title {
         margin: 0;
-        font-size: 0.9rem;
+        font-size: 0.88rem;
         font-weight: 600;
     }
 
     .news-section-subtitle {
         margin: 0;
-        font-size: 0.75rem;
+        font-size: 0.73rem;
         color: var(--dynamic-text-muted);
     }
 
     .news-section-filters {
-        margin-bottom: 10px;
+        margin-bottom: 8px;
     }
 
     .news-section-content {
         display: flex;
         flex-direction: column;
         gap: 12px;
+    }
+
+    :global(:root[data-app-color-mode='dark']) .news-section {
+        border-color: color-mix(in srgb, var(--app-divider) 72%, transparent);
+        background: color-mix(in srgb, var(--dynamic-surface) 92%, var(--dynamic-background) 8%);
     }
 </style>
