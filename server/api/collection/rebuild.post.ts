@@ -634,7 +634,10 @@ export default defineEventHandler(async (): Promise<CollectionState> => {
                     ...enrichmentResult.counts.rawByDepth.degree1,
                 },
                 kgOneHop: {
-                    ...enrichmentResult.kgTotals.oneHop,
+                    entityCount: auditCounts.rawOneHop.entityCount,
+                    eventCount: auditCounts.rawOneHop.eventCount,
+                    relationshipCount: auditCounts.rawOneHop.relationshipCount,
+                    propertyCount: enrichmentResult.kgTotals.oneHop.propertyCount,
                 },
             },
             kgPerEntity: enrichmentResult.kgTotals.perEntity,
