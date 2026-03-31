@@ -2274,12 +2274,17 @@ export function useCollectionWorkspace() {
             !/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(window.location.hostname);
         const STREAM_PROGRESS_TIMEOUT_MS = isDeployedRuntime ? 180_000 : 90_000;
         const STREAM_TOTAL_TIMEOUT_MS = isDeployedRuntime ? 480_000 : 300_000;
+        const STREAM_RECOVERY_TIMEOUT_MS = isDeployedRuntime ? 30_000 : 8_000;
+        const STREAM_RECOVERY_POLL_MS = 2_000;
         let timeoutPoll: ReturnType<typeof setInterval> | null = null;
         rebuilding.value = true;
         collection.value.status = 'loading';
         collection.value.error = undefined;
         mcpLog.value = [];
         rebuildSteps.value = INITIAL_STEPS.map((s) => ({ ...s }));
+        const previousCachedAt = collection.value.meta.cachedAt;
+        const previousLastRebuilt = collection.value.meta.lastRebuilt;
+        const previousEntityCount = collection.value.meta.entityCount ?? 0;
 
         const runFallbackRebuild = async (reason: string) => {
             const fallbackState = await $fetch<CollectionState>('/api/collection/rebuild', {
@@ -2294,6 +2299,42 @@ export function useCollectionWorkspace() {
                         ? `Fallback rebuild completed (${reason}).`
                         : step.detail,
             }));
+        };
+        const canUseRecoveredState = (
+            state: CollectionState | null | undefined
+        ): state is CollectionState => {
+            if (!state || state.status !== 'ready') return false;
+            if ((state.meta.entityCount ?? 0) === 0) return false;
+            if (state.meta.lastRebuilt && state.meta.lastRebuilt !== previousLastRebuilt)
+                return true;
+            if (state.meta.cachedAt && state.meta.cachedAt !== previousCachedAt) return true;
+            return previousEntityCount === 0;
+        };
+        const tryRecoverFromBootstrap = async (reason: string): Promise<boolean> => {
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < STREAM_RECOVERY_TIMEOUT_MS) {
+                try {
+                    const recoveredState = await $fetch<CollectionState>(
+                        '/api/collection/bootstrap'
+                    );
+                    if (canUseRecoveredState(recoveredState)) {
+                        collection.value = recoveredState;
+                        rebuildSteps.value = INITIAL_STEPS.map((step, idx) => ({
+                            ...step,
+                            status: 'completed',
+                            detail:
+                                idx === INITIAL_STEPS.length - 1
+                                    ? `Recovered completed workspace after stream interruption (${reason}).`
+                                    : step.detail,
+                        }));
+                        return true;
+                    }
+                } catch {
+                    // Keep polling briefly before falling back to a full rebuild.
+                }
+                await new Promise((resolve) => setTimeout(resolve, STREAM_RECOVERY_POLL_MS));
+            }
+            return false;
         };
 
         try {
@@ -2383,7 +2424,17 @@ export function useCollectionWorkspace() {
                 if (workingStepIdx >= 0) {
                     rebuildSteps.value[workingStepIdx] = {
                         ...rebuildSteps.value[workingStepIdx],
-                        detail: `Stream stalled, switching to fallback rebuild… (${fallbackReason})`,
+                        detail: `Stream interrupted, checking cached workspace… (${fallbackReason})`,
+                    };
+                }
+                if (await tryRecoverFromBootstrap(fallbackReason)) {
+                    await loadEnrichmentContextData();
+                    return;
+                }
+                if (workingStepIdx >= 0) {
+                    rebuildSteps.value[workingStepIdx] = {
+                        ...rebuildSteps.value[workingStepIdx],
+                        detail: `Stream recovery failed, switching to fallback rebuild… (${fallbackReason})`,
                     };
                 }
                 await runFallbackRebuild(fallbackReason);

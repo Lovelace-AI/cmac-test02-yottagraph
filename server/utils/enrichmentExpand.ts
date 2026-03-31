@@ -295,6 +295,7 @@ export async function runEnrichmentExpansion(
     const rawPropertyCandidatesByDepth = new Map<number, number>();
     const capsReached = () =>
         entities.length >= maxEntities || relationships.length >= maxRelationships;
+    const eventPhaseCapsReached = () => capsReached() || events.length >= maxEvents;
     let lastProgressReportAt = 0;
 
     function reportProgress(
@@ -611,13 +612,14 @@ export async function runEnrichmentExpansion(
         await pMap(
             eventHubNeids,
             async (hubNeid) => {
-                if (events.length >= maxEvents) return;
+                if (eventPhaseCapsReached()) return;
                 const hubDepth = entityDepthByNeid.get(hubNeid) ?? 0;
                 const eventDepth = Math.max(1, Math.min(hops, hubDepth || 1));
                 try {
                     eventCalls += 1;
                     const eventsByNeid = new Map<string, any>();
                     for (const window of EVENT_TIME_WINDOWS) {
+                        if (eventPhaseCapsReached()) break;
                         const result = await mcpCallTool(
                             'elemental_get_events',
                             {
@@ -642,13 +644,18 @@ export async function runEnrichmentExpansion(
                         )
                     );
                     for (const evt of sortedEvents) {
-                        if (events.length >= maxEvents) {
+                        if (eventPhaseCapsReached()) {
                             eventsTruncated = true;
                             break;
                         }
                         const eventNeid = upsertEvent(evt, eventDepth);
                         if (!eventNeid) continue;
                         for (const participant of evt.participants ?? []) {
+                            if (capsReached()) {
+                                entitiesTruncated = true;
+                                relationshipsTruncated = true;
+                                break;
+                            }
                             if (!participant?.neid) continue;
                             addRawEntityCandidate(String(participant.neid), eventDepth);
                             addRawRelationshipCandidate(1, eventDepth);
