@@ -11,7 +11,7 @@
                 <span class="confidence-dot" :class="`confidence-${confidenceLabel}`" />
                 Confidence: {{ confidenceText }}
             </v-chip>
-            <v-tooltip location="top">
+            <v-tooltip location="top" content-class="lineage-confidence-tooltip">
                 <template #activator="{ props: tooltipProps }">
                     <v-btn
                         v-bind="tooltipProps"
@@ -22,7 +22,7 @@
                         aria-label="Why this confidence"
                     />
                 </template>
-                <span>{{ confidenceReason }}</span>
+                <span class="lineage-tooltip-text">{{ confidenceReason }}</span>
             </v-tooltip>
             <v-btn
                 size="x-small"
@@ -93,5 +93,20 @@
 
     .confidence-low {
         background: rgb(var(--v-theme-warning));
+    }
+
+    :deep(.lineage-confidence-tooltip) {
+        background: rgba(18, 24, 38, 0.96);
+        color: rgba(245, 248, 255, 0.98);
+        border: 1px solid rgba(196, 211, 255, 0.32);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        max-width: 420px;
+        padding: 8px 10px;
+    }
+
+    :deep(.lineage-tooltip-text) {
+        line-height: 1.4;
+        font-size: 12px;
+        letter-spacing: 0.01em;
     }
 </style>
