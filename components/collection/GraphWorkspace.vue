@@ -352,6 +352,7 @@
         showEnrichedRelationships?: boolean;
         initialSourceBackedOnly?: boolean;
         initialIncludeContextEndpoints?: boolean;
+        initialHiddenFlavors?: string[];
         initialAnalysisMode?:
             | 'centrality'
             | 'relationship'
@@ -448,7 +449,12 @@
     const graphFrame = ref<HTMLElement | null>(null);
     const viewportHeight = ref(900);
     const searchQuery = ref('');
-    const hiddenFlavors = ref<Set<string>>(new Set(['location']));
+    const hiddenFlavors = ref<Set<string>>(
+        new Set(
+            props.initialHiddenFlavors ??
+                (props.entitiesOverride || props.relationshipsOverride ? [] : ['location'])
+        )
+    );
     const analysisMode = ref<
         | 'centrality'
         | 'relationship'

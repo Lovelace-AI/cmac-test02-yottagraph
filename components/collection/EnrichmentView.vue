@@ -215,7 +215,8 @@
                     :entities-override="entities"
                     :relationships-override="relationships"
                     :initial-include-context-endpoints="true"
-                    :initial-analysis-mode="'enrichment_cluster'"
+                    :initial-hidden-flavors="[]"
+                    :initial-analysis-mode="'centrality'"
                 />
             </v-window-item>
 
