@@ -5,10 +5,6 @@
                 <v-icon start size="small">mdi-scale-balance</v-icon>
                 Enriched Graph
             </v-tab>
-            <v-tab value="graph">
-                <v-icon start size="small">mdi-graph-outline</v-icon>
-                Graph
-            </v-tab>
             <v-tab value="lineage">
                 <v-icon start size="small">mdi-source-branch</v-icon>
                 Corporate Lineage
@@ -16,6 +12,10 @@
             <v-tab value="news">
                 <v-icon start size="small">mdi-newspaper</v-icon>
                 News
+            </v-tab>
+            <v-tab value="graph">
+                <v-icon start size="small">mdi-graph-outline</v-icon>
+                Graph
             </v-tab>
         </v-tabs>
 
