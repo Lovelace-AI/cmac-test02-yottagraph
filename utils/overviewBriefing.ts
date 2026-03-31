@@ -219,8 +219,6 @@ function confidenceLabel(summary: TrustCoverageSummary, status: OverviewStatus):
 function metricForTab(tab: WorkspaceTab, state: CollectionState): string {
     if (tab === 'graph') return `${formatCount(state.meta.entityCount)} mapped entities`;
     if (tab === 'timeline') return `${formatCount(state.meta.eventCount)} extracted events`;
-    if (tab === 'insights')
-        return `${formatCount(state.meta.relationshipCount)} relationship signals`;
     if (tab === 'validation') return `${formatCount(state.meta.documentCount)} source documents`;
     return `${formatCount(state.entities.filter((entity) => entity.origin === 'enriched').length)} enriched matches`;
 }
@@ -384,15 +382,6 @@ export function mapCollectionToOverviewViewModel(params: {
                 ctaLabel: 'Open timeline',
                 tab: 'timeline',
                 icon: 'mdi-chart-timeline-variant',
-            },
-            {
-                key: 'insights',
-                title: 'Insights',
-                description: 'Capture high-signal patterns and executive talking points.',
-                metric: metricForTab('insights', state),
-                ctaLabel: 'Open insights',
-                tab: 'insights',
-                icon: 'mdi-lightbulb-on-outline',
             },
             {
                 key: 'validation',

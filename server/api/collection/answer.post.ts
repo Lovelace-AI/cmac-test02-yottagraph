@@ -363,11 +363,7 @@ function fallbackResponse(
         .map((row) => `${row.name} (${row.date})`)
         .join('; ');
     const baseline = `${docCount} source document${docCount === 1 ? '' : 's'} support this answer context.`;
-    if (
-        action === 'insight_question' ||
-        action === 'answer_question' ||
-        action === 'summarize_collection'
-    ) {
+    if (action === 'answer_question' || action === 'summarize_collection') {
         return [
             baseline,
             topEntities

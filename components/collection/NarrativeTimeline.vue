@@ -21,6 +21,11 @@
                     density="compact"
                     variant="outlined"
                     :style="{ borderColor: categoryColor(evt.category) + '44' }"
+                    role="button"
+                    tabindex="0"
+                    @click="selectEvent(evt.neid)"
+                    @keydown.enter.prevent="selectEvent(evt.neid)"
+                    @keydown.space.prevent="selectEvent(evt.neid)"
                 >
                     <v-card-text class="pa-3">
                         <div class="d-flex align-start justify-space-between mb-1">
@@ -73,9 +78,9 @@
                                 class="participant-link text-body-2"
                                 tabindex="0"
                                 role="button"
-                                @click="selectEntity(ent.neid)"
-                                @keydown.enter.prevent="selectEntity(ent.neid)"
-                                @keydown.space.prevent="selectEntity(ent.neid)"
+                                @click.stop="selectEntity(ent.neid)"
+                                @keydown.enter.stop.prevent="selectEntity(ent.neid)"
+                                @keydown.space.stop.prevent="selectEntity(ent.neid)"
                             >
                                 {{ ent.name }}
                             </span>
@@ -98,7 +103,7 @@
 
     defineProps<{ events: EventRecord[] }>();
 
-    const { entities, selectEntity } = useCollectionWorkspace();
+    const { entities, selectEntity, selectEvent } = useCollectionWorkspace();
 
     const entityByNeid = computed(() => {
         const m = new Map<string, (typeof entities.value)[0]>();
@@ -153,5 +158,9 @@
         outline: 2px solid var(--app-focus-ring);
         outline-offset: 2px;
         border-radius: 3px;
+    }
+
+    .timeline-item :deep(.v-card) {
+        cursor: pointer;
     }
 </style>

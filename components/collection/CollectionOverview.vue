@@ -287,10 +287,6 @@
         setTab('graph');
     }
 
-    function handleViewCitations(_neid: string) {
-        setTab('insights');
-    }
-
     function formatDuration(ms: number): string {
         if (ms < 1000) return `${ms}ms`;
         if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;

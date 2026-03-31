@@ -88,7 +88,7 @@ document-derived graph exploration, validation, agent actions, and enrichment.
 Implementation status: **v1 complete**  
 Details:
 
-- Single-page workspace with task-oriented tabs: overview, graph & entities, events, insights, timeline, agreements, trust & coverage, ask yotta, enrichment.
+- Single-page workspace with task-oriented tabs: overview, graph & entities, events, timeline, agreements, trust & coverage, ask yotta, enrichment.
 - Overview is an executive intelligence briefing with a collection header, synthesized deal summary, extraction stats, a narrative case-study card without cross-tab jumps, a streamlined source-documents table, and launch cards into deeper tabs.
 - Overview corpus narrative generation now includes relationship-type patterns, concrete relationship evidence samples, entity property highlights, and historical property-series coverage so the corpus description reads as graph-grounded intelligence rather than metadata-only summary.
 - Overview supports complete, pending, and partial extraction states with intentional product copy and guided placeholders instead of empty analytics panels.
@@ -100,7 +100,6 @@ Details:
 - Ask Yotta now behaves as a true in-session conversation: new questions append to a scrolling thread instead of replacing the prior answer, and follow-up turns carry compact recent chat context into orchestration.
 - Ask Yotta surfaces evidence-used lines alongside each answer so users can see what collection grounding informed the response instead of only seeing a final narrative.
 - Ask Yotta tab offers contextual prompts, confidence framing, and evidence-linked outputs grounded in entities/events/documents.
-- Insights tab now provides a curated multi-category question deck, per-question execution, cache restoration, citation-first answer panels, entity pivots, and Markdown/HTML export with PDF graceful fallback.
 - Enrichment now opens with an Enriched Graph comparison view that separates document truth from live 1-degree and 2-degree context, and it presents the "What The World Graph Adds" signal cards directly below the comparison metrics.
 - Corporate Lineage in enrichment now uses a compact conclusion-first list with structured metadata (relationship type, date, support, confidence) and expandable evidence sections (documents, event anchors, referenced entities, grounding notes) instead of chip-heavy narrative cards.
 - Full 2-hop enrichment context is loaded during the main rebuild pipeline so enrichment views are available immediately after analysis, while primary tabs remain strict document-backed projections.
@@ -108,7 +107,7 @@ Details:
 - Recent Coverage in enrichment now uses article-backed results for key organizations, people, and verified project-linked locations instead of reusing graph events as a press proxy.
 - Enrichment News and Recent Coverage now render with reusable editorial feed components: compact filter bars, lightweight group headers, headline-first article rows, mandatory date/fallback metadata, and subdued sentiment/relevance treatment across light and dark modes.
 - Enrichment News now defaults to a deduped graph-aware article view that merges repeated cross-entity articles, surfaces primary vs also-mentioned matched entities with unique-mention counts, explains why each match occurred, supports strongest-connection/recent/relevance sorting, and preserves layout with in-place loading indicators during filter refreshes.
-- Entity detail panel (right drawer) is a shared tabbed surface with fixed header/tab strip and a single scroll region; it now supports Properties, Relationships, Events (conditional), Sources, and Compare (conditional), plus in-place entity pivots from graph, events, insights, agreements, and enrichment.
+- Entity detail panel (right drawer) is a shared tabbed surface with fixed header/tab strip and a single scroll region; it now supports Properties, Relationships, Events (conditional), Sources, and Compare (conditional), plus in-place entity pivots from graph, events, agreements, and enrichment.
 - App shell supports both dark mode and light mode, with a header toggle and settings control for switching.
 - Dark mode polish pass introduced layered charcoal/slate surfaces, stronger card hierarchy, improved narrative readability, and consistent pill styling across overview and analysis surfaces.
 - Server routes under `/api/collection/` handle bootstrap, rebuild (MCP traversal + event discovery), entity detail, property history (raw QS), enrichment, agent actions, insight language summaries, and insight export assembly.

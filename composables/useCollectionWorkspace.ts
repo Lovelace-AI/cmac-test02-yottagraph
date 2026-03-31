@@ -2485,18 +2485,6 @@ export function useCollectionWorkspace() {
             tab: 'events',
         },
         {
-            id: 'run-insights-deck',
-            label: 'Run Insights Deck',
-            description: 'Generate curated answers for executive and evidence questions.',
-            tab: 'insights',
-        },
-        {
-            id: 'export-insights-brief',
-            label: 'Export Insights Brief',
-            description: 'Assemble current answered questions into a report artifact.',
-            tab: 'insights',
-        },
-        {
             id: 'compare-fact-evolution',
             label: 'Compare Fact Evolution',
             description: 'Track how entity facts change across source documents.',

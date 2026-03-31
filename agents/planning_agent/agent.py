@@ -14,7 +14,7 @@ root_agent = Agent(
     instruction="""You are the Planning Agent in a 3-stage Ask Yotta pipeline.
 
 Input is a single request that already includes:
-- action (e.g. summarize_collection, answer_question, insight_question)
+- action (e.g. summarize_collection, answer_question)
 - question
 - optional focus entity
 - collection counts
