@@ -99,6 +99,42 @@ function relationshipDate(row: any, props: Record<string, any>): string | undefi
     return undefined;
 }
 
+function relationshipDescription(row: any, props: Record<string, any>): string | undefined {
+    const directDescription = firstString(props, [
+        'snippet',
+        'summary',
+        'description',
+        'excerpt',
+        'content_preview',
+        'body_preview',
+        'article_text',
+    ]);
+    if (directDescription) return directDescription;
+
+    const relationshipCandidates: unknown[] = [
+        row?.snippet,
+        row?.summary,
+        row?.description,
+        row?.excerpt,
+        row?.content_preview,
+        row?.body_preview,
+        row?.article_text,
+        row?.relationship?.snippet,
+        row?.relationship?.summary,
+        row?.relationship?.description,
+        row?.relationship?.excerpt,
+        row?.relationship_properties?.snippet,
+        row?.relationship_properties?.summary,
+        row?.relationship_properties?.description,
+        row?.relationship_properties?.excerpt,
+    ];
+    for (const candidate of relationshipCandidates) {
+        const resolved = firstStringFromUnknown(candidate);
+        if (resolved) return resolved;
+    }
+    return undefined;
+}
+
 export default defineEventHandler(async (event) => {
     const body = await readBody<NewsRequest>(event);
     const entityNeids = Array.isArray(body?.entityNeids) ? body.entityNeids : [];
@@ -122,6 +158,15 @@ export default defineEventHandler(async (event) => {
                         'original_publication_name',
                         'newsdata_id',
                         'date',
+                        'published_at',
+                        'published_date',
+                        'snippet',
+                        'summary',
+                        'description',
+                        'excerpt',
+                        'content_preview',
+                        'body_preview',
+                        'article_text',
                         'sentiment',
                         'tone',
                         'title_factuality',
@@ -157,7 +202,7 @@ export default defineEventHandler(async (event) => {
                         // TODO(data-quality): Ensure publication timestamps are consistently present in article ingestion.
                         // Some feeds emit publication date on the relationship row instead of article properties.
                         date: relationshipDate(article, props),
-                        description: firstString(props, ['snippet', 'summary', 'description']),
+                        description: relationshipDescription(article, props),
                         sourceName,
                         url,
                         urlHost: hostnameFromUrl(url),
