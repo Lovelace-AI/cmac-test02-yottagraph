@@ -29,6 +29,9 @@
     .meta-pill {
         font-weight: 600;
         color: rgb(var(--v-theme-on-surface));
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: rgba(var(--v-theme-on-surface), 0.06);
     }
 
     .meta-separator {

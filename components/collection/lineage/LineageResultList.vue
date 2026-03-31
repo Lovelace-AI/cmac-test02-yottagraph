@@ -13,6 +13,19 @@
                             hide-details
                         />
                     </v-col>
+                    <v-col cols="12" md="2">
+                        <v-btn-toggle
+                            v-model="viewMode"
+                            divided
+                            density="comfortable"
+                            mandatory
+                            color="primary"
+                            class="w-100"
+                        >
+                            <v-btn value="compact" size="small">Compact</v-btn>
+                            <v-btn value="comfortable" size="small">Detail</v-btn>
+                        </v-btn-toggle>
+                    </v-col>
                     <v-col cols="12" md="4">
                         <v-select
                             v-model="relationshipFilter"
@@ -53,6 +66,7 @@
             v-else
             :key="result.id"
             :result="result"
+            :view-mode="viewMode"
         />
     </div>
 </template>
@@ -67,6 +81,7 @@
         loading?: boolean;
     }>();
 
+    const viewMode = ref<'compact' | 'comfortable'>('compact');
     const sortBy = ref<SortKey>('support');
     const relationshipFilter = ref('all');
     const evidenceFilter = ref('all');

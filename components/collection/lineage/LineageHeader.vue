@@ -7,7 +7,8 @@
             </div>
         </div>
         <div class="d-flex align-center ga-2 flex-shrink-0">
-            <v-chip size="small" variant="tonal" :color="confidenceColor">
+            <v-chip size="small" variant="outlined" class="confidence-chip">
+                <span class="confidence-dot" :class="`confidence-${confidenceLabel}`" />
                 Confidence: {{ confidenceText }}
             </v-chip>
             <v-tooltip location="top">
@@ -60,16 +61,35 @@
     const confidenceText = computed(
         () => props.confidenceLabel.charAt(0).toUpperCase() + props.confidenceLabel.slice(1)
     );
-
-    const confidenceColor = computed(() => {
-        if (props.confidenceLabel === 'high') return 'success';
-        if (props.confidenceLabel === 'medium') return 'info';
-        return 'warning';
-    });
 </script>
 
 <style scoped>
     .statement {
         line-height: 1.35;
+    }
+
+    .confidence-chip {
+        border-color: rgba(var(--v-theme-on-surface), 0.2);
+        color: rgb(var(--v-theme-on-surface));
+    }
+
+    .confidence-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+
+    .confidence-high {
+        background: rgb(var(--v-theme-success));
+    }
+
+    .confidence-medium {
+        background: rgb(var(--v-theme-info));
+    }
+
+    .confidence-low {
+        background: rgb(var(--v-theme-warning));
     }
 </style>
