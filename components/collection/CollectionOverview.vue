@@ -75,6 +75,8 @@
                         :stats="overview.extractionStats"
                         :status="overview.status"
                         :stacked="true"
+                        :action-loading="rebuilding"
+                        :action-disabled="overview.status === 'processing' || rebuilding"
                         @run-analysis="handleRunAnalysis"
                     />
                     <SourceDocumentsCompactCard :documents="overview.documents" />

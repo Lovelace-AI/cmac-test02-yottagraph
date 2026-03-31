@@ -1,7 +1,21 @@
 <template>
     <v-card class="briefing-card h-100" variant="flat">
         <v-card-item class="pb-1">
-            <v-card-title class="section-title">Extraction Stats</v-card-title>
+            <div class="card-header">
+                <v-card-title class="section-title">Extraction Stats</v-card-title>
+                <v-btn
+                    size="x-small"
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="mdi-play-circle-outline"
+                    :loading="actionLoading"
+                    :disabled="actionDisabled"
+                    class="stats-action"
+                    @click="$emit('run-analysis')"
+                >
+                    {{ actionLabel }}
+                </v-btn>
+            </div>
         </v-card-item>
         <v-card-text class="pt-0 pb-4">
             <div
@@ -39,6 +53,8 @@
         stats: ExtractionStatItem[];
         status: OverviewStatus;
         stacked?: boolean;
+        actionLoading?: boolean;
+        actionDisabled?: boolean;
     }>();
 
     defineEmits<{
@@ -49,6 +65,12 @@
         const entities = props.stats.find((item) => item.key === 'entities');
         const relationships = props.stats.find((item) => item.key === 'relationships');
         return entities?.value !== '0' || relationships?.value !== '0';
+    });
+
+    const actionLabel = computed(() => {
+        if (props.status === 'pending') return 'Run Initial Extraction';
+        if (props.status === 'processing') return 'Extraction Running';
+        return 'Re-run Extraction';
     });
 
     function dateRangeParts(value: string): [string, string] | null {
@@ -68,6 +90,21 @@
     .section-title {
         font-size: 0.92rem;
         font-weight: 600;
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .stats-action {
+        text-transform: none;
+        letter-spacing: 0;
+        border-radius: 999px;
+        min-width: 0;
     }
 
     .stats-grid {
