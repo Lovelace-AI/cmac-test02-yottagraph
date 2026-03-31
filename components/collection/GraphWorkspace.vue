@@ -449,12 +449,7 @@
     const graphFrame = ref<HTMLElement | null>(null);
     const viewportHeight = ref(900);
     const searchQuery = ref('');
-    const hiddenFlavors = ref<Set<string>>(
-        new Set(
-            props.initialHiddenFlavors ??
-                (props.entitiesOverride || props.relationshipsOverride ? [] : ['location'])
-        )
-    );
+    const hiddenFlavors = ref<Set<string>>(new Set(props.initialHiddenFlavors ?? []));
     const analysisMode = ref<
         | 'centrality'
         | 'relationship'
@@ -1216,9 +1211,7 @@
             tooltip.value = null;
         });
 
-        if (props.entitiesOverride || props.relationshipsOverride) {
-            fitCameraToGraphBounds(g);
-        }
+        fitCameraToGraphBounds(g);
         applySelectedHighlight();
         queueSigmaReflow();
     }
