@@ -1,30 +1,19 @@
 <template>
-    <div class="summary-grid mb-2">
-        <v-sheet class="summary-item pa-2 rounded" color="surface">
-            <div class="text-caption text-medium-emphasis">Total changes</div>
-            <div class="text-body-1 font-weight-bold">{{ summary.totalChanges }}</div>
-        </v-sheet>
-        <v-sheet class="summary-item pa-2 rounded" color="surface">
-            <div class="text-caption text-medium-emphasis">Metrics changed</div>
-            <div class="text-body-1 font-weight-bold">{{ summary.metricsChanged }}</div>
-        </v-sheet>
-        <v-sheet class="summary-item pa-2 rounded" color="surface">
-            <div class="text-caption text-medium-emphasis">Largest increase</div>
-            <div class="text-caption summary-value">{{ largestIncreaseLabel }}</div>
-        </v-sheet>
-        <v-sheet class="summary-item pa-2 rounded" color="surface">
-            <div class="text-caption text-medium-emphasis">Largest decrease</div>
-            <div class="text-caption summary-value">{{ largestDecreaseLabel }}</div>
-        </v-sheet>
-        <v-sheet class="summary-item pa-2 rounded" color="surface">
-            <div class="text-caption text-medium-emphasis">Most volatile metric</div>
-            <div class="text-caption summary-value">{{ mostVolatileLabel }}</div>
-        </v-sheet>
-        <v-sheet class="summary-item pa-2 rounded" color="surface">
-            <div class="text-caption text-medium-emphasis">Most recent comparison</div>
-            <div class="text-caption summary-value">{{ recentLabel }}</div>
-        </v-sheet>
-    </div>
+    <v-sheet class="summary-strip pa-2 mb-2 rounded" color="surface">
+        <div class="summary-row">
+            <v-chip
+                v-for="item in summaryItems"
+                :key="item.label"
+                size="small"
+                variant="tonal"
+                color="default"
+                class="summary-chip"
+            >
+                <span class="summary-label">{{ item.label }}:</span>
+                <span class="summary-value">{{ item.value }}</span>
+            </v-chip>
+        </div>
+    </v-sheet>
 </template>
 
 <script setup lang="ts">
@@ -55,16 +44,19 @@
             ? `${props.summary.mostRecentComparison.fromDocument} → ${props.summary.mostRecentComparison.toDocument}`
             : 'N/A'
     );
+
+    const summaryItems = computed(() => [
+        { label: 'Total changes', value: String(props.summary.totalChanges) },
+        { label: 'Metrics changed', value: String(props.summary.metricsChanged) },
+        { label: 'Largest increase', value: largestIncreaseLabel.value },
+        { label: 'Largest decrease', value: largestDecreaseLabel.value },
+        { label: 'Most volatile metric', value: mostVolatileLabel.value },
+        { label: 'Most recent comparison', value: recentLabel.value },
+    ]);
 </script>
 
 <style scoped>
-    .summary-grid {
-        display: grid;
-        gap: 8px;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    }
-
-    .summary-item {
+    .summary-strip {
         border: 1px solid color-mix(in srgb, rgb(var(--v-theme-on-surface)) 10%, transparent);
         background: color-mix(
             in srgb,
@@ -73,9 +65,39 @@
         );
     }
 
+    .summary-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+
+    .summary-chip {
+        max-width: 360px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .summary-label {
+        margin-right: 4px;
+        color: rgb(var(--v-theme-on-surface-variant));
+    }
+
     .summary-value {
-        line-height: 1.25;
-        white-space: normal;
-        overflow-wrap: anywhere;
+        font-weight: 600;
+        color: rgb(var(--v-theme-on-surface));
+    }
+
+    @media (max-width: 960px) {
+        .summary-row {
+            flex-wrap: wrap;
+            overflow-x: visible;
+        }
+
+        .summary-chip {
+            max-width: none;
+            white-space: normal;
+        }
     }
 </style>
