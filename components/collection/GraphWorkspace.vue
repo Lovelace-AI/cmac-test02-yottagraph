@@ -1612,9 +1612,10 @@
             nextTick(() => {
                 if (!graphInstance || !sigmaInstance) {
                     buildGraph();
-                    return;
+                } else {
+                    queueSigmaReflow(true);
                 }
-                queueSigmaReflow(true);
+                setTimeout(() => refreshSigma(), 300);
             });
         }
     );
@@ -1721,6 +1722,7 @@
             resizeObserver.observe(graphFrame.value);
         }
         setTimeout(() => refreshSigma(), 120);
+        setTimeout(() => refreshSigma(), 400);
     });
 
     onBeforeUnmount(() => {

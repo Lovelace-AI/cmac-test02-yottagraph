@@ -213,12 +213,14 @@
             <v-window-item value="graph">
                 <GraphWorkspace
                     key="enrichment-graph-workspace"
-                    :entities-override="entities"
-                    :relationships-override="relationships"
+                    :entities-override="enrichmentSupersetGraphEntities"
+                    :relationships-override="enrichmentSupersetGraphRelationships"
+                    :show-enriched-entities="true"
+                    :show-enriched-relationships="true"
                     :is-active="activeSubtab === 'graph'"
                     :initial-include-context-endpoints="true"
                     :initial-hidden-flavors="[]"
-                    :initial-analysis-mode="'centrality'"
+                    :initial-analysis-mode="'enrichment_cluster'"
                 />
             </v-window-item>
 
@@ -333,6 +335,8 @@
         entities,
         events,
         relationships,
+        enrichmentSupersetGraphEntities,
+        enrichmentSupersetGraphRelationships,
         resolveEntityName,
         enrichmentComparison,
         lineageResults,
