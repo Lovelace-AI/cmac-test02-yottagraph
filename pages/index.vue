@@ -112,8 +112,7 @@
                         v-else-if="currentTab === 'graph'"
                         key="document-graph-workspace"
                         :initial-source-backed-only="true"
-                        :initial-include-context-endpoints="true"
-                        :initial-analysis-mode="'centrality'"
+                        :initial-include-context-endpoints="false"
                     />
                     <EventsView v-else-if="currentTab === 'events'" />
                     <TimelineComparisonView v-else-if="currentTab === 'timeline'" />
