@@ -10,6 +10,7 @@ import type {
 import { emptyCollectionState } from '~/utils/collectionTypes';
 import { mapCollectionToOverviewViewModel } from '~/utils/overviewBriefing';
 import { projectCollapsedOrganizationLineage } from '~/utils/enrichmentLineage';
+import type { AskYottaPipelineResponse, AgentPipelineStep } from '~/utils/agentPipeline';
 
 export interface RebuildStep {
     step: number;
@@ -148,6 +149,16 @@ export interface EnrichmentNewsGroup {
     items: EnrichmentNewsItem[];
 }
 
+export interface FilteredNewsItem extends EnrichmentNewsItem {
+    topics: string[];
+}
+
+export interface FilteredNewsGroup {
+    anchorNeid: string;
+    items: FilteredNewsItem[];
+    matchedCategories: string[];
+}
+
 export interface EnrichableExtractedEntityGroup {
     key: string;
     label: string;
@@ -256,27 +267,7 @@ const enrichmentLastRun = ref<{
     ranAt: string;
 } | null>(null);
 const agentLoading = ref(false);
-interface AgentAnswerStep {
-    step: number;
-    status: 'pending' | 'working' | 'completed';
-    label: string;
-    detail?: string;
-    durationMs?: number;
-}
-interface AgentAnswerResult {
-    output: string;
-    citations: any[];
-    generationSource?: 'gemini' | 'fallback' | 'gateway';
-    generationNote?: string;
-    usage?: {
-        model: string;
-        promptTokens: number;
-        completionTokens: number;
-        totalTokens: number;
-        costUsd: number;
-    };
-    agentSteps?: AgentAnswerStep[];
-}
+type AgentAnswerResult = AskYottaPipelineResponse;
 const agentResult = ref<AgentAnswerResult | null>(null);
 const mcpLog = ref<McpLogEntry[]>([]);
 const geminiLog = ref<GeminiUsageEntry[]>([]);
@@ -291,6 +282,10 @@ const enrichmentLanguageError = ref<string | null>(null);
 const enrichmentNews = ref<EnrichmentNewsGroup[]>([]);
 const enrichmentNewsLoading = ref(false);
 const enrichmentNewsError = ref<string | null>(null);
+const filteredNews = ref<FilteredNewsGroup[]>([]);
+const filteredNewsCategories = ref<string[]>([]);
+const filteredNewsLoading = ref(false);
+const filteredNewsError = ref<string | null>(null);
 const enrichmentEconomicSignals = ref<{
     micro: EnrichmentEconomicSignal[];
     macro: EnrichmentEconomicSignal[];
@@ -2198,6 +2193,40 @@ export function useCollectionWorkspace() {
         }
     }
 
+    async function loadFilteredNews(categories?: string[]): Promise<void> {
+        const anchors = recentCoverageAnchors.value.map((entity) => entity.neid);
+        if (!anchors.length) {
+            filteredNews.value = [];
+            if (!categories?.length) filteredNewsCategories.value = [];
+            return;
+        }
+        filteredNewsLoading.value = true;
+        filteredNewsError.value = null;
+        try {
+            const response = await $fetch<{ groups: FilteredNewsGroup[]; categories: string[] }>(
+                '/api/collection/enrichment-filtered-news',
+                {
+                    method: 'POST',
+                    body: {
+                        entityNeids: anchors,
+                        categories: categories?.length ? categories : undefined,
+                        maxEntities: 10,
+                        articlesPerEntity: 8,
+                    },
+                }
+            );
+            filteredNews.value = response.groups ?? [];
+            filteredNewsCategories.value = response.categories ?? [];
+        } catch (error: any) {
+            filteredNewsError.value =
+                error?.data?.statusMessage || error?.message || 'Failed to load filtered news.';
+            filteredNews.value = [];
+            if (!categories?.length) filteredNewsCategories.value = [];
+        } finally {
+            filteredNewsLoading.value = false;
+        }
+    }
+
     async function loadEnrichmentEconomicSignals(): Promise<void> {
         const anchors = enrichedEntities.value.map((entity) => entity.neid);
         if (!anchors.length) {
@@ -2260,6 +2289,7 @@ export function useCollectionWorkspace() {
     async function loadEnrichmentContextData(): Promise<void> {
         await Promise.all([
             loadEnrichmentNews(),
+            loadFilteredNews(),
             loadEnrichmentEconomicSignals(),
             loadEnrichmentRelatedDeals(),
         ]);
@@ -2718,7 +2748,7 @@ export function useCollectionWorkspace() {
         agentResult.value = null;
         try {
             const prompt = gatewayPromptForAction(action, params, resolveEntityName);
-            const result = await $fetch<AgentAnswerResult>('/api/collection/answer', {
+            const result = await $fetch<AgentAnswerResult>('/api/collection/agent-orchestrator', {
                 method: 'POST',
                 body: {
                     action,
@@ -2733,7 +2763,7 @@ export function useCollectionWorkspace() {
                 generationSource: result?.generationSource ?? 'fallback',
                 generationNote: result?.generationNote,
                 usage: result?.usage,
-                agentSteps: result?.agentSteps ?? [],
+                agentSteps: (result?.agentSteps ?? []) as AgentPipelineStep[],
             };
             if (result?.usage) {
                 addGeminiUsage({
@@ -2856,6 +2886,10 @@ export function useCollectionWorkspace() {
         enrichmentNews: computed(() => enrichmentNews.value),
         enrichmentNewsLoading: computed(() => enrichmentNewsLoading.value),
         enrichmentNewsError: computed(() => enrichmentNewsError.value),
+        filteredNews: computed(() => filteredNews.value),
+        filteredNewsCategories: computed(() => filteredNewsCategories.value),
+        filteredNewsLoading: computed(() => filteredNewsLoading.value),
+        filteredNewsError: computed(() => filteredNewsError.value),
         enrichmentEconomicSignals: computed(() => enrichmentEconomicSignals.value),
         enrichmentEconomicLoading: computed(() => enrichmentEconomicLoading.value),
         enrichmentEconomicError: computed(() => enrichmentEconomicError.value),
@@ -2888,6 +2922,7 @@ export function useCollectionWorkspace() {
         enrich,
         generateEnrichmentLanguage,
         loadEnrichmentContextData,
+        loadFilteredNews,
         generateEnrichmentWatchlist,
         fetchPropertyHistory,
         runAgentAction,
