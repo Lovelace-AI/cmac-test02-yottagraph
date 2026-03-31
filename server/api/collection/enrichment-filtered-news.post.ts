@@ -9,6 +9,7 @@ interface FilteredNewsRequest {
 
 interface FilteredNewsItem {
     articleNeid: string;
+    canonicalArticleKey: string;
     title?: string;
     date?: string;
     description?: string;
@@ -20,6 +21,11 @@ interface FilteredNewsItem {
     citations: string[];
     linkedEntityNames: string[];
     topics: string[];
+    rawTopics: string[];
+    matchedCategories: string[];
+    anchorNeid: string;
+    matchedVia: 'topic' | 'keyword';
+    snippetQuality: 'summary' | 'citation' | 'fallback';
 }
 
 interface FilteredNewsCandidate extends FilteredNewsItem {
@@ -170,6 +176,20 @@ function hostnameFromUrl(url?: string): string | undefined {
     }
 }
 
+function buildCanonicalArticleKey(
+    articleNeid: string,
+    url?: string,
+    newsdataId?: string,
+    title?: string
+): string {
+    const normalizedUrl = url?.trim().toLowerCase();
+    const normalizedNewsdataId = newsdataId?.trim().toLowerCase();
+    if (normalizedNewsdataId) return `newsdata:${normalizedNewsdataId}`;
+    if (normalizedUrl) return `url:${normalizedUrl}`;
+    if (articleNeid.trim()) return `neid:${articleNeid.trim().toLowerCase()}`;
+    return `fallback:${(title || 'unknown-article').trim().toLowerCase()}`;
+}
+
 function normalizeTopicValues(value: unknown): string[] {
     if (Array.isArray(value)) {
         return value
@@ -282,13 +302,11 @@ export default defineEventHandler(async (event) => {
                     const matchedCategories = categories.filter((category) =>
                         topics.some((topic) => categoryMatchesTopic(category, topic))
                     );
+                    const description = firstString(props, ['snippet', 'summary', 'description']);
+                    const articleNeid = String(article?.neid ?? '');
+                    const newsdataId = firstString(props, ['newsdata_id', 'id']);
                     const keywordText = normalizeSearchText(
-                        [
-                            title,
-                            firstString(props, ['snippet', 'summary', 'description']),
-                            sourceName,
-                            url,
-                        ]
+                        [title, description, sourceName, url]
                             .filter((value): value is string => Boolean(value))
                             .join(' ')
                     );
@@ -296,11 +314,17 @@ export default defineEventHandler(async (event) => {
                         categoryMatchesKeywords(category, keywordText)
                     );
                     const mapped: FilteredNewsCandidate = {
-                        articleNeid: String(article?.neid ?? ''),
+                        articleNeid,
+                        canonicalArticleKey: buildCanonicalArticleKey(
+                            articleNeid,
+                            url,
+                            newsdataId,
+                            title
+                        ),
                         title,
                         // TODO(data-quality): Ensure publication timestamps are consistently present in article ingestion.
                         date: firstString(props, ['published_at', 'published_date', 'date']),
-                        description: firstString(props, ['snippet', 'summary', 'description']),
+                        description,
                         sourceName,
                         url,
                         urlHost: hostnameFromUrl(url),
@@ -315,8 +339,16 @@ export default defineEventHandler(async (event) => {
                         // Linked entities are optional for this endpoint until article-to-entity joins are exposed.
                         linkedEntityNames: [],
                         topics,
+                        rawTopics: topics.slice(),
                         matchedCategories:
                             matchedCategories.length > 0 ? matchedCategories : fallbackCategories,
+                        anchorNeid,
+                        matchedVia: matchedCategories.length > 0 ? 'topic' : 'keyword',
+                        snippetQuality: description
+                            ? 'summary'
+                            : citations.length > 0
+                              ? 'citation'
+                              : 'fallback',
                     };
                     return mapped;
                 })
@@ -339,10 +371,7 @@ export default defineEventHandler(async (event) => {
                     );
                 })
                 .slice(0, articlesPerEntity)
-                .map((item: FilteredNewsCandidate) => {
-                    const { matchedCategories, ...rest } = item;
-                    return rest;
-                });
+                .map((item: FilteredNewsCandidate) => item);
 
             const matchedCategories = categories.filter((category) =>
                 items.some((item) =>

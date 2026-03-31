@@ -8,7 +8,7 @@
                         Agents that plan, retrieve from the knowledge graph, assemble evidence, and
                         generate grounded outputs from this collection.
                     </p>
-                    <div class="value-strip d-flex flex-wrap ga-2">
+                    <div class="value-strip d-flex ga-2">
                         <span class="value-pill">
                             <v-icon size="14" icon="mdi-graph-outline" />
                             Uses entities, events, relationships, and source documents
@@ -54,24 +54,7 @@
 
         <section>
             <div class="section-title mb-2">Agent Workflow Architecture</div>
-            <AgentWorkflowPipeline :steps="pipelineSteps" />
-        </section>
-
-        <section>
-            <div class="section-title mb-2">Production Workflows</div>
-            <v-row>
-                <v-col v-for="playbook in playbooks" :key="playbook.id" cols="12" md="4">
-                    <AgentPlaybookCard
-                        :title="playbook.title"
-                        :question="playbook.question"
-                        :graph-assets="playbook.graphAssets"
-                        :output-type="playbook.outputType"
-                        :output-description="playbook.outputDescription"
-                        :running="agentLoading && activeAction === playbook.runId"
-                        @run="runPlaybook(playbook)"
-                    />
-                </v-col>
-            </v-row>
+            <AgentWorkflowPipeline :steps="pipelineSteps" :run-details="agentRunDetails" />
         </section>
 
         <section>
@@ -148,18 +131,6 @@
 <script setup lang="ts">
     import { seedAskYottaPipelineSteps, type AgentPipelineStep } from '~/utils/agentPipeline';
 
-    interface Playbook {
-        id: string;
-        title: string;
-        question: string;
-        graphAssets: Array<{ icon: string; label: string }>;
-        outputType: string;
-        outputDescription: string;
-        runId: string;
-        action: string;
-        actionQuestion?: string;
-    }
-
     interface ActionTile {
         id: string;
         label: string;
@@ -194,53 +165,6 @@
             status: 'pending',
         }));
     });
-
-    const playbooks: Playbook[] = [
-        {
-            id: 'executive-brief',
-            title: 'Executive Brief',
-            question: 'What matters most in this collection?',
-            graphAssets: [
-                { icon: 'mdi-domain', label: 'Central entities' },
-                { icon: 'mdi-calendar-star', label: 'Notable events' },
-                { icon: 'mdi-file-document', label: 'Document evidence' },
-            ],
-            outputType: 'Brief',
-            outputDescription:
-                'Concise collection brief with supporting evidence and confidence cues.',
-            runId: 'summarize_collection',
-            action: 'summarize_collection',
-        },
-        {
-            id: 'gap-check',
-            title: 'Evidence Gap Check',
-            question: 'Where is evidence thin or incomplete?',
-            graphAssets: [
-                { icon: 'mdi-alert-circle-outline', label: 'Sparse entities' },
-                { icon: 'mdi-link-variant-off', label: 'Unsupported links' },
-                { icon: 'mdi-file-search-outline', label: 'Coverage gaps' },
-            ],
-            outputType: 'Coverage Report',
-            outputDescription: 'Coverage gaps report plus recommended next anchors.',
-            runId: 'gap_scan',
-            action: 'answer_question',
-            actionQuestion: 'Where is evidence thin or incomplete?',
-        },
-        {
-            id: 'anchor-selection',
-            title: 'Anchor Selection',
-            question: 'Which entities should we expand first?',
-            graphAssets: [
-                { icon: 'mdi-graph-outline', label: 'Centrality' },
-                { icon: 'mdi-chart-bubble', label: 'Event density' },
-                { icon: 'mdi-file-link', label: 'Source overlap' },
-            ],
-            outputType: 'Priority List',
-            outputDescription: 'Prioritized anchor entities for deeper investigation.',
-            runId: 'recommend_anchors',
-            action: 'recommend_anchors',
-        },
-    ];
 
     const actionTiles: ActionTile[] = [
         {
@@ -289,14 +213,6 @@
         },
     ];
 
-    async function runPlaybook(playbook: Playbook) {
-        activeAction.value = playbook.runId;
-        await runAgentAction(playbook.action, {
-            question: playbook.actionQuestion,
-        });
-        activeAction.value = null;
-    }
-
     async function runActionTile(tile: ActionTile) {
         activeAction.value = tile.action;
         await runAgentAction(tile.action, {
@@ -325,13 +241,18 @@
     }
 
     .value-strip {
-        row-gap: 6px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        row-gap: 0;
+        padding-bottom: 2px;
     }
 
     .value-pill {
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        flex: 0 0 auto;
+        white-space: nowrap;
         border: 1px solid var(--app-divider);
         border-radius: 999px;
         padding: 4px 10px;

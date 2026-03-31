@@ -1,84 +1,110 @@
 <template>
     <div class="workflow-shell">
         <div class="workflow-grid">
-            <div
-                v-for="(node, index) in pipelineNodes"
-                :key="node.id"
-                class="workflow-node"
-                :class="{ 'workflow-node--output': node.type === 'output' }"
-            >
-                <div class="node-header d-flex align-center justify-space-between ga-2">
-                    <div class="d-flex align-center ga-2">
-                        <v-avatar
-                            v-if="node.type !== 'output'"
-                            :color="node.color"
-                            variant="tonal"
-                            size="30"
-                        >
-                            <v-icon size="16">{{ node.icon }}</v-icon>
-                        </v-avatar>
-                        <v-avatar v-else color="primary" variant="tonal" size="30">
-                            <v-icon size="16">mdi-tray-arrow-down</v-icon>
-                        </v-avatar>
-                        <div>
-                            <div class="text-subtitle-2">{{ node.title }}</div>
-                            <div class="text-caption text-medium-emphasis">{{ node.role }}</div>
+            <template v-for="(node, index) in pipelineNodes" :key="node.id">
+                <div
+                    class="workflow-node"
+                    :class="{ 'workflow-node--output': node.type === 'output' }"
+                >
+                    <div class="node-header d-flex align-center justify-space-between ga-2">
+                        <div class="d-flex align-center ga-2">
+                            <v-avatar
+                                v-if="node.type !== 'output'"
+                                :color="node.color"
+                                variant="tonal"
+                                size="30"
+                            >
+                                <v-icon size="16">{{ node.icon }}</v-icon>
+                            </v-avatar>
+                            <v-avatar v-else color="primary" variant="tonal" size="30">
+                                <v-icon size="16">mdi-tray-arrow-down</v-icon>
+                            </v-avatar>
+                            <div>
+                                <div class="text-subtitle-2">{{ node.title }}</div>
+                                <div class="text-caption text-medium-emphasis">{{ node.role }}</div>
+                            </div>
+                        </div>
+                        <div class="state-indicator">
+                            <v-progress-circular
+                                v-if="node.status === 'working'"
+                                indeterminate
+                                size="16"
+                                width="2"
+                                color="primary"
+                            />
+                            <v-icon
+                                v-else-if="node.status === 'completed'"
+                                size="16"
+                                color="success"
+                                icon="mdi-check-circle"
+                            />
+                            <span v-else class="state-dot" />
                         </div>
                     </div>
-                    <div class="state-indicator">
-                        <v-progress-circular
-                            v-if="node.status === 'working'"
-                            indeterminate
-                            size="16"
-                            width="2"
-                            color="primary"
-                        />
-                        <v-icon
-                            v-else-if="node.status === 'completed'"
-                            size="16"
-                            color="success"
-                            icon="mdi-check-circle"
-                        />
-                        <span v-else class="state-dot" />
-                    </div>
-                </div>
 
-                <div class="text-body-2 mt-3">{{ node.description }}</div>
+                    <div class="text-body-2 mt-3">{{ node.description }}</div>
 
-                <div v-if="node.type !== 'output'" class="mt-3">
-                    <div class="text-caption text-medium-emphasis mb-1">Graph inputs</div>
-                    <div class="input-grid">
+                    <div
+                        v-if="node.type !== 'output' && nodeActivity[node.id]"
+                        class="activity-snippet mt-2"
+                        :class="`activity-snippet--${node.id}`"
+                    >
+                        <div class="d-flex align-start justify-space-between ga-2">
+                            <div class="text-caption">{{ nodeActivity[node.id]?.line1 }}</div>
+                            <v-chip
+                                v-if="nodeActivity[node.id]?.badge"
+                                size="x-small"
+                                variant="tonal"
+                                class="flex-shrink-0"
+                            >
+                                {{ nodeActivity[node.id]?.badge }}
+                            </v-chip>
+                        </div>
                         <div
-                            v-for="asset in node.assets"
-                            :key="asset.id"
-                            class="asset-chip"
-                            :class="{ 'asset-chip--active': asset.active }"
+                            v-if="nodeActivity[node.id]?.line2"
+                            class="text-caption text-medium-emphasis mt-1"
                         >
-                            <v-icon size="13" :icon="asset.icon" />
-                            <span>{{ asset.label }}</span>
+                            {{ nodeActivity[node.id]?.line2 }}
                         </div>
                     </div>
-                </div>
 
-                <div class="produces-row mt-3">
-                    <span class="text-caption text-medium-emphasis">Produces</span>
-                    <span class="text-body-2">{{ node.produces }}</span>
+                    <div v-if="node.type !== 'output'" class="mt-3">
+                        <div class="text-caption text-medium-emphasis mb-1">Graph inputs</div>
+                        <div class="input-grid">
+                            <div
+                                v-for="asset in node.assets"
+                                :key="asset.id"
+                                class="asset-chip"
+                                :class="{ 'asset-chip--active': asset.active }"
+                            >
+                                <v-icon size="13" :icon="asset.icon" />
+                                <span>{{ asset.label }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="produces-row mt-3">
+                        <span class="text-caption text-medium-emphasis">Produces</span>
+                        <span class="text-body-2">{{ node.produces }}</span>
+                    </div>
                 </div>
 
                 <div
                     v-if="index < pipelineNodes.length - 1"
-                    class="connector d-flex align-center ga-1 text-medium-emphasis"
+                    class="connector-cell d-flex align-center justify-center"
                 >
-                    <span class="text-caption">{{ connectorLabels[index] }}</span>
-                    <v-icon size="16">mdi-chevron-right</v-icon>
+                    <div class="connector d-flex align-center ga-1 text-medium-emphasis">
+                        <span class="text-caption">{{ connectorLabels[index] }}</span>
+                        <v-icon size="16">mdi-chevron-right</v-icon>
+                    </div>
                 </div>
-            </div>
+            </template>
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
-    import type { AgentPipelineStep } from '~/utils/agentPipeline';
+    import type { AgentPipelineStep, AgentRunDetails } from '~/utils/agentPipeline';
 
     type NodeStatus = 'idle' | 'working' | 'completed';
 
@@ -104,6 +130,7 @@
 
     const props = defineProps<{
         steps: AgentPipelineStep[];
+        runDetails: AgentRunDetails;
     }>();
 
     const connectorLabels = ['plan', 'evidence', 'grounded output'];
@@ -195,6 +222,48 @@
             assets: [],
         },
     ]);
+
+    const nodeActivity = computed(() => {
+        const planningStatus = statusByLabel.value.get('Planning Agent') ?? 'idle';
+        const contextStatus = statusByLabel.value.get('Context Agent') ?? 'idle';
+        const compositionStatus = statusByLabel.value.get('Composition Agent') ?? 'idle';
+
+        return {
+            planning:
+                planningStatus === 'working'
+                    ? { line1: 'Interpreting your question and selecting strategy.' }
+                    : props.runDetails.planning && planningStatus === 'completed'
+                      ? {
+                            line1: `Intent: ${props.runDetails.planning.intent}`,
+                            badge: props.runDetails.planning.answerStyle,
+                        }
+                      : null,
+            context:
+                contextStatus === 'working'
+                    ? { line1: 'Querying knowledge graph for relevant evidence...' }
+                    : props.runDetails.context && contextStatus === 'completed'
+                      ? {
+                            line1: `Retrieved ${props.runDetails.context.stats.entityCount} entities, ${props.runDetails.context.stats.eventCount} events, ${props.runDetails.context.stats.relationshipCount} relationships.`,
+                            line2: props.runDetails.context.topEntityNames.length
+                                ? `Top entities: ${props.runDetails.context.topEntityNames.slice(0, 3).join(', ')}`
+                                : undefined,
+                            badge: `${props.runDetails.context.evidenceLineCount} evidence lines`,
+                        }
+                      : null,
+            composition:
+                compositionStatus === 'working'
+                    ? { line1: 'Composing grounded answer from assembled evidence...' }
+                    : props.runDetails.composition && compositionStatus === 'completed'
+                      ? {
+                            line1: props.runDetails.composition.outputPreview
+                                ? props.runDetails.composition.outputPreview.slice(0, 120)
+                                : 'Generated grounded response.',
+                            badge: `${props.runDetails.composition.citationCount} citations`,
+                        }
+                      : null,
+            output: null,
+        };
+    });
 </script>
 
 <style scoped>
@@ -211,7 +280,10 @@
 
     .workflow-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(
+                0,
+                1fr
+            );
         gap: 10px;
     }
 
@@ -259,17 +331,37 @@
         background: color-mix(in srgb, var(--v-theme-primary) 12%, transparent);
     }
 
+    .activity-snippet {
+        border-left: 2px solid var(--app-divider-strong);
+        border-radius: 6px;
+        padding: 6px 8px;
+        background: color-mix(in srgb, var(--app-surface) 88%, white 12%);
+    }
+
+    .activity-snippet--planning {
+        border-left-color: rgba(var(--v-theme-primary), 0.5);
+    }
+
+    .activity-snippet--context {
+        border-left-color: color-mix(in srgb, var(--v-theme-info) 70%, var(--app-divider));
+    }
+
+    .activity-snippet--composition {
+        border-left-color: color-mix(in srgb, var(--v-theme-warning) 70%, var(--app-divider));
+    }
+
     .produces-row {
         display: flex;
         flex-direction: column;
         gap: 2px;
     }
 
+    .connector-cell {
+        min-width: 56px;
+    }
+
     .connector {
-        position: absolute;
-        top: 50%;
-        right: -62px;
-        transform: translateY(-50%);
+        white-space: nowrap;
     }
 
     @media (max-width: 1240px) {
@@ -278,10 +370,14 @@
             gap: 12px;
         }
 
-        .connector {
-            position: static;
-            margin-top: 8px;
-            transform: none;
+        .connector-cell {
+            min-width: 0;
+            justify-content: flex-start !important;
+            padding-left: 8px;
+        }
+
+        .connector :deep(.v-icon) {
+            transform: rotate(90deg);
         }
     }
 </style>

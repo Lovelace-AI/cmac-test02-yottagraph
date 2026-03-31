@@ -130,12 +130,22 @@
                         </span>
                     </template>
                     <template #item.fromTo="{ item }">
-                        <span class="from-to-cell"
-                            >{{ item.fromDisplay }} → {{ item.toDisplay }}</span
-                        >
+                        <div class="from-to-cell from-to-inline">
+                            <span class="value-segment">{{ item.fromDisplay }}</span>
+                            <v-icon size="14" class="mx-1 text-medium-emphasis"
+                                >mdi-arrow-right-thin</v-icon
+                            >
+                            <span class="value-segment">{{ item.toDisplay }}</span>
+                        </div>
                     </template>
                     <template #item.periodLabel="{ item }">
-                        <span class="text-caption period-cell">{{ item.periodLabel }}</span>
+                        <div class="period-cell period-inline text-caption">
+                            <span>{{ compactDate(item.fromDate) }}</span>
+                            <v-icon size="14" class="mx-1 text-medium-emphasis"
+                                >mdi-arrow-right-thin</v-icon
+                            >
+                            <span>{{ compactDate(item.toDate) }}</span>
+                        </div>
                     </template>
                     <template #item.severity="{ item }">
                         <ChangeSeverityBadge :severity="item.severity" />
@@ -225,10 +235,10 @@
     ];
 
     const feedHeaders = [
-        { title: 'Metric', key: 'metricLabel', sortable: false },
-        { title: 'Change', key: 'deltaDisplay', sortable: false },
-        { title: 'From -> To', key: 'fromTo', sortable: false },
-        { title: 'Comparison period', key: 'periodLabel', sortable: false },
+        { title: 'Metric', key: 'metricLabel', sortable: false, width: 210 },
+        { title: 'Change', key: 'deltaDisplay', sortable: false, width: 170 },
+        { title: 'From → To', key: 'fromTo', sortable: false, width: 300 },
+        { title: 'Comparison period', key: 'periodLabel', sortable: false, width: 230 },
         { title: 'Severity', key: 'severity', sortable: false, width: 130 },
         { title: '', key: 'data-table-expand', sortable: false, width: 60 },
     ];
@@ -363,6 +373,14 @@
         if (direction === 'decrease') return 'direction-down';
         return 'direction-neutral';
     }
+
+    function compactDate(value?: string): string {
+        if (!value) return 'N/A';
+        const date = value.slice(0, 10);
+        const [year, month, day] = date.split('-');
+        if (!year || !month || !day) return date;
+        return `${month}/${day}/${year}`;
+    }
 </script>
 
 <style scoped>
@@ -393,6 +411,20 @@
         white-space: normal;
         line-height: 1.3;
         overflow-wrap: anywhere;
+    }
+
+    .from-to-inline,
+    .period-inline {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .from-to-inline {
+        white-space: nowrap;
+    }
+
+    .value-segment {
+        white-space: nowrap;
     }
 
     .narrative-panel {

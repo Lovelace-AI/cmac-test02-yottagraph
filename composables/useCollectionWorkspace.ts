@@ -1958,6 +1958,233 @@ export function useCollectionWorkspace() {
         for (const entity of strictProjectLocationEntities.value) addAnchor(entity);
         return Array.from(anchorByNeid.values()).slice(0, 10);
     });
+    const dedupedFilteredNewsArticles = computed<DedupedNewsArticle[]>(() => {
+        const nowMs = Date.now();
+        const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+        const aggregateByArticle = new Map<
+            string,
+            {
+                canonicalArticleKey: string;
+                articleNeid: string;
+                title?: string;
+                date?: string;
+                description?: string;
+                sourceName?: string;
+                url?: string;
+                urlHost?: string;
+                confidence?: number | null;
+                sentiment?: number | null;
+                citations: Set<string>;
+                topics: Set<string>;
+                matchedCategories: Set<string>;
+                matchedVia: Set<'topic' | 'keyword'>;
+                snippetQuality: 'summary' | 'citation' | 'fallback';
+                matchedEntities: Map<string, GraphMatchedEntity>;
+                entityScores: Map<string, number>;
+            }
+        >();
+
+        for (const group of filteredNews.value) {
+            for (const item of group.items) {
+                const anchorNeid = item.anchorNeid || group.anchorNeid;
+                const canonicalArticleKey = toCanonicalArticleKey(item);
+                const existing = aggregateByArticle.get(canonicalArticleKey);
+                if (!existing) {
+                    aggregateByArticle.set(canonicalArticleKey, {
+                        canonicalArticleKey,
+                        articleNeid: item.articleNeid,
+                        title: item.title,
+                        date: item.date,
+                        description: item.description || item.citations?.[0],
+                        sourceName: item.sourceName,
+                        url: item.url,
+                        urlHost: item.urlHost,
+                        confidence: item.confidence,
+                        sentiment: item.sentiment,
+                        citations: new Set(item.citations || []),
+                        topics: new Set(item.topics || []),
+                        matchedCategories: new Set(item.matchedCategories || []),
+                        matchedVia: new Set(item.matchedVia ? [item.matchedVia] : []),
+                        snippetQuality: item.snippetQuality || 'fallback',
+                        matchedEntities: new Map([
+                            [
+                                anchorNeid,
+                                {
+                                    neid: anchorNeid,
+                                    name: resolveEntityName(anchorNeid),
+                                    isPrimary: false,
+                                },
+                            ],
+                        ]),
+                        entityScores: new Map(),
+                    });
+                } else {
+                    if (!existing.description && (item.description || item.citations?.[0])) {
+                        existing.description = item.description || item.citations?.[0];
+                    }
+                    if (!existing.title && item.title) existing.title = item.title;
+                    if (!existing.sourceName && item.sourceName)
+                        existing.sourceName = item.sourceName;
+                    if (!existing.url && item.url) existing.url = item.url;
+                    if (!existing.urlHost && item.urlHost) existing.urlHost = item.urlHost;
+                    if (!existing.articleNeid && item.articleNeid)
+                        existing.articleNeid = item.articleNeid;
+                    if (
+                        item.confidence != null &&
+                        (existing.confidence ?? -Infinity) < item.confidence
+                    ) {
+                        existing.confidence = item.confidence;
+                    }
+                    if (item.sentiment != null && existing.sentiment == null) {
+                        existing.sentiment = item.sentiment;
+                    }
+                    const existingDateMs = parseDateMs(existing.date);
+                    const itemDateMs = parseDateMs(item.date);
+                    if (
+                        itemDateMs != null &&
+                        (existingDateMs == null || itemDateMs > existingDateMs)
+                    ) {
+                        existing.date = item.date;
+                    }
+                    for (const citation of item.citations || []) existing.citations.add(citation);
+                    for (const topic of item.topics || []) existing.topics.add(topic);
+                    for (const category of item.matchedCategories || []) {
+                        existing.matchedCategories.add(category);
+                    }
+                    if (item.matchedVia) existing.matchedVia.add(item.matchedVia);
+                    if (
+                        snippetQualityWeight(item.snippetQuality) >
+                        snippetQualityWeight(existing.snippetQuality)
+                    ) {
+                        existing.snippetQuality = item.snippetQuality || 'fallback';
+                    }
+                    if (!existing.matchedEntities.has(anchorNeid)) {
+                        existing.matchedEntities.set(anchorNeid, {
+                            neid: anchorNeid,
+                            name: resolveEntityName(anchorNeid),
+                            isPrimary: false,
+                        });
+                    }
+                }
+
+                const target = aggregateByArticle.get(canonicalArticleKey);
+                if (!target) continue;
+                const itemDateMs = parseDateMs(item.date);
+                const recencyScore =
+                    itemDateMs == null
+                        ? 0
+                        : Math.max(0, (thirtyDaysMs - (nowMs - itemDateMs)) / thirtyDaysMs);
+                const confidenceScore =
+                    item.confidence == null
+                        ? 0
+                        : item.confidence <= 1
+                          ? Math.max(0, item.confidence)
+                          : Math.min(item.confidence / 100, 1);
+                const connectionScore =
+                    3 +
+                    (item.matchedCategories?.length ?? 0) * 0.45 +
+                    confidenceScore +
+                    recencyScore * 0.8 +
+                    snippetQualityWeight(item.snippetQuality) * 0.35;
+                target.entityScores.set(
+                    anchorNeid,
+                    (target.entityScores.get(anchorNeid) ?? 0) + connectionScore
+                );
+            }
+        }
+
+        const articles: DedupedNewsArticle[] = [];
+        for (const aggregate of aggregateByArticle.values()) {
+            const entities = Array.from(aggregate.matchedEntities.values());
+            entities.sort((a, b) => {
+                const scoreA = aggregate.entityScores.get(a.neid) ?? 0;
+                const scoreB = aggregate.entityScores.get(b.neid) ?? 0;
+                if (scoreA !== scoreB) return scoreB - scoreA;
+                return a.name.localeCompare(b.name);
+            });
+            const primaryEntity = entities[0] ?? null;
+            if (primaryEntity) primaryEntity.isPrimary = true;
+            const secondaryEntities = entities
+                .slice(1)
+                .map((entity) => ({ ...entity, isPrimary: false }));
+            const uniqueGraphMentionCount = entities.length;
+            const alsoLinkedCount = Math.max(0, uniqueGraphMentionCount - 1);
+            const strongestEntityScore = primaryEntity
+                ? (aggregate.entityScores.get(primaryEntity.neid) ?? 0)
+                : 0;
+            const strongestMatchScore =
+                strongestEntityScore +
+                uniqueGraphMentionCount * 0.9 +
+                (aggregate.confidence ?? 0) * 0.6 +
+                snippetQualityWeight(aggregate.snippetQuality) * 0.5;
+            const categories = Array.from(aggregate.matchedCategories);
+            const matchReason =
+                uniqueGraphMentionCount > 1
+                    ? `Directly mentions ${primaryEntity?.name || 'the primary entity'} and ${alsoLinkedCount} other graph entities.`
+                    : `Linked through appears_in to ${primaryEntity?.name || 'the selected entity'}${categories[0] ? ` and categorized as ${categories[0]}` : ''}.`;
+            articles.push({
+                canonicalArticleKey: aggregate.canonicalArticleKey,
+                articleNeid: aggregate.articleNeid,
+                title: aggregate.title,
+                date: aggregate.date,
+                description: aggregate.description,
+                sourceName: aggregate.sourceName,
+                url: aggregate.url,
+                urlHost: aggregate.urlHost,
+                confidence: aggregate.confidence,
+                sentiment: aggregate.sentiment,
+                citations: Array.from(aggregate.citations),
+                topics: Array.from(aggregate.topics),
+                matchedCategories: categories,
+                matchedVia: Array.from(aggregate.matchedVia),
+                snippetQuality: aggregate.snippetQuality,
+                primaryEntity,
+                secondaryEntities,
+                matchedEntities: entities,
+                uniqueGraphMentionCount,
+                alsoLinkedCount,
+                strongestMatchScore,
+                matchReason,
+            });
+        }
+
+        return articles;
+    });
+    function sortDedupedNewsArticles(
+        articles: DedupedNewsArticle[],
+        sortMode: NewsSortMode
+    ): DedupedNewsArticle[] {
+        const sorted = [...articles];
+        if (sortMode === 'most_graph_entities') {
+            sorted.sort((a, b) => {
+                if (a.uniqueGraphMentionCount !== b.uniqueGraphMentionCount) {
+                    return b.uniqueGraphMentionCount - a.uniqueGraphMentionCount;
+                }
+                return b.strongestMatchScore - a.strongestMatchScore;
+            });
+            return sorted;
+        }
+        if (sortMode === 'most_recent') {
+            sorted.sort((a, b) => {
+                const aDate = parseDateMs(a.date) ?? -Infinity;
+                const bDate = parseDateMs(b.date) ?? -Infinity;
+                if (aDate !== bDate) return bDate - aDate;
+                return b.strongestMatchScore - a.strongestMatchScore;
+            });
+            return sorted;
+        }
+        if (sortMode === 'highest_relevance') {
+            sorted.sort((a, b) => {
+                const aRelevance = a.confidence ?? -Infinity;
+                const bRelevance = b.confidence ?? -Infinity;
+                if (aRelevance !== bRelevance) return bRelevance - aRelevance;
+                return b.strongestMatchScore - a.strongestMatchScore;
+            });
+            return sorted;
+        }
+        sorted.sort((a, b) => b.strongestMatchScore - a.strongestMatchScore);
+        return sorted;
+    }
     const enrichmentLanguageCards = computed(() =>
         [
             ...lineageInsights.value,
@@ -2489,10 +2716,14 @@ export function useCollectionWorkspace() {
         const anchors = recentCoverageAnchors.value.map((entity) => entity.neid);
         if (!anchors.length) {
             filteredNews.value = [];
+            filteredNewsInitialized.value = true;
+            filteredNewsRefreshing.value = false;
             if (!categories?.length) filteredNewsCategories.value = [];
             return;
         }
-        filteredNewsLoading.value = true;
+        const hasExistingRows = filteredNews.value.some((group) => group.items.length > 0);
+        filteredNewsRefreshing.value = hasExistingRows;
+        filteredNewsLoading.value = !hasExistingRows;
         filteredNewsError.value = null;
         try {
             const response = await $fetch<{ groups: FilteredNewsGroup[]; categories: string[] }>(
@@ -2509,13 +2740,18 @@ export function useCollectionWorkspace() {
             );
             filteredNews.value = response.groups ?? [];
             filteredNewsCategories.value = response.categories ?? [];
+            filteredNewsInitialized.value = true;
         } catch (error: any) {
             filteredNewsError.value =
                 error?.data?.statusMessage || error?.message || 'Failed to load filtered news.';
-            filteredNews.value = [];
+            if (!hasExistingRows) {
+                filteredNews.value = [];
+            }
             if (!categories?.length) filteredNewsCategories.value = [];
+            filteredNewsInitialized.value = true;
         } finally {
             filteredNewsLoading.value = false;
+            filteredNewsRefreshing.value = false;
         }
     }
 
@@ -3461,8 +3697,11 @@ export function useCollectionWorkspace() {
         enrichmentNewsLoading: computed(() => enrichmentNewsLoading.value),
         enrichmentNewsError: computed(() => enrichmentNewsError.value),
         filteredNews: computed(() => filteredNews.value),
+        dedupedFilteredNewsArticles,
         filteredNewsCategories: computed(() => filteredNewsCategories.value),
         filteredNewsLoading: computed(() => filteredNewsLoading.value),
+        filteredNewsRefreshing: computed(() => filteredNewsRefreshing.value),
+        filteredNewsInitialized: computed(() => filteredNewsInitialized.value),
         filteredNewsError: computed(() => filteredNewsError.value),
         enrichmentEconomicSignals: computed(() => enrichmentEconomicSignals.value),
         enrichmentEconomicLoading: computed(() => enrichmentEconomicLoading.value),
@@ -3497,6 +3736,7 @@ export function useCollectionWorkspace() {
         generateEnrichmentLanguage,
         loadEnrichmentContextData,
         loadFilteredNews,
+        sortDedupedNewsArticles,
         generateEnrichmentWatchlist,
         fetchPropertyHistory,
         runAgentAction,

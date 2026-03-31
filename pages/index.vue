@@ -558,7 +558,8 @@
         currentTab.value === 'graph' ||
         currentTab.value === 'insights' ||
         currentTab.value === 'events' ||
-        currentTab.value === 'timeline'
+        currentTab.value === 'timeline' ||
+        currentTab.value === 'agent'
             ? []
             : recommendedActions.value.filter((action) => action.tab === currentTab.value)
     );
