@@ -50,7 +50,7 @@ Create a demonstration app that proves four capabilities:
 2. That graph can be inspected and validated in a way that is grounded in the
    underlying source documents.
 3. Agents can operate over that graph to answer questions, summarize structure,
-   identify important entities, and surface contextual insights.
+   and identify important entities with grounded contextual analysis.
 4. The extracted graph can be expanded one to two hops into the broader
    knowledge graph to provide materially richer context than the source corpus
    alone.

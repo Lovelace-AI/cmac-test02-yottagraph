@@ -95,7 +95,7 @@ The tabs should therefore be:
 
 - Rebuilding the entire module information architecture
 - Defining extraction or backend pipeline changes
-- Replacing the overview, graph, entities, relationships, or insights tabs
+- Replacing the overview, graph, entities, relationships, or timeline/enrichment tabs
 - Turning the `Agents` tab into a general-purpose prompt playground
 - Building full document review or redlining tooling inside `Legal Agreements`
 
@@ -1018,7 +1018,6 @@ These tabs should rely on normalized collection data from `useDocumentGraph()` o
 - `documents`
 - per-entity `properties_by_document`
 - agreement-like entities with subtype and source metadata
-- persisted insights question set, answers, supporting snippets, usage, and cache fingerprint state
 - enrichment / verification / linkage state for entity detail rendering
 
 ### 15.2 State Ownership
@@ -1026,7 +1025,6 @@ These tabs should rely on normalized collection data from `useDocumentGraph()` o
 - collection-level graph data lives in the shared composable
 - tab-local filters live in the tab component
 - selected entity lives in shared state so the side panel stays global
-- insights question/answer/cache state should live in a dedicated composable so it survives tab switches
 - chat panel visibility and live agent activity remain shared page state
 
 ---

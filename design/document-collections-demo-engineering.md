@@ -54,7 +54,6 @@ sectioned work areas:
 - graph
 - events
 - agreements
-- insights
 - validation
 - enrichment
 
@@ -247,7 +246,7 @@ type PropertySeriesRecord = {
 
 ## Architecture decisions
 
-- **Navigation:** Single-page workspace with 7 in-page tabs (not multi-route or sidebar).
+- **Navigation:** Single-page workspace with 6 in-page tabs (not multi-route or sidebar).
 - **Graph loading:** On-demand live rebuild via MCP traversal, not precomputed seed. The bootstrap route returns document metadata and empty state; the rebuild route fetches everything live.
 - **Agent workspace:** In-app guided actions over normalized graph state rather than deployed ADK agent. Actions are server-side functions that work over the cached collection state.
 - **Visual design:** Borrows typography, spacing, and card/table density from the CRM reference doc but uses in-page tab navigation instead of sidebar or multi-route.
