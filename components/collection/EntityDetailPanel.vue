@@ -137,6 +137,16 @@
                             Why this entity matters
                         </div>
                         <div class="text-body-2">{{ entityRoleSummary }}</div>
+                        <div
+                            v-if="entityRoleSummaryRewriteLoading || entityRoleSummaryRewrite"
+                            class="text-caption text-medium-emphasis mt-1"
+                        >
+                            {{
+                                entityRoleSummaryRewriteLoading
+                                    ? 'Polishing narrative for readability...'
+                                    : 'AI-edited readability pass applied.'
+                            }}
+                        </div>
                     </v-card-text>
                 </v-card>
 
@@ -473,6 +483,11 @@
     } = useCollectionWorkspace();
 
     const activeTab = ref<PanelTab>('properties');
+    const entityRoleSummaryRewrite = ref('');
+    const entityRoleSummaryRewriteLoading = ref(false);
+    const entityRoleSummaryCache = ref<Record<string, string>>({});
+    const entityRoleSummaryRequestId = ref(0);
+    const entityRoleSummaryKey = ref('');
 
     const panelTabs = computed<Array<{ value: PanelTab; label: string; icon: string }>>(() => {
         const tabs: Array<{ value: PanelTab; label: string; icon: string }> = [
@@ -854,7 +869,7 @@
         return `${selectedEntity.value.name} has ${total} linked relationships (${inbound} inbound, ${outbound} outbound), with ${evidenceBacked} source-backed.`;
     });
 
-    const entityRoleSummary = computed(() => {
+    const entityRoleSummaryBase = computed(() => {
         if (!selectedEntity.value) return '';
         const relCount = selectedEntityRelationships.value.length;
         const eventCount = selectedEntityEvents.value.length;
@@ -886,6 +901,9 @@
             : 'No source documents are currently linked.';
         return `${selectedEntity.value.name} is a ${flavor} connected by ${formatCount(relCount)} relationship${relCount === 1 ? '' : 's'}, participating in ${formatCount(eventCount)} event${eventCount === 1 ? '' : 's'}, and backed by ${formatCount(sourceCount)} source document${sourceCount === 1 ? '' : 's'}. ${relationshipText} ${eventText} ${sourceText}`;
     });
+    const entityRoleSummary = computed(
+        () => entityRoleSummaryRewrite.value || entityRoleSummaryBase.value
+    );
 
     const sourcesNarrative = computed(() => {
         if (!selectedEntity.value) return '';
@@ -1056,6 +1074,126 @@
         selectEntity(citation.neid);
     }
 
+    function buildEntityRoleSummaryKey(): string {
+        if (!selectedEntity.value) return '';
+        const relationshipAnchors = strongestRelationships.value
+            .slice(0, 4)
+            .map((rel) => `${rel.type}:${rel.sourceNeid}:${rel.targetNeid}`)
+            .join('|');
+        const eventAnchors = entityEventsSorted.value
+            .slice(0, 4)
+            .map((eventItem) => `${eventItem.neid}:${eventItem.date ?? ''}`)
+            .join('|');
+        return [
+            selectedEntity.value.neid,
+            selectedEntityRelationships.value.length,
+            selectedEntityEvents.value.length,
+            selectedEntity.value.sourceDocuments.length,
+            relationshipAnchors,
+            eventAnchors,
+        ].join('::');
+    }
+
+    function buildEntityRoleRewritePrompt(): string {
+        if (!selectedEntity.value) return '';
+        const relationshipContext =
+            strongestRelationships.value
+                .slice(0, 4)
+                .map((rel) => {
+                    const inbound = rel.targetNeid === selectedEntity.value!.neid;
+                    const peerNeid = inbound ? rel.sourceNeid : rel.targetNeid;
+                    const direction = inbound ? 'from' : 'to';
+                    return `${normalizeRelationshipType(rel.type)} ${direction} ${resolveEntityName(peerNeid)}`;
+                })
+                .join(' | ') || 'none';
+        const eventContext =
+            entityEventsSorted.value
+                .slice(0, 4)
+                .map(
+                    (eventItem) =>
+                        `${eventItem.name}${eventItem.date ? ` (${eventItem.date.slice(0, 10)})` : ''}`
+                )
+                .join(' | ') || 'none';
+        const documentContext =
+            selectedEntity.value.sourceDocuments
+                .slice(0, 5)
+                .map((docNeid) => resolveEntityName(docNeid))
+                .join(' | ') || 'none';
+        return [
+            'Rewrite this collection-grounded entity role summary for readability and analyst use.',
+            'Write in concise financial-journal style (Economist/WSJ tone): precise, neutral, and specific.',
+            'Output plain text only, 2-4 sentences, no bullets.',
+            'Do not invent facts. Use only provided evidence.',
+            `Entity: ${selectedEntity.value.name} (${selectedEntity.value.flavor.replace(/_/g, ' ')}).`,
+            `Current summary: ${entityRoleSummaryBase.value}`,
+            `Key relationships: ${relationshipContext}.`,
+            `Related events: ${eventContext}.`,
+            `Source documents: ${documentContext}.`,
+        ].join('\n');
+    }
+
+    async function refreshEntityRoleSummary(): Promise<void> {
+        if (!selectedEntity.value) {
+            entityRoleSummaryRewrite.value = '';
+            entityRoleSummaryRewriteLoading.value = false;
+            entityRoleSummaryKey.value = '';
+            return;
+        }
+
+        const key = buildEntityRoleSummaryKey();
+        const cached = entityRoleSummaryCache.value[key];
+        if (cached) {
+            entityRoleSummaryKey.value = key;
+            entityRoleSummaryRewrite.value = cached;
+            entityRoleSummaryRewriteLoading.value = false;
+            return;
+        }
+
+        const prompt = buildEntityRoleRewritePrompt();
+        if (!prompt.trim()) {
+            entityRoleSummaryRewrite.value = '';
+            return;
+        }
+
+        entityRoleSummaryKey.value = key;
+        const requestId = ++entityRoleSummaryRequestId.value;
+        entityRoleSummaryRewriteLoading.value = true;
+
+        try {
+            const response = await $fetch<{ output?: string }>('/api/collection/answer', {
+                method: 'POST',
+                body: {
+                    action: 'explain_entity',
+                    entityNeid: selectedEntity.value.neid,
+                    question: prompt,
+                },
+            });
+            if (requestId !== entityRoleSummaryRequestId.value) return;
+            const polished = response?.output?.trim() || '';
+            if (polished) {
+                entityRoleSummaryRewrite.value = polished;
+                entityRoleSummaryCache.value[key] = polished;
+            }
+        } catch {
+            // Keep deterministic fallback when Gemini rewrite is unavailable.
+            if (requestId !== entityRoleSummaryRequestId.value) return;
+            entityRoleSummaryRewrite.value = '';
+        } finally {
+            if (requestId === entityRoleSummaryRequestId.value) {
+                entityRoleSummaryRewriteLoading.value = false;
+            }
+        }
+    }
+
+    watch(
+        () => buildEntityRoleSummaryKey(),
+        () => {
+            entityRoleSummaryRewrite.value = '';
+            void refreshEntityRoleSummary();
+        },
+        { immediate: true }
+    );
+
     async function runExplainEntity() {
         if (!selectedEntity.value) return;
         const prompt = [
@@ -1071,7 +1209,7 @@
                     .join(', ') || 'none'
             }.`,
             `Document-graph context: ${documentCorpusRelationshipLines.value.join(' ') || 'No additional document-graph linkage summary available.'}`,
-            `Role summary: ${entityRoleSummary.value}`,
+            `Role summary: ${entityRoleSummaryBase.value}`,
             'Answer using the supplied collection context. Do not ask for more context unless the data above is actually insufficient.',
         ].join(' ');
         await runAgentAction('explain_entity', {
