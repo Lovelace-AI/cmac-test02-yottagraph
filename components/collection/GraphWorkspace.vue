@@ -351,6 +351,7 @@
         showEnrichedEntities?: boolean;
         showEnrichedRelationships?: boolean;
         initialSourceBackedOnly?: boolean;
+        initialIncludeContextEndpoints?: boolean;
         initialAnalysisMode?:
             | 'centrality'
             | 'relationship'
@@ -460,7 +461,7 @@
     const relationshipTypeFilter = ref<string | null>(null);
     const sourceBackedOnly = ref(props.initialSourceBackedOnly ?? false);
     const highConfidenceOnly = ref(false);
-    const includeContextEndpoints = ref(true);
+    const includeContextEndpoints = ref(props.initialIncludeContextEndpoints ?? true);
     const pathStart = ref<string | null>(null);
     const pathEnd = ref<string | null>(null);
     const shortestPathText = ref('');

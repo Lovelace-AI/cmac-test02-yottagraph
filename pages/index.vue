@@ -111,6 +111,7 @@
                     <GraphWorkspace
                         v-else-if="currentTab === 'graph'"
                         :initial-source-backed-only="true"
+                        :initial-include-context-endpoints="false"
                     />
                     <EventsView v-else-if="currentTab === 'events'" />
                     <TimelineComparisonView v-else-if="currentTab === 'timeline'" />

@@ -211,13 +211,10 @@
             </v-window-item>
 
             <v-window-item value="graph">
-                <v-alert type="info" variant="tonal" class="mb-2">
-                    Graph view shows the full curated 1-degree neighborhood for document entities
-                    and related events without the collapsed simplified default.
-                </v-alert>
                 <GraphWorkspace
-                    :entities-override="enrichmentGraphEntities"
-                    :relationships-override="enrichmentGraphRelationships"
+                    :entities-override="entities"
+                    :relationships-override="relationships"
+                    :initial-include-context-endpoints="true"
                     :initial-analysis-mode="'enrichment_cluster'"
                 />
             </v-window-item>
@@ -335,8 +332,6 @@
         relationships,
         resolveEntityName,
         enrichmentComparison,
-        enrichmentGraphEntities,
-        enrichmentGraphRelationships,
         lineageResults,
         lineageInvestigation,
         peopleAffiliationInsights,
