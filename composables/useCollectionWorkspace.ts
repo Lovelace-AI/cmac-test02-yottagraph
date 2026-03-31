@@ -2045,9 +2045,14 @@ export function useCollectionWorkspace() {
             const strongestEntityScore = primaryEntity
                 ? (aggregate.entityScores.get(primaryEntity.neid) ?? 0)
                 : 0;
+            const multiEntityBonus =
+                uniqueGraphMentionCount >= 2
+                    ? 4 + Math.max(0, uniqueGraphMentionCount - 2) * 1.2
+                    : 0;
             const strongestMatchScore =
                 strongestEntityScore +
                 uniqueGraphMentionCount * 0.9 +
+                multiEntityBonus +
                 (aggregate.confidence ?? 0) * 0.6 +
                 snippetQualityWeight(aggregate.snippetQuality) * 0.5;
             const categories = Array.from(aggregate.matchedCategories);
@@ -2115,7 +2120,12 @@ export function useCollectionWorkspace() {
             });
             return sorted;
         }
-        sorted.sort((a, b) => b.strongestMatchScore - a.strongestMatchScore);
+        sorted.sort((a, b) => {
+            const aMulti = a.uniqueGraphMentionCount >= 2 ? 1 : 0;
+            const bMulti = b.uniqueGraphMentionCount >= 2 ? 1 : 0;
+            if (aMulti !== bMulti) return bMulti - aMulti;
+            return b.strongestMatchScore - a.strongestMatchScore;
+        });
         return sorted;
     }
     const enrichmentLanguageCards = computed(() =>
