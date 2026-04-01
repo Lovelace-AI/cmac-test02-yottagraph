@@ -20,11 +20,11 @@
                     </tr>
                 </tbody>
             </v-table>
-            <div
-                v-if="sources.length > visibleSources.length"
-                class="text-caption text-medium-emphasis mt-2"
-            >
-                Showing {{ visibleSources.length }} of {{ sources.length }} sources.
+            <div v-if="sources.length > visibleSources.length" class="sources-footer mt-2">
+                <span class="text-caption text-medium-emphasis">
+                    Showing {{ visibleSources.length }} of {{ sources.length }} sources.
+                </span>
+                <div ref="loadMoreSentinel" class="load-more-sentinel" aria-hidden="true" />
             </div>
         </v-card-text>
     </v-card>
@@ -37,7 +37,66 @@
         sources: InitialSourceRow[];
     }>();
 
-    const visibleSources = computed(() => props.sources.slice(0, 5));
+    const INITIAL_SOURCE_BATCH = 8;
+    const SOURCE_BATCH_SIZE = 8;
+
+    const visibleCount = ref(Math.min(INITIAL_SOURCE_BATCH, props.sources.length));
+    const loadMoreSentinel = ref<HTMLElement | null>(null);
+    const canLoadMore = computed(() => visibleCount.value < props.sources.length);
+    const visibleSources = computed(() => props.sources.slice(0, visibleCount.value));
+
+    let sentinelObserver: IntersectionObserver | null = null;
+
+    function resetVisibleCount() {
+        visibleCount.value = Math.min(INITIAL_SOURCE_BATCH, props.sources.length);
+    }
+
+    function loadMoreSources() {
+        if (!canLoadMore.value) return;
+        visibleCount.value = Math.min(visibleCount.value + SOURCE_BATCH_SIZE, props.sources.length);
+    }
+
+    function disconnectObserver() {
+        sentinelObserver?.disconnect();
+        sentinelObserver = null;
+    }
+
+    function observeSentinel() {
+        disconnectObserver();
+        if (import.meta.server || !canLoadMore.value || !loadMoreSentinel.value) return;
+        sentinelObserver = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((entry) => entry.isIntersecting)) {
+                    loadMoreSources();
+                }
+            },
+            {
+                rootMargin: '160px 0px',
+                threshold: 0.1,
+            }
+        );
+        sentinelObserver.observe(loadMoreSentinel.value);
+    }
+
+    watch(
+        () => props.sources.length,
+        () => {
+            resetVisibleCount();
+        }
+    );
+
+    watch([canLoadMore, loadMoreSentinel], async () => {
+        await nextTick();
+        observeSentinel();
+    });
+
+    onMounted(() => {
+        observeSentinel();
+    });
+
+    onBeforeUnmount(() => {
+        disconnectObserver();
+    });
 </script>
 
 <style scoped>
@@ -91,5 +150,17 @@
     .cell-date {
         white-space: nowrap;
         color: var(--dynamic-text-secondary);
+    }
+
+    .sources-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .load-more-sentinel {
+        width: 100%;
+        height: 1px;
     }
 </style>
