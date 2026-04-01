@@ -113,14 +113,14 @@
 
     const entitiesWithSeries = computed(() => {
         const eligible = new Set(propertySeries.value.map((series) => series.neid));
-        return entities.value.filter((entity) => eligible.has(entity.neid));
+        return entities.value.filter((entity) => entity?.neid && eligible.has(entity.neid));
     });
 
     const entityOptions = computed(() =>
         entitiesWithSeries.value.map((entity) => ({
-            title: entity.name,
+            title: entity.name || entity.neid,
             value: entity.neid,
-            subtitle: `${entity.flavor.replace(/_/g, ' ')} · ${entity.sourceDocuments.length} docs`,
+            subtitle: `${String(entity.flavor ?? 'unknown').replace(/_/g, ' ')} · ${entity.sourceDocuments.length} docs`,
         }))
     );
 

@@ -36,9 +36,16 @@ export function useEntityKeywords() {
     // Build sorted entity list (longest names first to avoid partial-match collisions)
     const sortedEntities = computed<KeywordEntity[]>(() =>
         [...entities.value]
-            .filter((e) => e.name.length > 3)
-            .sort((a, b) => b.name.length - a.name.length)
-            .map((e) => ({ neid: e.neid, name: e.name, flavor: e.flavor }))
+            .filter((entity) => {
+                const name = String(entity?.name ?? '').trim();
+                return Boolean(entity?.neid) && name.length > 3;
+            })
+            .sort((a, b) => String(b?.name ?? '').length - String(a?.name ?? '').length)
+            .map((entity) => ({
+                neid: entity.neid,
+                name: String(entity.name ?? '').trim(),
+                flavor: entity.flavor || 'unknown',
+            }))
     );
 
     /**

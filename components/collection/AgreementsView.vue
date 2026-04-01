@@ -246,7 +246,12 @@
         return docSet.size;
     });
     const entityByNeid = computed(
-        () => new Map(entities.value.map((entity) => [entity.neid, entity]))
+        () =>
+            new Map(
+                entities.value
+                    .filter((entity) => Boolean(entity?.neid))
+                    .map((entity) => [entity.neid, entity])
+            )
     );
     const agreementNeidSet = computed(() => new Set(agreements.value.map((item) => item.neid)));
     const documentTitleByNeid = computed(

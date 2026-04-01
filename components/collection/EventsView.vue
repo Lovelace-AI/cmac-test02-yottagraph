@@ -101,15 +101,18 @@
     const viewMode = ref<EventViewMode>('timeline');
 
     const filteredEvents = computed(() => {
-        let list = events.value.map((eventItem) => {
-            const significance = computeSignificance(eventItem);
-            const resolvedDate = resolveEventDate(eventItem);
-            return {
-                ...eventItem,
-                date: resolvedDate ?? eventItem.date,
-                significance,
-            };
-        });
+        let list = events.value
+            .filter((eventItem) => Boolean(eventItem?.neid))
+            .map((eventItem) => {
+                const significance = computeSignificance(eventItem);
+                const resolvedDate = resolveEventDate(eventItem);
+                return {
+                    ...eventItem,
+                    name: eventItem.name || eventItem.category || 'Event',
+                    date: resolvedDate ?? eventItem.date,
+                    significance,
+                };
+            });
         return list.sort((a, b) => {
             if (b.significance !== a.significance) return b.significance - a.significance;
             if (!a.date && !b.date) return 0;

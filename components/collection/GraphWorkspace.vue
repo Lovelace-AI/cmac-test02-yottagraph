@@ -660,9 +660,10 @@
 
     const entityPathOptions = computed(() =>
         entities.value
+            .filter((entity) => Boolean(entity?.neid))
             .map((entity) => ({
                 value: entity.neid,
-                title: `${displayEntityName(entity.neid, entity.name)} (${entity.flavor.replace(/_/g, ' ')})`,
+                title: `${displayEntityName(entity.neid, entity.name)} (${String(entity.flavor ?? 'unknown').replace(/_/g, ' ')})`,
             }))
             .sort((a, b) => a.title.localeCompare(b.title))
     );
