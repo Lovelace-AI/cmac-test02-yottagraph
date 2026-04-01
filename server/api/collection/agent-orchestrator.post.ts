@@ -840,12 +840,19 @@ export default defineEventHandler(async (event) => {
                     entityNeid,
                     candidate: parseAgentJson<PlanningAgentOutput>(planningResult.text),
                 });
+                const planningEvidenceExamples = planning.requestedEvidence.slice(0, 3);
+                const planningFocusEntityNames = planning.focusEntityNeids
+                    .slice(0, 3)
+                    .map((neid) => {
+                        const match = collection.entities.find((entity) => entity.neid === neid);
+                        return match?.name || neid;
+                    });
                 startedAt = completeStep(steps, 1, startedAt);
                 send('steps', steps);
                 sendTrace(
                     'planning',
                     'completed',
-                    `Planning complete. Selected "${planning.answerStyle}" style with ${planning.requestedEvidence.length} evidence targets.`,
+                    `Planning complete. "${planning.answerStyle}" strategy selected with ${planning.requestedEvidence.length} evidence targets. Examples: ${planningEvidenceExamples.join('; ') || 'none provided'}.${planningFocusEntityNames.length ? ` Focus entities: ${planningFocusEntityNames.join(', ')}.` : ''}`,
                     Math.max(1, nowMs() - planningHeartbeat.startedAtMs)
                 );
                 const planningDetail: AgentRunDetails['planning'] = {
@@ -853,7 +860,9 @@ export default defineEventHandler(async (event) => {
                     intent: planning.intent,
                     answerStyle: planning.answerStyle,
                     focusEntityNeids: planning.focusEntityNeids,
+                    focusEntityNames: planningFocusEntityNames,
                     requestedEvidence: planning.requestedEvidence,
+                    requestedEvidenceExamples: planningEvidenceExamples,
                     confidenceNote: planning.confidenceNote,
                 };
                 send('agent-detail', planningDetail);
@@ -873,7 +882,7 @@ export default defineEventHandler(async (event) => {
                 );
                 const contextHeartbeat = startTraceHeartbeat(
                     'context',
-                    'Context agent is querying graph tools (schema, entity search, properties, profile evidence)...'
+                    `Context agent is retrieving evidence for targets like ${planningEvidenceExamples.join('; ') || 'graph coverage and support'}. Looking up entities, relationships, events, and profile properties.`
                 );
                 const contextResult = await callAgentQuery({
                     agentId: agentIds.contextAgentId!,
@@ -889,21 +898,43 @@ export default defineEventHandler(async (event) => {
                     fallbackContext,
                     parseAgentJson<ContextAgentOutput>(contextResult.text)
                 );
+                const topEntityNames = context.topEntities
+                    .slice(0, 6)
+                    .map((entity) => entity.name)
+                    .filter(Boolean);
+                const topEventNames = context.topEvents
+                    .slice(0, 3)
+                    .map((eventItem) => eventItem.name)
+                    .filter(Boolean);
+                const propertyFocus = Array.from(
+                    new Set(
+                        (context.profileEvidence ?? [])
+                            .flatMap((row) => Object.keys(row.properties || {}))
+                            .map((name) => String(name || '').trim())
+                            .filter(Boolean)
+                    )
+                ).slice(0, 8);
+                const propertyEvidenceExamples = (context.profileEvidence ?? [])
+                    .slice(0, 3)
+                    .map((row) => {
+                        const keys = Object.keys(row.properties || {}).slice(0, 3);
+                        return keys.length
+                            ? `${row.name}: ${keys.join(', ')}`
+                            : `${row.name}: no mapped properties returned`;
+                    });
                 startedAt = completeStep(steps, 2, startedAt);
                 send('steps', steps);
                 sendTrace(
                     'context',
                     'completed',
-                    `Context retrieval complete. ${context.stats.entityCount} entities, ${context.stats.eventCount} events, ${context.stats.relationshipCount} relationships assembled.`,
+                    `Context retrieval complete. ${context.stats.entityCount} entities, ${context.stats.eventCount} events, ${context.stats.relationshipCount} relationships assembled. Entities: ${topEntityNames.slice(0, 3).join(', ') || 'n/a'}. Properties examined: ${propertyFocus.slice(0, 4).join(', ') || 'none'}.`,
                     Math.max(1, nowMs() - contextHeartbeat.startedAtMs)
                 );
                 const contextDetail: AgentRunDetails['context'] = {
                     agent: 'context',
                     stats: context.stats,
-                    topEntityNames: context.topEntities
-                        .slice(0, 6)
-                        .map((entity) => entity.name)
-                        .filter(Boolean),
+                    topEntityNames,
+                    topEventNames,
                     evidenceLineCount: context.evidenceLines.length,
                     hasProfileEvidence: Boolean(context.profileEvidence?.length),
                     toolsUsed: [
@@ -917,6 +948,8 @@ export default defineEventHandler(async (event) => {
                         'get_entity_profile',
                         'build_entity_profile_context_bundle',
                     ],
+                    propertyFocus,
+                    propertyEvidenceExamples,
                 };
                 send('agent-detail', contextDetail);
 
@@ -934,7 +967,7 @@ export default defineEventHandler(async (event) => {
                 );
                 const compositionHeartbeat = startTraceHeartbeat(
                     'composition',
-                    `Assembling answer for "${question.slice(0, 90)}${question.length > 90 ? '…' : ''}" using ${context.stats.entityCount} entities, ${context.stats.eventCount} events, and ${context.stats.relationshipCount} relationships.`
+                    `Composing a ${planning.answerStyle} response for "${question.slice(0, 90)}${question.length > 90 ? '…' : ''}" from ${context.evidenceLines.length} evidence lines and ${context.stats.entityCount} entities.`
                 );
                 const compositionResult = await callAgentQuery({
                     agentId: agentIds.compositionAgentId!,
@@ -948,18 +981,20 @@ export default defineEventHandler(async (event) => {
                 sendTrace(
                     'composition',
                     'completed',
-                    `Composition complete. Generated ${output.length} characters with ${citations.length} citations.`,
+                    `Composition complete. Generated ${output.length} characters with ${citations.length} citations. Preview: ${output.slice(0, 90)}${output.length > 90 ? '…' : ''}`,
                     Math.max(1, nowMs() - compositionHeartbeat.startedAtMs)
                 );
                 const compositionDetail: AgentRunDetails['composition'] = {
                     agent: 'composition',
                     question,
+                    answerStyle: planning.answerStyle,
                     assembledFrom: {
                         entityCount: context.stats.entityCount,
                         eventCount: context.stats.eventCount,
                         relationshipCount: context.stats.relationshipCount,
                         evidenceLineCount: context.evidenceLines.length,
                     },
+                    evidencePreview: context.evidenceLines.slice(0, 3),
                     citationCount: citations.length,
                     outputLength: output.length,
                     generationSource: 'gateway',

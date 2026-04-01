@@ -34,7 +34,9 @@ export interface PlanningAgentRunDetail {
     intent: string;
     answerStyle: PlanningAgentOutput['answerStyle'];
     focusEntityNeids: string[];
+    focusEntityNames?: string[];
     requestedEvidence: string[];
+    requestedEvidenceExamples?: string[];
     confidenceNote?: string;
 }
 
@@ -47,20 +49,25 @@ export interface ContextAgentRunDetail {
         relationshipCount: number;
     };
     topEntityNames: string[];
+    topEventNames?: string[];
     evidenceLineCount: number;
     hasProfileEvidence: boolean;
     toolsUsed: string[];
+    propertyFocus?: string[];
+    propertyEvidenceExamples?: string[];
 }
 
 export interface CompositionAgentRunDetail {
     agent: 'composition';
     question?: string;
+    answerStyle?: PlanningAgentOutput['answerStyle'];
     assembledFrom?: {
         entityCount: number;
         eventCount: number;
         relationshipCount: number;
         evidenceLineCount: number;
     };
+    evidencePreview?: string[];
     citationCount: number;
     outputLength: number;
     generationSource?: AskYottaPipelineResponse['generationSource'];
