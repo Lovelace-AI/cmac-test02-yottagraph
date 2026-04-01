@@ -63,6 +63,15 @@ export function useProjectStore() {
     );
     const hasActiveProject = computed(() => Boolean(activeProject.value));
 
+    function mergeProjects(baseProjects: Project[], nextProjects: Project[]): Project[] {
+        const byId = new Map<string, Project>();
+        for (const project of [...baseProjects, ...nextProjects]) {
+            if (!project?.id) continue;
+            byId.set(project.id, project);
+        }
+        return Array.from(byId.values());
+    }
+
     async function detectKvAvailability(): Promise<boolean> {
         try {
             const status = await $fetch<{ available: boolean }>('/api/kv/status');
@@ -108,18 +117,21 @@ export function useProjectStore() {
     async function loadProjects() {
         if (loaded.value) return;
 
-        const baseProjects: Project[] = [BNY_PRESET_PROJECT];
+        let baseProjects: Project[] = [BNY_PRESET_PROJECT];
+        const localProjects = readLocalProjects().filter((project) => !project.preset);
+        const localActiveProjectId = readLocalActiveProjectId();
         const kvIsAvailable = await detectKvAvailability();
 
         if (kvIsAvailable) {
             const docIds = await kvStore.listDocuments(projectCollectionPath.value);
+            const kvProjects: Project[] = [];
             for (const docId of docIds) {
                 const doc = await kvStore.readDoc(`${projectCollectionPath.value}/${docId}`);
                 const serialized = doc?.project;
                 if (!serialized || typeof serialized !== 'string') continue;
                 try {
                     const project = JSON.parse(serialized) as Project;
-                    if (project?.id && !project.preset) baseProjects.push(project);
+                    if (project?.id && !project.preset) kvProjects.push(project);
                 } catch {
                     continue;
                 }
@@ -129,10 +141,12 @@ export function useProjectStore() {
             activeProjectId.value =
                 typeof storedActive === 'string' && storedActive.trim().length > 0
                     ? storedActive
-                    : null;
+                    : localActiveProjectId;
+            baseProjects = mergeProjects(baseProjects, localProjects);
+            baseProjects = mergeProjects(baseProjects, kvProjects);
         } else {
-            baseProjects.push(...readLocalProjects().filter((project) => !project.preset));
-            activeProjectId.value = readLocalActiveProjectId();
+            baseProjects = mergeProjects(baseProjects, localProjects);
+            activeProjectId.value = localActiveProjectId;
         }
 
         projects.value = baseProjects;
@@ -146,11 +160,11 @@ export function useProjectStore() {
     }
 
     async function persistActiveProject(projectId: string | null) {
+        writeLocalActiveProjectId(projectId);
         if (kvAvailable.value) {
             await kvStore.setValue(settingsDocPath.value, 'activeProjectId', projectId ?? '');
             return;
         }
-        writeLocalActiveProjectId(projectId);
     }
 
     async function selectProject(projectId: string | null) {
@@ -178,10 +192,9 @@ export function useProjectStore() {
                 'project',
                 JSON.stringify(project)
             );
-        } else {
-            const localProjects = projects.value.filter((entry) => !entry.preset);
-            writeLocalProjects(localProjects);
         }
+        const localProjects = projects.value.filter((entry) => !entry.preset);
+        writeLocalProjects(localProjects);
         await selectProject(project.id);
         return project;
     }
@@ -193,10 +206,9 @@ export function useProjectStore() {
         projects.value = projects.value.filter((project) => project.id !== projectId);
         if (kvAvailable.value) {
             await kvStore.deleteDoc(`${projectCollectionPath.value}/${projectId}`);
-        } else {
-            const localProjects = projects.value.filter((project) => !project.preset);
-            writeLocalProjects(localProjects);
         }
+        const localProjects = projects.value.filter((project) => !project.preset);
+        writeLocalProjects(localProjects);
 
         if (activeProjectId.value === projectId) {
             await selectProject(null);
