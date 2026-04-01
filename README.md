@@ -1,4 +1,4 @@
-# Document Collection Intelligence
+# Context Intelligence
 
 A modular application built with Aether
 

@@ -1,4 +1,4 @@
-# Document Collection Intelligence - Design Document
+# Context Intelligence - Design Document
 
 ## Project Overview
 
@@ -11,7 +11,7 @@ documents.
 
 **Created:** 2026-03-25  
 **App ID:** cmac-test02  
-**Description:** Document Collection Intelligence workspace  
+**Description:** Context Intelligence workspace  
 **Last updated:** 2026-03-31 (Ask Yotta now preserves a scrolling multi-turn conversation with follow-up context, evidence-used callouts, and stronger brief/gap-answer routing; overview corpus narrative upgraded with richer relationship/property grounding; enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, Graph & Entities header cleanup, an editorial-style News/Recent Coverage feed hierarchy, and a graph-aware deduped News feed with explicit primary/secondary entity context, snippet expansion, analytical sorting, and stable filter-loading skeleton states; corporate lineage tab redesigned into a compact evidence-first analyst view with structured expandable support panels and scan controls; rebuild pipeline now hydrates flavor-specific core entity/event properties and context-agent guidance documents explicit schema-to-PID property retrieval; new Build Network project-first onboarding supports preset/document/entity seeded network creation, project-scoped cache bootstrap/rebuild, dynamic seed NEID orchestration, richer live workspace-preparation progress detail with in-flight event hub activity/ETA reporting, and explicit MCP failure messages in verbose rebuild progress)
 
 ## Vision

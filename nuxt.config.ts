@@ -172,7 +172,7 @@ export default defineNuxtConfig({
             qsApiKey: '',
             // App Identity — broadchurch.yaml provides defaults for provisioned projects
             appId: bcYaml.appId,
-            appName: bcYaml.appName || 'Document Collection Intelligence',
+            appName: bcYaml.appName || 'Context Intelligence',
             appShortName: 'Elemental',
 
             // Auth0 Configuration
