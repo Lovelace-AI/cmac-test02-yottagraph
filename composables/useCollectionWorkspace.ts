@@ -337,7 +337,7 @@ const INITIAL_STEPS: RebuildStep[] = [
         step: 1,
         status: 'pending',
         label: 'Loading Seed Context',
-        detail: 'Traversing seeded roots...',
+        detail: 'Traversing seeded entities...',
     },
     {
         step: 2,
@@ -528,8 +528,8 @@ export function useCollectionWorkspace() {
         const parts = Array.from(flavorCounts.entries()).map(([flavor, count]) =>
             pluralizeFlavorLabel(flavor, count)
         );
-        if (!parts.length) return `${totalSeedCount} seeded sources`;
-        return `${totalSeedCount} seeded source${totalSeedCount === 1 ? '' : 's'} (${parts.join(', ')})`;
+        if (!parts.length) return `${totalSeedCount} seeded entities`;
+        return `${totalSeedCount} seeded entit${totalSeedCount === 1 ? 'y' : 'ies'} (${parts.join(', ')})`;
     }
     function projectRequestPayload() {
         if (!activeProject.value) return null;

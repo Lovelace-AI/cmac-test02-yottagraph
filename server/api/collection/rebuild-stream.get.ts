@@ -357,7 +357,7 @@ function parseNeidList(value: string | string[] | undefined): string[] {
 function buildSeedSummaryLabel(clientSeedSourceCount: number, serverSeedRootCount: number): string {
     const count = clientSeedSourceCount > 0 ? clientSeedSourceCount : serverSeedRootCount;
     if (count <= 0) return 'project seeds';
-    return `${formatCount(count)} seeded source${count === 1 ? '' : 's'}`;
+    return `${formatCount(count)} seeded entit${count === 1 ? 'y' : 'ies'}`;
 }
 
 export default defineEventHandler(async (event) => {
@@ -627,7 +627,7 @@ export default defineEventHandler(async (event) => {
             'Confirming Entity Profiles',
             phase1Tasks.length > 0
                 ? `Confirmed ${formatCount(phase2Resolved)} entity matches across ${formatCount(phase1Tasks.length)} live graph lookups.`
-                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers discovered from seeded roots.`,
+                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers discovered from seeded entities.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
