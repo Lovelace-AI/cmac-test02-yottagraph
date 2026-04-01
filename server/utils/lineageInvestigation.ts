@@ -22,7 +22,15 @@ interface LineageInvestigationOptions {
 
 const DEFAULT_MAX_HOPS = 6;
 const DEFAULT_MAX_ORGANIZATIONS = 250;
-const RELATED_LIMIT = 500;
+const RELATED_LIMIT = 100_000;
+const LINEAGE_RELATIONSHIP_TYPES = [
+    'direct_parent',
+    'ultimate_parent',
+    'subsidiary_of',
+    'owns',
+    'parent_of',
+    'acquired_by',
+];
 const EXCLUDED_LINEAGE_NEID_PAIRS = new Set([
     // Explicitly exclude service-provider predecessor edge that is not a corporate action.
     '01470965072054453101|07683517764755523583',
@@ -291,6 +299,7 @@ export async function runCorporateLineageInvestigation(
                     related_flavor: 'organization',
                     direction: 'both',
                     limit: RELATED_LIMIT,
+                    relationship_types: LINEAGE_RELATIONSHIP_TYPES,
                 },
                 { timeoutMs: 15_000 }
             );
