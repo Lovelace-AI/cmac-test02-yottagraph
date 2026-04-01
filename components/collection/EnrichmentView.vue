@@ -211,16 +211,59 @@
             </v-window-item>
 
             <v-window-item value="graph">
+                <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-3">
+                    <div class="d-flex align-center ga-2 flex-wrap">
+                        <v-chip
+                            size="small"
+                            variant="tonal"
+                            :color="hasEnrichedData ? 'success' : 'default'"
+                        >
+                            {{
+                                hasEnrichedData
+                                    ? `${formatNumber(graphEntities.length)} entities (${formatNumber(enrichedEntityCount)} enriched)`
+                                    : `${formatNumber(documentEntityCount)} document entities`
+                            }}
+                        </v-chip>
+                        <v-chip v-if="hasEnrichedData" size="small" variant="tonal" color="info">
+                            {{ formatNumber(graphRelationships.length) }} relationships
+                        </v-chip>
+                    </div>
+                    <v-btn
+                        size="small"
+                        :variant="hasEnrichedData ? 'outlined' : 'flat'"
+                        :color="hasEnrichedData ? 'default' : 'primary'"
+                        :prepend-icon="hasEnrichedData ? 'mdi-refresh' : 'mdi-arrow-expand-all'"
+                        :loading="enriching"
+                        :disabled="enriching || documentEntityCount === 0"
+                        @click="runOneHopExpansion"
+                    >
+                        {{
+                            hasEnrichedData
+                                ? 'Re-run 1-Hop Expansion'
+                                : 'Expand 1-Hop From Document Entities'
+                        }}
+                    </v-btn>
+                </div>
+                <v-alert
+                    v-if="enrichError"
+                    type="error"
+                    variant="tonal"
+                    class="mb-3"
+                    closable
+                    @click:close="enrichError = null"
+                >
+                    {{ enrichError }}
+                </v-alert>
                 <GraphWorkspace
                     key="enrichment-graph-workspace"
-                    :entities-override="enrichmentSupersetGraphEntities"
-                    :relationships-override="enrichmentSupersetGraphRelationships"
+                    :entities-override="graphEntities"
+                    :relationships-override="graphRelationships"
                     :show-enriched-entities="true"
                     :show-enriched-relationships="true"
                     :is-active="activeSubtab === 'graph'"
                     :initial-include-context-endpoints="true"
                     :initial-hidden-flavors="[]"
-                    :initial-analysis-mode="'enrichment_cluster'"
+                    :initial-analysis-mode="hasEnrichedData ? 'enrichment_cluster' : 'centrality'"
                 />
             </v-window-item>
 
@@ -335,8 +378,11 @@
         entities,
         events,
         relationships,
-        enrichmentSupersetGraphEntities,
-        enrichmentSupersetGraphRelationships,
+        documentEntities,
+        documentRelationships,
+        enrichedEntities,
+        enriching,
+        enrich,
         resolveEntityName,
         enrichmentComparison,
         lineageResults,
@@ -353,6 +399,32 @@
     } = useCollectionWorkspace();
 
     const activeSubtab = ref<'comparison' | 'graph' | 'lineage' | 'news'>('comparison');
+    const enrichError = ref<string | null>(null);
+
+    const documentEntityCount = computed(() => documentEntities.value.length);
+    const enrichedEntityCount = computed(() => enrichedEntities.value.length);
+    const hasEnrichedData = computed(() => enrichedEntityCount.value > 0);
+
+    const graphEntities = computed(() =>
+        hasEnrichedData.value ? entities.value : documentEntities.value
+    );
+    const graphRelationships = computed(() =>
+        hasEnrichedData.value ? relationships.value : documentRelationships.value
+    );
+
+    async function runOneHopExpansion() {
+        enrichError.value = null;
+        const anchorNeids = documentEntities.value.map((e) => e.neid);
+        if (!anchorNeids.length) return;
+        try {
+            await enrich(anchorNeids, true);
+        } catch (e: any) {
+            enrichError.value =
+                e?.data?.statusMessage ||
+                e?.message ||
+                '1-hop expansion failed. Check MCP connectivity.';
+        }
+    }
     const selectedNewsCategories = ref<string[]>([]);
     const newsSortMode = ref<
         'strongest_graph_connection' | 'most_graph_entities' | 'most_recent' | 'highest_relevance'
