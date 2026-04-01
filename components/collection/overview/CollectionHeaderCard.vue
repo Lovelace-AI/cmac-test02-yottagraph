@@ -45,7 +45,7 @@
                     detectedDealType
                 }}</v-chip>
                 <v-chip size="small" variant="tonal" class="header-pill">
-                    {{ documentCount }} source documents
+                    {{ documentCount }} initial sources
                 </v-chip>
                 <v-chip
                     size="small"

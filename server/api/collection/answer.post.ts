@@ -21,6 +21,7 @@ interface CollectionAnswerRequest {
     action?: string;
     question?: string;
     entityNeid?: string;
+    projectId?: string;
 }
 
 interface CollectionAnswerResponse {
@@ -403,8 +404,9 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
     const action = String(body.action ?? 'answer_question').trim() || 'answer_question';
     const question = String(body.question ?? '').trim();
     const entityNeid = String(body.entityNeid ?? '').trim() || undefined;
+    const projectId = String(body.projectId ?? '').trim() || undefined;
 
-    const cached = await readCollectionCache();
+    const cached = await readCollectionCache(projectId);
     const collection = cached.state;
     if (!collection || collection.status !== 'ready') {
         throw createError({

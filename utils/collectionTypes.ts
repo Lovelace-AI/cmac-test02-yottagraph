@@ -306,6 +306,13 @@ export const BNY_PRESET_PROJECT: Project = {
     preset: true,
 };
 
+export const PRESET_PROJECTS: Project[] = [BNY_PRESET_PROJECT];
+
+export function resolvePresetProject(projectId?: string | null): Project | undefined {
+    if (!projectId) return undefined;
+    return PRESET_PROJECTS.find((project) => project.id === projectId);
+}
+
 export const HOP1_FLAVORS = [
     'organization',
     'person',

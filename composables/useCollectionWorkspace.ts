@@ -2537,6 +2537,7 @@ export function useCollectionWorkspace() {
             state: overviewScopedState.value,
             rebuilding: rebuilding.value,
             trustCoverageSummary: overviewTrustCoverageSummary.value,
+            activeProject: activeProject.value,
         })
     );
     const primaryMeta = computed(() => overviewScopedState.value.meta);
@@ -2611,6 +2612,7 @@ export function useCollectionWorkspace() {
                             body: {
                                 action: 'lineage_narrative',
                                 question: lineageQuestion,
+                                projectId: activeProject.value?.id,
                             },
                         }
                     );
@@ -3350,6 +3352,7 @@ export function useCollectionWorkspace() {
                     action,
                     question: prompt,
                     entityNeid: params?.entityNeid,
+                    projectId: activeProject.value?.id,
                 }),
             });
 
@@ -3505,6 +3508,7 @@ export function useCollectionWorkspace() {
                     action,
                     question,
                     conversationHistory: history,
+                    projectId: activeProject.value?.id,
                 }),
             });
 

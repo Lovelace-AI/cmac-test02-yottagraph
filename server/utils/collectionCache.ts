@@ -80,8 +80,7 @@ export function getInMemoryCollectionCache(projectId?: string | null): Collectio
     const normalizedProject = normalizedProjectId(projectId);
     const scoped = inMemoryCacheByProject.get(normalizedProject);
     if (scoped) return withCacheMeta(scoped.state, 'memory', scoped.cachedAt);
-    if (!inMemoryCache) return null;
-    return withCacheMeta(inMemoryCache.state, 'memory', inMemoryCache.cachedAt);
+    return null;
 }
 
 export function getCollectionCacheMeta(meta: CollectionMeta): {
@@ -127,15 +126,6 @@ export async function readCollectionCache(
             cacheVersion: COLLECTION_CACHE_VERSION,
         };
     }
-    if (inMemoryCache) {
-        return {
-            state: getInMemoryCollectionCache(),
-            source: 'memory',
-            cachedAt: inMemoryCache.cachedAt,
-            cacheVersion: COLLECTION_CACHE_VERSION,
-        };
-    }
-
     const redis = getRedis();
     if (!redis) {
         return {

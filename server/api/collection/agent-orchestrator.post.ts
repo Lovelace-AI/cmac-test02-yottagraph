@@ -36,6 +36,7 @@ interface AskYottaRequest {
     question?: string;
     entityNeid?: string;
     conversationHistory?: AskYottaHistoryTurn[];
+    projectId?: string;
 }
 
 const NEID_LIKE_RE = /^\d{1,20}$/;
@@ -719,9 +720,10 @@ export default defineEventHandler(async (event) => {
     const action = String(body.action ?? 'answer_question').trim() || 'answer_question';
     const question = String(body.question ?? '').trim() || 'Provide a grounded answer.';
     const entityNeid = String(body.entityNeid ?? '').trim() || undefined;
+    const projectId = String(body.projectId ?? '').trim() || undefined;
     const conversationHistory = sanitizeConversationHistory(body.conversationHistory);
 
-    const cached = await readCollectionCache();
+    const cached = await readCollectionCache(projectId);
     const collection = cached.state;
     if (!collection || collection.status !== 'ready') {
         const stepSeed = seedAskYottaPipelineSteps().map((step) => ({
@@ -751,7 +753,7 @@ export default defineEventHandler(async (event) => {
         setResponseHeader(event, 'Connection', 'keep-alive');
         const fallback = await $fetch<AskYottaPipelineResponse>('/api/collection/answer', {
             method: 'POST',
-            body: { action, question, entityNeid },
+            body: { action, question, entityNeid, projectId },
         });
         const result: AskYottaPipelineResponse = {
             ...fallback,
@@ -1013,7 +1015,7 @@ export default defineEventHandler(async (event) => {
                             '/api/collection/answer',
                             {
                                 method: 'POST',
-                                body: { action, question, entityNeid },
+                                body: { action, question, entityNeid, projectId },
                             }
                         );
                         send('result', {
@@ -1083,7 +1085,7 @@ export default defineEventHandler(async (event) => {
                         '/api/collection/answer',
                         {
                             method: 'POST',
-                            body: { action, question, entityNeid },
+                            body: { action, question, entityNeid, projectId },
                         }
                     );
                     send('result', {

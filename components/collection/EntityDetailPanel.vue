@@ -1216,12 +1216,14 @@
         entityRoleSummaryRewriteLoading.value = true;
 
         try {
+            const { activeProject } = useProjectStore();
             const response = await $fetch<{ output?: string }>('/api/collection/answer', {
                 method: 'POST',
                 body: {
                     action: 'entity_description',
                     entityNeid: selectedEntity.value.neid,
                     question: prompt,
+                    projectId: activeProject.value?.id,
                 },
             });
             if (requestId !== entityRoleSummaryRequestId.value) return;

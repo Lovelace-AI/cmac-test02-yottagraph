@@ -1,4 +1,9 @@
-import type { CollectionState, DocumentRecord, WorkspaceTab } from '~/utils/collectionTypes';
+import type {
+    CollectionState,
+    DocumentRecord,
+    Project,
+    WorkspaceTab,
+} from '~/utils/collectionTypes';
 
 export type OverviewStatus = 'pending' | 'processing' | 'complete' | 'partial' | 'error';
 
@@ -33,6 +38,14 @@ export interface SourceDocumentRow {
     neid: string;
 }
 
+export interface InitialSourceRow {
+    id: string;
+    label: string;
+    sourceType: string;
+    date?: string;
+    neid: string;
+}
+
 export interface ExploreCardItem {
     key: string;
     title: string;
@@ -56,7 +69,8 @@ export interface CollectionOverviewViewModel {
     dealSummaryFields: DealSummaryField[];
     healthItems: HealthItem[];
     extractionStats: ExtractionStatItem[];
-    documents: SourceDocumentRow[];
+    initialSources: InitialSourceRow[];
+    initialSourceCount: number;
     exploreCards: ExploreCardItem[];
 }
 
@@ -227,8 +241,9 @@ export function mapCollectionToOverviewViewModel(params: {
     state: CollectionState;
     rebuilding: boolean;
     trustCoverageSummary: OverviewTrustCoverageSummary;
+    activeProject?: Project | null;
 }): CollectionOverviewViewModel {
-    const { state, rebuilding, trustCoverageSummary, propertySeriesCount } = params;
+    const { state, rebuilding, trustCoverageSummary, activeProject } = params;
     const status = deriveStatus(state, rebuilding);
     const dealType = deriveDealType(state);
     const dateValues = new Set<string>();
@@ -260,16 +275,54 @@ export function mapCollectionToOverviewViewModel(params: {
     const healthTone = statusTone(status);
     const confidence = confidenceLabel(trustCoverageSummary, status);
     const docsWithKind = state.documents.filter((doc) => Boolean(doc.kind)).length;
+    const initialSources: InitialSourceRow[] = [];
+
+    if (activeProject?.seedDocuments?.length) {
+        initialSources.push(
+            ...sortDocumentsOldestToNewest(activeProject.seedDocuments).map((doc) => ({
+                id: doc.documentId || doc.neid,
+                label: doc.title || doc.neid,
+                sourceType: doc.kind || 'Document',
+                date: doc.date ? formatDate(doc.date) : undefined,
+                neid: doc.neid,
+            }))
+        );
+    }
+
+    if (activeProject?.seedEntities?.length) {
+        initialSources.push(
+            ...activeProject.seedEntities.map((entity) => ({
+                id: entity.neid,
+                label: entity.name || entity.neid,
+                sourceType: entity.flavor.replace(/_/g, ' '),
+                date: undefined,
+                neid: entity.neid,
+            }))
+        );
+    }
+
+    if (!initialSources.length) {
+        initialSources.push(
+            ...sortDocumentsOldestToNewest(state.documents).map((doc) => ({
+                id: doc.documentId,
+                label: doc.title,
+                sourceType: doc.kind || 'Document',
+                date: doc.date ? formatDate(doc.date) : undefined,
+                neid: doc.neid,
+            }))
+        );
+    }
 
     return {
-        collectionName: state.meta.name,
+        collectionName: activeProject?.name || state.meta.name,
         subtitle:
+            activeProject?.description ||
             state.meta.description ||
             'Collection-level extraction and synthesis across the provided source documents.',
         detectedDealType: dealType,
         status,
         statusLabel: statusLabel(status),
-        documentCount: state.documents.length,
+        documentCount: initialSources.length,
         analysisStatusLabel: statusLabel(status),
         lastUpdated: formatLastUpdated(state.meta.lastRebuilt, status),
         primaryActionLabel:
@@ -341,7 +394,7 @@ export function mapCollectionToOverviewViewModel(params: {
             },
         ],
         extractionStats: [
-            { key: 'docs', label: 'Documents', value: formatCount(state.documents.length) },
+            { key: 'docs', label: 'Initial Sources', value: formatCount(initialSources.length) },
             {
                 key: 'date_range',
                 label: 'Date range',
@@ -356,14 +409,8 @@ export function mapCollectionToOverviewViewModel(params: {
             { key: 'events', label: 'Events', value: formatCount(state.meta.eventCount) },
             { key: 'locations', label: 'Locations', value: formatCount(locationCount) },
         ],
-        documents: sortDocumentsOldestToNewest(state.documents).map((doc) => ({
-            id: doc.documentId,
-            filename: doc.title,
-            detectedType: doc.kind || 'Document type pending',
-            date: doc.date ? formatDate(doc.date) : 'Date not available',
-            subject: state.meta.description || 'Collection context',
-            neid: doc.neid,
-        })),
+        initialSources,
+        initialSourceCount: initialSources.length,
         exploreCards: [
             {
                 key: 'graph',
