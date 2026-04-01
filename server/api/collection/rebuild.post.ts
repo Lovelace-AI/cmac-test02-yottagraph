@@ -5,13 +5,11 @@ import {
     type EnrichmentExpandResult,
 } from '~/server/utils/enrichmentExpand';
 import {
-    loadExtractedSeedGraph,
     loadSeedGraphHints,
     seedIdForKey,
     seedKeyFromNameAndFlavor,
     citationToDocumentNeid,
 } from '~/server/utils/extractedSeedGraph';
-import { loadQuadOneHopAuditCounts } from '~/server/utils/quadSeedGraph';
 import {
     BNY_DOCUMENTS,
     BNY_PRESET_PROJECT,
@@ -228,30 +226,20 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     const requestSeedNeids = Array.isArray(body.seedNeids)
         ? body.seedNeids.map((neid) => normalizeNeid(neid))
         : [];
-    const useCustomSeed = requestSeedNeids.length > 0;
-    const useBnySeed = !useCustomSeed || requestProjectId === BNY_PRESET_PROJECT.id;
+    const isPresetProject = requestProjectId === BNY_PRESET_PROJECT.id;
 
-    const seed = useBnySeed
-        ? loadExtractedSeedGraph()
-        : { entities: [], events: [], relationships: [] };
-    const auditCounts = useBnySeed
-        ? loadQuadOneHopAuditCounts()
-        : {
-              rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
-          };
-    const seedHints = useBnySeed
-        ? loadSeedGraphHints()
-        : { documentNeids: [], eventHubNeids: [], propertyBearingNeids: [] };
-    const strictDocumentNeids = useCustomSeed
-        ? requestSeedNeids
-        : seedHints.documentNeids.length > 0
-          ? seedHints.documentNeids
-          : BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid));
+    const seed = { entities: [], events: [], relationships: [] };
+    const auditCounts = {
+        rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
+    };
+    const seedHints = loadSeedGraphHints();
+    const strictDocumentNeids =
+        requestSeedNeids.length > 0
+            ? requestSeedNeids
+            : isPresetProject
+              ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
+              : [];
     const strictDocumentNeidSet = new Set(strictDocumentNeids);
-    const extractedEntityKeys = new Set(
-        seed.entities.map((entity) => seedKeyFromNameAndFlavor(entity.name, entity.flavor))
-    );
-    const shouldFilterToSeed = extractedEntityKeys.size > 0;
     const entityMap = new Map<string, EntityRecord>();
     const relationships: RelationshipRecord[] = [];
     const relSeen = new Set<string>();
@@ -259,8 +247,7 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     const entityNeidBySeedKey = new Map<string, string>();
     const eventNeidBySeedKey = new Map<string, string>();
 
-    // Baseline from extracted/quad seed so the app can load document-derived
-    // graph content even when MCP lookups are degraded.
+    // Legacy extracted baseline removed; rebuild now starts from project seed documents.
     for (const seedEntity of seed.entities) {
         const neid = seedEntity.canonicalNeid ? normalizeNeid(seedEntity.canonicalNeid) : '';
         if (!neid) continue;
@@ -346,8 +333,6 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
                         if (!neid) continue;
                         const relName = (rel.name as string) || '';
                         const relFlavor = (rel.flavor as string) || flavor;
-                        const seedKey = seedKeyFromNameAndFlavor(relName, relFlavor);
-                        if (shouldFilterToSeed && !extractedEntityKeys.has(seedKey)) continue;
                         const existing = entityMap.get(neid);
                         if (existing) {
                             if (!existing.sourceDocuments.includes(docNeid)) {
@@ -569,7 +554,9 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     const propertySeries: PropertySeriesRecord[] = [];
 
     try {
-        for (const neid of seedHints.propertyBearingNeids) {
+        for (const neid of seedHints.propertyBearingNeids.filter((candidate) =>
+            entityMap.has(normalizeNeid(candidate))
+        )) {
             try {
                 const result = await mcpCallTool('elemental_get_entity', {
                     entity_id: { id_type: 'neid', id: neid },
@@ -638,7 +625,7 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     const selectedDocuments: DocumentRecord[] =
         body.project?.seedDocuments && body.project.seedDocuments.length > 0
             ? body.project.seedDocuments
-            : useCustomSeed || requestProjectId !== BNY_PRESET_PROJECT.id
+            : requestSeedNeids.length > 0 || requestProjectId !== BNY_PRESET_PROJECT.id
               ? strictDocumentNeids.map((neid) => ({
                     neid,
                     documentId: neid,
@@ -648,12 +635,10 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
               : BNY_DOCUMENTS;
     const projectName =
         body.project?.name?.trim() ||
-        (requestProjectId === BNY_PRESET_PROJECT.id ? BNY_PRESET_PROJECT.name : 'Custom Network');
+        (isPresetProject ? BNY_PRESET_PROJECT.name : 'Custom Network');
     const projectDescription =
         body.project?.description?.trim() ||
-        (requestProjectId === BNY_PRESET_PROJECT.id
-            ? BNY_PRESET_PROJECT.description
-            : 'User-seeded graph project');
+        (isPresetProject ? BNY_PRESET_PROJECT.description : 'User-seeded graph project');
     const baseState: CollectionState = {
         meta: {
             projectId: requestProjectId,

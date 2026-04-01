@@ -323,14 +323,14 @@ const INITIAL_STEPS: RebuildStep[] = [
     {
         step: 1,
         status: 'pending',
-        label: 'Loading Document Graph',
-        detail: 'Loading document graph...',
+        label: 'Loading Seed Documents',
+        detail: 'Traversing seeded documents...',
     },
     {
         step: 2,
         status: 'pending',
-        label: 'Validating Graph Entities',
-        detail: 'Validating graph entities...',
+        label: 'Confirming Entity Profiles',
+        detail: 'Confirming entity profiles...',
     },
     {
         step: 3,

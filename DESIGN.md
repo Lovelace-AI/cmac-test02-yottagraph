@@ -113,7 +113,7 @@ Details:
 - App shell supports both dark mode and light mode, with a header toggle and settings control for switching.
 - Dark mode polish pass introduced layered charcoal/slate surfaces, stronger card hierarchy, improved narrative readability, and consistent pill styling across overview and analysis surfaces.
 - Server routes under `/api/collection/` handle bootstrap, rebuild (MCP traversal + event discovery), entity detail, property history (raw QS), enrichment, agent actions, insight language summaries, and insight export assembly.
-- Bootstrap and rebuild are now project-scoped (`projectId`) and accept dynamic seed NEIDs; the BNY 5-document set remains available as a preset project.
+- Bootstrap and rebuild are now project-scoped (`projectId`) and accept dynamic seed NEIDs; rebuild now starts directly from the active project's seeded document roots instead of preloading the legacy extracted document baseline, and the BNY 5-document set remains available as a preset project.
 - Workspace-preparation progress now emits live event-expansion heartbeat detail, including active hub labels, recent completions, elapsed runtime, and rough ETA so long-running initial analysis no longer appears stalled.
 - Verbose rebuild progress now preserves and displays real MCP failure messages from the server log so cloud runs expose timeout/gateway/session issues instead of only showing a generic error badge.
 - The rebuild pipeline explicitly hydrates flavor-specific core properties for

@@ -295,7 +295,9 @@
         if (
             haystack.includes('hop ') ||
             haystack.includes('linking graph') ||
-            haystack.includes('loading document graph')
+            haystack.includes('loading document graph') ||
+            haystack.includes('loading seed documents') ||
+            haystack.includes('traversing seeded documents')
         ) {
             return {
                 id: 'relationships',
@@ -303,7 +305,10 @@
                 tools: ['elemental_get_related'],
             };
         }
-        if (haystack.includes('validating graph entities')) {
+        if (
+            haystack.includes('validating graph entities') ||
+            haystack.includes('confirming entity profiles')
+        ) {
             return {
                 id: 'entities',
                 label: 'entity validation',

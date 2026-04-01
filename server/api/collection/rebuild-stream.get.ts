@@ -1,13 +1,10 @@
 import { mcpCallTool, resetMcpSession, getMcpLog } from '~/server/utils/collectionConfig';
 import { setCachedCollection } from '~/server/api/collection/bootstrap.get';
 import {
-    loadExtractedSeedGraph,
     loadSeedGraphHints,
-    seedIdForKey,
     seedKeyFromNameAndFlavor,
     citationToDocumentNeid,
 } from '~/server/utils/extractedSeedGraph';
-import { loadQuadOneHopAuditCounts } from '~/server/utils/quadSeedGraph';
 import { runEnrichmentExpansion } from '~/server/utils/enrichmentExpand';
 import { runCorporateLineageInvestigation } from '~/server/utils/lineageInvestigation';
 import {
@@ -349,8 +346,7 @@ export default defineEventHandler(async (event) => {
         .map((token) => token.trim())
         .filter(Boolean)
         .map((neid) => normalizeNeid(neid));
-    const useCustomSeed = requestSeedNeids.length > 0;
-    const useBnySeed = !useCustomSeed || requestProjectId === BNY_PRESET_PROJECT.id;
+    const isPresetProject = requestProjectId === BNY_PRESET_PROJECT.id;
 
     setResponseHeaders(event, {
         'Content-Type': 'text/event-stream',
@@ -395,28 +391,16 @@ export default defineEventHandler(async (event) => {
 
     resetMcpSession();
 
-    let seed: ReturnType<typeof loadExtractedSeedGraph> = {
-        entities: [],
-        events: [],
-        relationships: [],
+    const auditCounts = {
+        rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
     };
-    const auditCounts = useBnySeed
-        ? loadQuadOneHopAuditCounts()
-        : {
-              rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
-          };
-    const seedHints = useBnySeed
-        ? loadSeedGraphHints()
-        : { documentNeids: [], eventHubNeids: [], propertyBearingNeids: [] };
-    const documentRootNeids = useCustomSeed
-        ? requestSeedNeids
-        : seedHints.documentNeids.length > 0
-          ? seedHints.documentNeids.map((docNeid) => normalizeNeid(docNeid))
-          : BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid));
-    const propertyBearingNeids =
-        seedHints.propertyBearingNeids.length > 0
-            ? seedHints.propertyBearingNeids.map((neid) => normalizeNeid(neid))
-            : [];
+    const seedHints = loadSeedGraphHints();
+    const documentRootNeids =
+        requestSeedNeids.length > 0
+            ? requestSeedNeids
+            : isPresetProject
+              ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
+              : [];
     strictDocumentNeidSet = new Set(documentRootNeids);
     let baselineExtractedPropertyCount = 0;
     let baselineExtractedPropertyRecordCount = 0;
@@ -428,93 +412,95 @@ export default defineEventHandler(async (event) => {
     let t0 = Date.now();
 
     try {
-        seed = useBnySeed
-            ? loadExtractedSeedGraph()
-            : {
-                  entities: [],
-                  events: [],
-                  relationships: [],
-              };
-        baselineExtractedPropertyCount =
-            seed.entities.reduce((sum, entity) => sum + countRecordProperties(entity), 0) +
-            seed.events.reduce((sum, eventItem) => sum + countRecordProperties(eventItem), 0);
-        baselineExtractedPropertyRecordCount =
-            seed.entities.filter((entity) => countRecordProperties(entity) > 0).length +
-            seed.events.filter((eventItem) => countRecordProperties(eventItem) > 0).length;
-
-        // ─── Phase 1: Load document graph baseline ────────────────────
+        // ─── Phase 1: Load project seed documents ─────────────────────
         t0 = Date.now();
-        sendStep(1, 'working', 'Loading Document Graph', 'Loading document graph...');
+        sendStep(
+            1,
+            'working',
+            'Loading Seed Documents',
+            `Traversing ${formatCount(documentRootNeids.length)} seeded documents...`
+        );
 
-        for (const seedEntity of seed.entities) {
-            const seededDocs = [
-                ...new Set(seedEntity.sourceDocumentNeids.map((d) => normalizeNeid(d))),
-            ];
-            seedEntityDocsByKey.set(seedEntity.key, new Set(seededDocs));
-            const canonicalNeid =
-                seedEntity.canonicalNeid ?? seedIdForKey('entity', seedEntity.key);
-            entityByKey.set(seedEntity.key, {
-                neid: canonicalNeid,
-                name: seedEntity.name,
-                flavor: seedEntity.flavor,
-                sourceDocuments: seededDocs,
-                extraSourceDocuments: [],
-                origin: 'document',
-                extractedSeed: true,
-                mcpConfirmed: canonicalNeid !== seedIdForKey('entity', seedEntity.key),
-                properties: seedEntity.properties,
-            });
-        }
-        for (const seedEvent of seed.events) {
-            const seededDocs = [
-                ...new Set(seedEvent.sourceDocumentNeids.map((d) => normalizeNeid(d))),
-            ];
-            seedEventDocsByKey.set(seedEvent.key, new Set(seededDocs));
-            const seedProps = (seedEvent.properties ?? {}) as Record<string, unknown>;
-            eventByKey.set(seedEvent.key, {
-                neid: seedIdForKey('event', seedEvent.key),
-                name: seedEvent.name,
-                category: stringProperty(seedProps, [
-                    'event_category',
-                    'category',
-                    'schema::property::event_category',
-                ]),
-                date: stringProperty(seedProps, [
-                    'event_date',
-                    'date',
-                    'schema::property::event_date',
-                ]),
-                description: stringProperty(seedProps, [
-                    'event_description',
-                    'description',
-                    'schema::property::event_description',
-                ]),
-                likelihood: stringProperty(seedProps, [
-                    'event_likelihood',
-                    'likelihood',
-                    'schema::property::event_likelihood',
-                ]),
-                participantNeids: [],
-                sourceDocuments: seededDocs,
-                extraSourceDocuments: [],
-                extractedSeed: true,
-                mcpConfirmed: false,
-                properties: seedEvent.properties,
-            });
+        const seedTraversalTasks = documentRootNeids.flatMap((docNeid) =>
+            HOP1_FLAVORS.map((flavor) => ({ docNeid, flavor }))
+        );
+        let phase1Resolved = 0;
+        for (const { docNeid, flavor } of seedTraversalTasks) {
+            if (clientDisconnected) break;
+            try {
+                const result = await callToolWithRetry<any>(
+                    'elemental_get_related',
+                    {
+                        entity_id: { id_type: 'neid', id: docNeid },
+                        related_flavor: flavor,
+                        limit: 500,
+                        direction: 'both',
+                    },
+                    { timeoutMs: 45_000, attempts: 2 }
+                );
+                const related = result?.relationships ?? [];
+                for (const rel of related) {
+                    if (!rel?.neid) continue;
+                    const key = seedKeyFromNameAndFlavor(
+                        (rel.name as string) || '',
+                        (rel.flavor as string) || flavor
+                    );
+                    const seededDocs = seedEntityDocsByKey.get(key) ?? new Set<string>();
+                    seededDocs.add(docNeid);
+                    seedEntityDocsByKey.set(key, seededDocs);
+                    const canonicalNeid = normalizeNeid(String(rel.neid));
+                    const existing = entityByKey.get(key);
+                    if (existing) {
+                        existing.neid = canonicalNeid;
+                        existing.name = (rel.name as string) || existing.name;
+                        existing.mcpConfirmed = true;
+                        existing.properties = rel.properties ?? existing.properties;
+                        if (!existing.sourceDocuments.includes(docNeid)) {
+                            existing.sourceDocuments.push(docNeid);
+                        }
+                    } else {
+                        entityByKey.set(key, {
+                            neid: canonicalNeid,
+                            name: (rel.name as string) || canonicalNeid,
+                            flavor: (rel.flavor as string) || flavor,
+                            sourceDocuments: [docNeid],
+                            extraSourceDocuments: [],
+                            origin: 'document',
+                            extractedSeed: false,
+                            mcpConfirmed: true,
+                            properties: rel.properties ?? undefined,
+                        });
+                    }
+                    upsertRelationship(relationshipMap, {
+                        sourceNeid: canonicalNeid,
+                        targetNeid: docNeid,
+                        type: 'appears_in',
+                        sourceDocumentNeid: docNeid,
+                        origin: 'document',
+                        mcpConfirmed: true,
+                    });
+                    phase1Resolved += 1;
+                }
+            } catch (error: any) {
+                console.error(
+                    `Phase 1 seed traversal failed doc=${docNeid} flavor=${flavor}:`,
+                    error?.message
+                );
+            }
         }
 
         sendStep(
             1,
             'completed',
-            'Loading Document Graph',
-            `Loaded ${formatCount(entityByKey.size)} entities and ${formatCount(eventByKey.size)} events from documents.`,
+            'Loading Seed Documents',
+            `Resolved ${formatCount(entityByKey.size)} entities from ${formatCount(documentRootNeids.length)} seeded documents.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
 
-        // ─── Phase 2: Validate seeded entities against live graph ─────
+        // ─── Phase 2: Confirm entity profiles ──────────────────────────
         t0 = Date.now();
-        sendStep(2, 'working', 'Validating Graph Entities', 'Validating graph entities...');
+        sendStep(2, 'working', 'Confirming Entity Profiles', 'Confirming entity profiles...');
 
         const unresolvedFlavors = HOP1_FLAVORS.filter((flavor) =>
             Array.from(entityByKey.values()).some(
@@ -610,10 +596,10 @@ export default defineEventHandler(async (event) => {
         sendStep(
             2,
             'completed',
-            'Validating Graph Entities',
+            'Confirming Entity Profiles',
             phase1Tasks.length > 0
-                ? `Validated ${formatCount(phase2Resolved)} entity matches across ${formatCount(phase1Tasks.length)} live graph lookups.`
-                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers already attached to the document graph. Full entity refresh runs in Loading Property History.`,
+                ? `Confirmed ${formatCount(phase2Resolved)} entity matches across ${formatCount(phase1Tasks.length)} live graph lookups.`
+                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers discovered from seeded documents.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
@@ -1107,6 +1093,13 @@ export default defineEventHandler(async (event) => {
             4
         );
 
+        const propertyBearingNeids = seedHints.propertyBearingNeids
+            .map((neid) => normalizeNeid(neid))
+            .filter((neid) =>
+                Array.from(entityByKey.values()).some(
+                    (entity) => normalizeNeid(entity.neid) === neid
+                )
+            );
         const bondNeid = normalizeNeid('08242646876499346416');
         const propResults = await pMap(
             propertyBearingNeids,
@@ -1227,7 +1220,7 @@ export default defineEventHandler(async (event) => {
         const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
         const relationships = Array.from(relationshipMap.values());
         const selectedDocuments: DocumentRecord[] =
-            useCustomSeed || requestProjectId !== BNY_PRESET_PROJECT.id
+            requestSeedNeids.length > 0 || !isPresetProject
                 ? documentRootNeids.map((neid) => ({
                       neid,
                       documentId: neid,
@@ -1235,12 +1228,10 @@ export default defineEventHandler(async (event) => {
                       kind: 'User selected seed',
                   }))
                 : BNY_DOCUMENTS;
-        const projectName =
-            requestProjectId === BNY_PRESET_PROJECT.id ? BNY_PRESET_PROJECT.name : 'Custom Network';
-        const projectDescription =
-            requestProjectId === BNY_PRESET_PROJECT.id
-                ? BNY_PRESET_PROJECT.description
-                : 'User-seeded graph project';
+        const projectName = isPresetProject ? BNY_PRESET_PROJECT.name : 'Custom Network';
+        const projectDescription = isPresetProject
+            ? BNY_PRESET_PROJECT.description
+            : 'User-seeded graph project';
         const baseState: CollectionState = {
             meta: {
                 projectId: requestProjectId,
