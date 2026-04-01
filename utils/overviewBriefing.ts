@@ -367,7 +367,10 @@ export function mapCollectionToOverviewViewModel(params: {
                     id: entity.neid,
                     label: entityLabel(resolvedEntity) || entity.name || entity.neid,
                     sourceType: formatFlavorLabel(resolvedEntity?.flavor || entity.flavor),
-                    date: deriveEntitySeedDate(entity.neid, state),
+                    date: firstKnownDateLabel([
+                        deriveEntitySeedDate(entity.neid, state),
+                        entity.date,
+                    ]),
                     neid: entity.neid,
                 };
             })

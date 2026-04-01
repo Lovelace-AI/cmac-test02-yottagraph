@@ -251,6 +251,7 @@
         neid: string;
         name?: string;
         flavor?: string;
+        date?: string | null;
         resolution?: unknown;
         message?: string | null;
     }
@@ -355,6 +356,51 @@
         );
     }
 
+    function normalizeLookupDate(value: unknown): string | null {
+        const text = String(value ?? '').trim();
+        if (!text) return null;
+        const direct = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (direct) return `${direct[1]}-${direct[2]}-${direct[3]}`;
+        const parsed = new Date(text);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return parsed.toISOString().slice(0, 10);
+    }
+
+    function lookupDateFromRecord(record: unknown): string | null {
+        if (!record || typeof record !== 'object') return null;
+        const data = record as Record<string, unknown>;
+        const directKeys = [
+            'date',
+            'recordedAt',
+            'recorded_at',
+            'effectiveDate',
+            'effective_date',
+            'filingDate',
+            'filing_date',
+            'issueDate',
+            'issue_date',
+            'createdAt',
+            'created_at',
+            'dated_date',
+        ];
+        for (const key of directKeys) {
+            const normalized = normalizeLookupDate(data[key]);
+            if (normalized) return normalized;
+        }
+        const nestedKeys = ['entity', 'resolved', 'resolution', 'properties'];
+        for (const key of nestedKeys) {
+            const normalized = lookupDateFromRecord(data[key]);
+            if (normalized) return normalized;
+        }
+        return null;
+    }
+
+    function displayLookupDate(entity: SimpleEntity): string | undefined {
+        return (
+            normalizeLookupDate(entity.date) || lookupDateFromRecord(entity.resolution) || undefined
+        );
+    }
+
     async function validateDocumentNeids() {
         clearMessages();
         validatingDocuments.value = true;
@@ -369,7 +415,12 @@
             const resolved: SimpleEntity[] = [];
             for (const neid of neids.slice(0, 25)) {
                 const result = await $fetch<{
-                    entity: { neid: string; name?: string; flavor?: string } | null;
+                    entity: {
+                        neid: string;
+                        name?: string;
+                        flavor?: string;
+                        date?: string | null;
+                    } | null;
                     resolution?: unknown;
                     message?: string | null;
                 }>('/api/collection/entity-search', {
@@ -414,7 +465,8 @@
                     neid: item.neid,
                     documentId: item.neid,
                     title: item.name || `Document ${index + 1}`,
-                    kind: 'User selected document',
+                    kind: displayLookupFlavor(item, 'Document'),
+                    date: displayLookupDate(item),
                 })),
             });
             successMessage.value = 'Document project created and selected.';
@@ -450,7 +502,12 @@
             const seen = new Set<string>();
             for (const query of queries.slice(0, 50)) {
                 const result = await $fetch<{
-                    entity: { neid: string; name?: string; flavor?: string } | null;
+                    entity: {
+                        neid: string;
+                        name?: string;
+                        flavor?: string;
+                        date?: string | null;
+                    } | null;
                     resolution?: unknown;
                     message?: string | null;
                 }>('/api/collection/entity-search', {
@@ -509,7 +566,8 @@
                 seedEntities: selectedEntities.map((entity) => ({
                     neid: entity.neid,
                     name: entity.name || entity.neid,
-                    flavor: entity.flavor || 'unknown',
+                    flavor: displayLookupFlavor(entity, 'Entity'),
+                    date: displayLookupDate(entity),
                 })),
             });
             successMessage.value = `Entity project created with ${seedNeids.length} selected seeds.`;

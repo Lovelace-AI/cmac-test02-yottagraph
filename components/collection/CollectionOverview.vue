@@ -225,7 +225,7 @@
                         :action-disabled="overview.status === 'processing' || rebuilding"
                         @run-analysis="handleRunAnalysis"
                     />
-                    <SourceDocumentsCompactCard :sources="overview.initialSources" />
+                    <SourceDocumentsCompactCard :sources="displayInitialSources" />
                 </div>
             </div>
         </div>
@@ -233,6 +233,8 @@
 </template>
 
 <script setup lang="ts">
+    import type { InitialSourceRow } from '~/utils/overviewBriefing';
+
     const {
         overviewViewModel,
         meta,
@@ -252,8 +254,15 @@
     const pipelineExpanded = ref(true);
     const verboseProgressPanel = ref<number[]>([]);
     const verboseProgressMode = ref<'phase' | 'all'>('phase');
+    const seedSourceOverrides = ref<Record<string, Partial<InitialSourceRow>>>({});
 
     const overview = computed(() => overviewViewModel.value);
+    const displayInitialSources = computed(() =>
+        overview.value.initialSources.map((source) => ({
+            ...source,
+            ...(seedSourceOverrides.value[source.neid] ?? {}),
+        }))
+    );
     const showPipelinePanel = computed(
         () => rebuilding.value || rebuildSteps.value.some((step) => step.status !== 'pending')
     );
@@ -373,6 +382,108 @@
         const parsed = new Date(value);
         if (Number.isNaN(parsed.getTime())) return null;
         return parsed.getTime();
+    }
+
+    function normalizeFlavorLabel(value: unknown): string | undefined {
+        const text = String(value ?? '')
+            .trim()
+            .replace(/^schema::flavor::/, '')
+            .replace(/_/g, ' ');
+        return text || undefined;
+    }
+
+    function normalizeLookupDate(value: unknown): string | undefined {
+        const text = String(value ?? '').trim();
+        if (!text) return undefined;
+        const direct = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (direct) return `${direct[2]}-${direct[3]}-${direct[1]}`;
+        const parsed = new Date(text);
+        if (Number.isNaN(parsed.getTime())) return undefined;
+        const iso = parsed.toISOString().slice(0, 10).split('-');
+        if (iso.length !== 3) return undefined;
+        return `${iso[1]}-${iso[2]}-${iso[0]}`;
+    }
+
+    function lookupDateFromRecord(record: unknown): string | undefined {
+        if (!record || typeof record !== 'object') return undefined;
+        const data = record as Record<string, unknown>;
+        const directKeys = [
+            'date',
+            'recordedAt',
+            'recorded_at',
+            'effectiveDate',
+            'effective_date',
+            'filingDate',
+            'filing_date',
+            'issueDate',
+            'issue_date',
+            'createdAt',
+            'created_at',
+            'dated_date',
+        ];
+        for (const key of directKeys) {
+            const normalized = normalizeLookupDate(data[key]);
+            if (normalized) return normalized;
+        }
+        const nestedKeys = ['entity', 'resolved', 'resolution', 'properties'];
+        for (const key of nestedKeys) {
+            const normalized = lookupDateFromRecord(data[key]);
+            if (normalized) return normalized;
+        }
+        return undefined;
+    }
+
+    function shouldRefreshSeedSources(sources: InitialSourceRow[]): boolean {
+        return sources.some((source) => {
+            const sourceType = source.sourceType.trim().toLowerCase();
+            return !source.date || sourceType === 'unknown' || sourceType === 'entity';
+        });
+    }
+
+    async function refreshSeedSourceMetadata() {
+        const sources = overview.value.initialSources;
+        if (!sources.length || !shouldRefreshSeedSources(sources)) {
+            seedSourceOverrides.value = {};
+            return;
+        }
+        const overrides: Record<string, Partial<InitialSourceRow>> = {};
+        await Promise.all(
+            sources.map(async (source) => {
+                try {
+                    const result = await $fetch<{
+                        entity?: {
+                            neid?: string;
+                            name?: string;
+                            flavor?: string;
+                            date?: string | null;
+                        } | null;
+                        resolution?: unknown;
+                    }>('/api/collection/entity-search', {
+                        method: 'POST',
+                        body: { query: source.neid },
+                    });
+                    const name = String(result?.entity?.name ?? '').trim();
+                    const flavor =
+                        normalizeFlavorLabel(result?.entity?.flavor) ||
+                        normalizeFlavorLabel(
+                            (result?.resolution as Record<string, unknown> | undefined)?.flavor
+                        );
+                    const date =
+                        normalizeLookupDate(result?.entity?.date) ||
+                        lookupDateFromRecord(result?.resolution);
+                    const next: Partial<InitialSourceRow> = {};
+                    if (name && !isNeidLike(name)) next.label = name;
+                    if (flavor) next.sourceType = flavor;
+                    if (date) next.date = date;
+                    if (Object.keys(next).length) {
+                        overrides[source.neid] = next;
+                    }
+                } catch {
+                    // Keep saved project metadata when a refresh lookup fails.
+                }
+            })
+        );
+        seedSourceOverrides.value = overrides;
     }
 
     function normalizeWhitespace(input: string): string {
@@ -576,6 +687,13 @@
         () => {
             if (isReady.value) loadOverviewLanguage();
         }
+    );
+    watch(
+        () => overview.value.initialSources,
+        () => {
+            refreshSeedSourceMetadata();
+        },
+        { immediate: true, deep: true }
     );
 </script>
 

@@ -35,6 +35,11 @@ export default defineEventHandler(async (event) => {
                       neid: resolvedEntity.neid,
                       name: resolvedEntity.name,
                       flavor: resolvedFlavor,
+                      date:
+                          result?.entity?.date ??
+                          result?.resolved?.date ??
+                          result?.resolution?.date ??
+                          null,
                       score: resolvedEntity.score,
                   }
                 : null,

@@ -173,6 +173,7 @@ export interface ProjectSeedEntity {
     neid: string;
     name: string;
     flavor: string;
+    date?: string;
 }
 
 export interface Project {
