@@ -507,7 +507,13 @@
                 </div>
             </v-dialog>
         </template>
-        <BuildNetwork v-else />
+        <div v-else class="workspace-main-shell flex-grow-1">
+            <div class="workspace-scroll-region px-4 py-4">
+                <div class="workspace-content-shell">
+                    <BuildNetwork />
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 

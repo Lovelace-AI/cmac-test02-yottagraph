@@ -442,11 +442,12 @@
 
 <style scoped>
     .build-network {
-        min-height: calc(100vh - 120px);
+        min-height: 100%;
+        width: 100%;
         display: flex;
         align-items: flex-start;
         justify-content: center;
-        padding: 24px;
+        padding: 0;
     }
 
     .build-network__content {
