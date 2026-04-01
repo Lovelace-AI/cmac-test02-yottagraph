@@ -342,13 +342,18 @@ export function mapCollectionToOverviewViewModel(params: {
     const docsWithKind = state.documents.filter((doc) => Boolean(doc.kind)).length;
     const initialSources: InitialSourceRow[] = [];
     const seenNeids = new Set<string>();
+    const normalizeNeid = (neid: string): string => {
+        const unpadded = neid.replace(/^0+(?=\d)/, '') || '0';
+        return unpadded.padStart(20, '0');
+    };
     const documentByNeid = new Map(state.documents.map((doc) => [doc.neid, doc]));
     const entityByNeid = new Map(state.entities.map((entity) => [entity.neid, entity]));
 
     if (activeProject?.seedDocuments?.length) {
         for (const doc of sortDocumentsOldestToNewest(activeProject.seedDocuments)) {
-            if (seenNeids.has(doc.neid)) continue;
-            seenNeids.add(doc.neid);
+            const key = normalizeNeid(doc.neid);
+            if (seenNeids.has(key)) continue;
+            seenNeids.add(key);
             const resolvedDocument = documentByNeid.get(doc.neid);
             initialSources.push({
                 id: doc.documentId || doc.neid,
@@ -362,8 +367,9 @@ export function mapCollectionToOverviewViewModel(params: {
 
     if (activeProject?.seedEntities?.length) {
         for (const entity of activeProject.seedEntities) {
-            if (seenNeids.has(entity.neid)) continue;
-            seenNeids.add(entity.neid);
+            const key = normalizeNeid(entity.neid);
+            if (seenNeids.has(key)) continue;
+            seenNeids.add(key);
             const resolvedEntity = entityByNeid.get(entity.neid);
             initialSources.push({
                 id: entity.neid,
@@ -377,8 +383,9 @@ export function mapCollectionToOverviewViewModel(params: {
 
     if (activeProject?.seedNeids?.length) {
         for (const neid of activeProject.seedNeids) {
-            if (seenNeids.has(neid)) continue;
-            seenNeids.add(neid);
+            const key = normalizeNeid(neid);
+            if (seenNeids.has(key)) continue;
+            seenNeids.add(key);
             const resolvedEntity = entityByNeid.get(neid);
             const resolvedDocument = documentByNeid.get(neid);
             initialSources.push({
