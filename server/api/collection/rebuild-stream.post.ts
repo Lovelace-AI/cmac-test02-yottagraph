@@ -3,6 +3,7 @@ import rebuildStreamGetHandler from '~/server/api/collection/rebuild-stream.get'
 interface RebuildStreamBody {
     projectId?: string;
     seedNeids?: string[];
+    seedSourceCount?: number;
     project?: {
         seedDocuments?: Array<{ neid?: string }>;
         seedEntities?: Array<{ neid?: string }>;
@@ -43,20 +44,9 @@ export default defineEventHandler(async (event) => {
         url.searchParams.set('seedEntityNeids', inferredSeedEntityNeids.join(','));
     }
 
-    const allSourceNeids = new Set([
-        ...seedDocumentNeids,
-        ...inferredSeedEntityNeids,
-        ...seedNeids,
-    ]);
-    const docCount = Array.isArray(body.project?.seedDocuments)
-        ? body.project.seedDocuments.length
-        : 0;
-    const entityCount = Array.isArray(body.project?.seedEntities)
-        ? body.project.seedEntities.length
-        : 0;
-    const seedSourceCount = Math.max(allSourceNeids.size, docCount + entityCount);
-    if (seedSourceCount > 0) {
-        url.searchParams.set('seedSourceCount', String(seedSourceCount));
+    const clientSeedSourceCount = Number(body.seedSourceCount) || 0;
+    if (clientSeedSourceCount > 0) {
+        url.searchParams.set('seedSourceCount', String(clientSeedSourceCount));
     }
 
     event.node.req.url = `${url.pathname}?${url.searchParams.toString()}`;

@@ -531,11 +531,34 @@ export function useCollectionWorkspace() {
         if (!parts.length) return `${totalSeedCount} seeded entities`;
         return `${totalSeedCount} seeded entit${totalSeedCount === 1 ? 'y' : 'ies'} (${parts.join(', ')})`;
     }
+    function countDistinctProjectSeeds(): number {
+        if (!activeProject.value) return 0;
+        const seen = new Set<string>();
+        const norm = (neid: string) => {
+            const v = String(neid ?? '').trim();
+            const u = v.replace(/^0+(?=\d)/, '') || '0';
+            return u.padStart(20, '0');
+        };
+        for (const doc of activeProject.value.seedDocuments ?? []) {
+            const k = norm(doc.neid);
+            if (k) seen.add(k);
+        }
+        for (const entity of activeProject.value.seedEntities ?? []) {
+            const k = norm(entity.neid);
+            if (k) seen.add(k);
+        }
+        for (const neid of activeProject.value.seedNeids ?? []) {
+            const k = norm(neid);
+            if (k) seen.add(k);
+        }
+        return seen.size;
+    }
     function projectRequestPayload() {
         if (!activeProject.value) return null;
         return {
             projectId: activeProject.value.id,
             seedNeids: activeProject.value.seedNeids,
+            seedSourceCount: countDistinctProjectSeeds(),
             project: {
                 name: activeProject.value.name,
                 description: activeProject.value.description,
@@ -3030,6 +3053,7 @@ export function useCollectionWorkspace() {
                         ? {
                               projectId: streamPayload.projectId,
                               seedNeids: streamPayload.seedNeids,
+                              seedSourceCount: streamPayload.seedSourceCount,
                               project: streamPayload.project,
                           }
                         : {}
