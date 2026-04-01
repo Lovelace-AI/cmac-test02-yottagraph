@@ -485,44 +485,51 @@ export function useCollectionWorkspace() {
     const { activeProject } = useProjectStore();
     const isReady = computed(() => collection.value.status === 'ready');
     const isLoading = computed(() => rebuilding.value || collection.value.status === 'loading');
-    function formatSeedFlavorLabel(flavor: string, count: number): string {
+    function pluralizeFlavorLabel(flavor: string, count: number): string {
         const normalized = flavor.replace(/^schema::flavor::/, '').replace(/_/g, ' ');
         if (count === 1) return `1 ${normalized}`;
-        return `${count} ${normalized}${normalized.endsWith('s') ? '' : 's'}`;
+        const lower = normalized.toLowerCase();
+        const plural =
+            lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('ch')
+                ? `${normalized}es`
+                : lower.endsWith('y') && !/[aeiou]y$/i.test(lower)
+                  ? `${normalized.slice(0, -1)}ies`
+                  : `${normalized}s`;
+        return `${count} ${plural}`;
     }
     function buildProjectSeedSummary(): string {
         if (!activeProject.value) return 'project seeds';
-        const documentCount = activeProject.value.seedDocuments?.length ?? 0;
+        const totalSeedCount = activeProject.value.seedNeids?.length ?? 0;
+        if (totalSeedCount === 0) return 'project seeds';
+
         const flavorCounts = new Map<string, number>();
-        if (documentCount > 0) {
-            flavorCounts.set('document', documentCount);
-        }
+        const accountedNeids = new Set<string>();
+
         for (const entity of activeProject.value.seedEntities ?? []) {
+            const neid = String(entity.neid ?? '').trim();
             const flavor = String(entity.flavor ?? '').trim() || 'entity';
             flavorCounts.set(flavor, (flavorCounts.get(flavor) ?? 0) + 1);
+            if (neid) accountedNeids.add(neid);
         }
-        if ((activeProject.value.seedEntities?.length ?? 0) === 0) {
-            const seedNeids = new Set(activeProject.value.seedNeids ?? []);
-            const seedDocumentNeids = new Set(
-                (activeProject.value.seedDocuments ?? []).map((doc) =>
-                    String(doc.neid ?? '').trim()
-                )
-            );
-            const inferredEntityCount = Array.from(seedNeids).filter(
-                (neid) => !seedDocumentNeids.has(neid)
-            ).length;
-            if (inferredEntityCount > 0) {
-                flavorCounts.set('entity', (flavorCounts.get('entity') ?? 0) + inferredEntityCount);
+        for (const doc of activeProject.value.seedDocuments ?? []) {
+            const neid = String(doc.neid ?? '').trim();
+            if (neid && !accountedNeids.has(neid)) {
+                flavorCounts.set('document', (flavorCounts.get('document') ?? 0) + 1);
+                accountedNeids.add(neid);
             }
         }
-        const totalCount = Array.from(flavorCounts.values()).reduce((sum, count) => sum + count, 0);
-        if (!totalCount) {
-            return `${activeProject.value.seedNeids.length || 0} project seeds`;
+        const unaccounted = (activeProject.value.seedNeids ?? []).filter(
+            (neid) => !accountedNeids.has(String(neid ?? '').trim())
+        ).length;
+        if (unaccounted > 0) {
+            flavorCounts.set('source', (flavorCounts.get('source') ?? 0) + unaccounted);
         }
+
         const parts = Array.from(flavorCounts.entries()).map(([flavor, count]) =>
-            formatSeedFlavorLabel(flavor, count)
+            pluralizeFlavorLabel(flavor, count)
         );
-        return `${totalCount} project seed${totalCount === 1 ? '' : 's'} (${parts.join(', ')})`;
+        if (!parts.length) return `${totalSeedCount} seeded sources`;
+        return `${totalSeedCount} seeded source${totalSeedCount === 1 ? '' : 's'} (${parts.join(', ')})`;
     }
     function projectRequestPayload() {
         if (!activeProject.value) return null;

@@ -486,7 +486,8 @@
             haystack.includes('linking graph') ||
             haystack.includes('loading document graph') ||
             haystack.includes('loading seed documents') ||
-            haystack.includes('traversing seeded documents')
+            haystack.includes('loading seed context') ||
+            haystack.includes('traversing seeded')
         ) {
             return {
                 id: 'relationships',

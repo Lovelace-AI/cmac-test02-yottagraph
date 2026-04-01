@@ -341,40 +341,59 @@ export function mapCollectionToOverviewViewModel(params: {
     const confidence = confidenceLabel(trustCoverageSummary, status);
     const docsWithKind = state.documents.filter((doc) => Boolean(doc.kind)).length;
     const initialSources: InitialSourceRow[] = [];
+    const seenNeids = new Set<string>();
     const documentByNeid = new Map(state.documents.map((doc) => [doc.neid, doc]));
     const entityByNeid = new Map(state.entities.map((entity) => [entity.neid, entity]));
 
     if (activeProject?.seedDocuments?.length) {
-        initialSources.push(
-            ...sortDocumentsOldestToNewest(activeProject.seedDocuments).map((doc) => {
-                const resolvedDocument = documentByNeid.get(doc.neid);
-                return {
-                    id: doc.documentId || doc.neid,
-                    label: resolvedDocument?.title || doc.title || doc.neid,
-                    sourceType: resolvedDocument?.kind || doc.kind || 'Document',
-                    date: firstKnownDateLabel([resolvedDocument?.date, doc.date]),
-                    neid: doc.neid,
-                };
-            })
-        );
+        for (const doc of sortDocumentsOldestToNewest(activeProject.seedDocuments)) {
+            if (seenNeids.has(doc.neid)) continue;
+            seenNeids.add(doc.neid);
+            const resolvedDocument = documentByNeid.get(doc.neid);
+            initialSources.push({
+                id: doc.documentId || doc.neid,
+                label: resolvedDocument?.title || doc.title || doc.neid,
+                sourceType: resolvedDocument?.kind || doc.kind || 'Document',
+                date: firstKnownDateLabel([resolvedDocument?.date, doc.date]),
+                neid: doc.neid,
+            });
+        }
     }
 
     if (activeProject?.seedEntities?.length) {
-        initialSources.push(
-            ...activeProject.seedEntities.map((entity) => {
-                const resolvedEntity = entityByNeid.get(entity.neid);
-                return {
-                    id: entity.neid,
-                    label: entityLabel(resolvedEntity) || entity.name || entity.neid,
-                    sourceType: formatFlavorLabel(resolvedEntity?.flavor || entity.flavor),
-                    date: firstKnownDateLabel([
-                        deriveEntitySeedDate(entity.neid, state),
-                        entity.date,
-                    ]),
-                    neid: entity.neid,
-                };
-            })
-        );
+        for (const entity of activeProject.seedEntities) {
+            if (seenNeids.has(entity.neid)) continue;
+            seenNeids.add(entity.neid);
+            const resolvedEntity = entityByNeid.get(entity.neid);
+            initialSources.push({
+                id: entity.neid,
+                label: entityLabel(resolvedEntity) || entity.name || entity.neid,
+                sourceType: formatFlavorLabel(resolvedEntity?.flavor || entity.flavor),
+                date: firstKnownDateLabel([deriveEntitySeedDate(entity.neid, state), entity.date]),
+                neid: entity.neid,
+            });
+        }
+    }
+
+    if (activeProject?.seedNeids?.length) {
+        for (const neid of activeProject.seedNeids) {
+            if (seenNeids.has(neid)) continue;
+            seenNeids.add(neid);
+            const resolvedEntity = entityByNeid.get(neid);
+            const resolvedDocument = documentByNeid.get(neid);
+            initialSources.push({
+                id: neid,
+                label: entityLabel(resolvedEntity) || resolvedDocument?.title || neid,
+                sourceType: formatFlavorLabel(
+                    resolvedEntity?.flavor || resolvedDocument?.kind || 'Source'
+                ),
+                date: firstKnownDateLabel([
+                    resolvedDocument?.date,
+                    deriveEntitySeedDate(neid, state),
+                ]),
+                neid,
+            });
+        }
     }
 
     if (!initialSources.length) {

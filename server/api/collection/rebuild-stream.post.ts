@@ -31,24 +31,14 @@ export default defineEventHandler(async (event) => {
             ? explicitSeedEntityNeids
             : seedNeids.filter((neid) => !seedDocumentNeids.includes(neid));
 
-    // Reuse the established GET SSE implementation by projecting POST body fields
-    // into query params and delegating to the same handler.
     if (body.projectId?.trim()) {
         url.searchParams.set('projectId', body.projectId.trim());
     }
     if (seedNeids.length > 0) {
         url.searchParams.set('seedNeids', seedNeids.join(','));
     }
-    if (Array.isArray(body.project?.seedDocuments)) {
-        url.searchParams.set('seedDocumentCount', String(body.project.seedDocuments.length));
-        if (seedDocumentNeids.length > 0) {
-            url.searchParams.set('seedDocumentNeids', seedDocumentNeids.join(','));
-        }
-    }
-    if (Array.isArray(body.project?.seedEntities)) {
-        url.searchParams.set('seedEntityCount', String(body.project.seedEntities.length));
-    } else if (inferredSeedEntityNeids.length > 0) {
-        url.searchParams.set('seedEntityCount', String(inferredSeedEntityNeids.length));
+    if (seedDocumentNeids.length > 0) {
+        url.searchParams.set('seedDocumentNeids', seedDocumentNeids.join(','));
     }
     if (inferredSeedEntityNeids.length > 0) {
         url.searchParams.set('seedEntityNeids', inferredSeedEntityNeids.join(','));

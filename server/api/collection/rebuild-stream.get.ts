@@ -23,8 +23,6 @@ interface StreamRebuildQuery {
     seedNeids?: string | string[];
     seedDocumentNeids?: string | string[];
     seedEntityNeids?: string | string[];
-    seedDocumentCount?: string;
-    seedEntityCount?: string;
     seedSummaryLabel?: string;
 }
 
@@ -347,11 +345,6 @@ function formatCount(value: number): string {
     return value.toLocaleString();
 }
 
-function parseCountParam(value: string | undefined): number {
-    const parsed = Number.parseInt(String(value ?? ''), 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
 function parseNeidList(value: string | string[] | undefined): string[] {
     const raw = Array.isArray(value) ? value.join(',') : value || '';
     return raw
@@ -361,32 +354,11 @@ function parseNeidList(value: string | string[] | undefined): string[] {
         .map((neid) => normalizeNeid(neid));
 }
 
-function formatSeedSummary(seedDocumentCount: number, seedEntityCount: number): string {
-    const parts: string[] = [];
-    if (seedDocumentCount > 0) {
-        parts.push(
-            `${formatCount(seedDocumentCount)} seeded document${seedDocumentCount === 1 ? '' : 's'}`
-        );
-    }
-    if (seedEntityCount > 0) {
-        parts.push(
-            `${formatCount(seedEntityCount)} seed entit${seedEntityCount === 1 ? 'y' : 'ies'}`
-        );
-    }
-    if (!parts.length) return 'project seeds';
-    if (parts.length === 1) return parts[0];
-    return `${parts[0]} and ${parts[1]}`;
-}
-
-function resolveSeedSummaryLabel(
-    explicitLabel: string | undefined,
-    seedDocumentCount: number,
-    seedEntityCount: number,
-    documentRootCount: number
-): string {
+function resolveSeedSummaryLabel(explicitLabel: string | undefined, seedRootCount: number): string {
     const trimmed = String(explicitLabel ?? '').trim();
     if (trimmed) return trimmed;
-    return formatSeedSummary(seedDocumentCount || documentRootCount, seedEntityCount);
+    if (seedRootCount <= 0) return 'project seeds';
+    return `${formatCount(seedRootCount)} seeded source${seedRootCount === 1 ? '' : 's'}`;
 }
 
 export default defineEventHandler(async (event) => {
@@ -395,8 +367,6 @@ export default defineEventHandler(async (event) => {
     const requestSeedNeids = parseNeidList(query.seedNeids);
     const explicitSeedDocumentNeids = parseNeidList(query.seedDocumentNeids);
     const explicitSeedEntityNeids = parseNeidList(query.seedEntityNeids);
-    const seedDocumentCount = parseCountParam(query.seedDocumentCount);
-    const seedEntityCount = parseCountParam(query.seedEntityCount);
     const isPresetProject = requestProjectId === BNY_PRESET_PROJECT.id;
 
     setResponseHeaders(event, {
@@ -460,12 +430,7 @@ export default defineEventHandler(async (event) => {
                 : []),
         ]),
     ];
-    const seedSummaryLabel = resolveSeedSummaryLabel(
-        query.seedSummaryLabel,
-        seedDocumentCount,
-        seedEntityCount,
-        seedRootNeids.length
-    );
+    const seedSummaryLabel = resolveSeedSummaryLabel(query.seedSummaryLabel, seedRootNeids.length);
     strictDocumentNeidSet = new Set(explicitSeedDocumentNeids);
     let baselineExtractedPropertyCount = 0;
     let baselineExtractedPropertyRecordCount = 0;
