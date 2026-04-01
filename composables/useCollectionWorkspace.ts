@@ -348,7 +348,6 @@ const INITIAL_STEPS: RebuildStep[] = [
 ];
 
 const collection = ref<CollectionState>(emptyCollectionState());
-const { activeProject } = useProjectStore();
 const activeTab = ref<WorkspaceTab>('overview');
 const selectedEntityNeid = ref<string | null>(null);
 const selectedEventNeid = ref<string | null>(null);
@@ -412,19 +411,6 @@ const enrichmentRelatedDeals = ref<EnrichmentRelatedDealInsight[]>([]);
 const enrichmentRelatedDealsLoading = ref(false);
 const enrichmentRelatedDealsError = ref<string | null>(null);
 
-function projectRequestPayload() {
-    if (!activeProject.value) return null;
-    return {
-        projectId: activeProject.value.id,
-        seedNeids: activeProject.value.seedNeids,
-        project: {
-            name: activeProject.value.name,
-            description: activeProject.value.description,
-            seedDocuments: activeProject.value.seedDocuments,
-        },
-    };
-}
-
 function gatewayPromptForAction(
     action: string,
     params?: { entityNeid?: string; question?: string },
@@ -471,8 +457,21 @@ function mapAskYottaHistory(thread: AskYottaThreadTurn[], limit = 3): AskYottaHi
 }
 
 export function useCollectionWorkspace() {
+    const { activeProject } = useProjectStore();
     const isReady = computed(() => collection.value.status === 'ready');
     const isLoading = computed(() => rebuilding.value || collection.value.status === 'loading');
+    function projectRequestPayload() {
+        if (!activeProject.value) return null;
+        return {
+            projectId: activeProject.value.id,
+            seedNeids: activeProject.value.seedNeids,
+            project: {
+                name: activeProject.value.name,
+                description: activeProject.value.description,
+                seedDocuments: activeProject.value.seedDocuments,
+            },
+        };
+    }
 
     const documents = computed(() => collection.value.documents);
     const entities = computed(() => collection.value.entities);
