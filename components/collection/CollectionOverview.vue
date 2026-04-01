@@ -54,6 +54,152 @@
                 <v-expand-transition>
                     <div v-if="pipelineExpanded" class="pt-2">
                         <SummaryAgentSteps :steps="rebuildSteps" />
+                        <v-expansion-panels
+                            v-if="showVerboseProgressPanel"
+                            v-model="verboseProgressPanel"
+                            class="mt-3"
+                            variant="accordion"
+                        >
+                            <v-expansion-panel :value="0">
+                                <v-expansion-panel-title>
+                                    <div class="d-flex align-center flex-wrap ga-2 w-100 pr-2">
+                                        <span class="text-body-2 font-weight-medium">
+                                            Verbose Progress
+                                        </span>
+                                        <v-chip size="x-small" variant="tonal">
+                                            {{ mcpLog.length }} MCP calls
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="eventLookupCount"
+                                            size="x-small"
+                                            variant="tonal"
+                                        >
+                                            {{ eventLookupCount }} event lookups
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="mcpErrorCount"
+                                            size="x-small"
+                                            color="error"
+                                            variant="tonal"
+                                        >
+                                            {{ mcpErrorCount }} errors
+                                        </v-chip>
+                                    </div>
+                                </v-expansion-panel-title>
+                                <v-expansion-panel-text>
+                                    <div class="text-caption text-medium-emphasis mb-3">
+                                        Recent MCP activity from the rebuild stream. Use this to
+                                        confirm the pipeline is still actively working even when a
+                                        long event hub lookup is taking a while to return.
+                                    </div>
+                                    <div
+                                        class="d-flex align-center justify-space-between ga-2 mb-3 flex-wrap"
+                                    >
+                                        <div class="d-flex align-center ga-2 flex-wrap">
+                                            <v-btn
+                                                size="x-small"
+                                                :variant="
+                                                    verboseProgressMode === 'phase'
+                                                        ? 'flat'
+                                                        : 'tonal'
+                                                "
+                                                color="primary"
+                                                @click="verboseProgressMode = 'phase'"
+                                            >
+                                                Current Phase
+                                            </v-btn>
+                                            <v-btn
+                                                size="x-small"
+                                                :variant="
+                                                    verboseProgressMode === 'all' ? 'flat' : 'tonal'
+                                                "
+                                                color="primary"
+                                                @click="verboseProgressMode = 'all'"
+                                            >
+                                                All Calls
+                                            </v-btn>
+                                        </div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            {{ verboseProgressModeSummary }}
+                                        </div>
+                                    </div>
+                                    <div
+                                        v-if="!visibleMcpEntries.length"
+                                        class="text-body-2 text-medium-emphasis"
+                                    >
+                                        {{ emptyVerboseProgressMessage }}
+                                    </div>
+                                    <div
+                                        v-else
+                                        class="verbose-progress-list d-flex flex-column ga-2"
+                                    >
+                                        <div
+                                            v-for="entry in visibleMcpEntries"
+                                            :key="entry.id"
+                                            class="verbose-progress-item"
+                                        >
+                                            <div
+                                                class="d-flex align-center justify-space-between ga-2 mb-1 flex-wrap"
+                                            >
+                                                <div
+                                                    class="d-flex align-center ga-2 flex-wrap min-w-0"
+                                                >
+                                                    <v-chip
+                                                        size="x-small"
+                                                        :color="
+                                                            entry.status === 'error'
+                                                                ? 'error'
+                                                                : 'primary'
+                                                        "
+                                                        :variant="
+                                                            entry.status === 'error'
+                                                                ? 'tonal'
+                                                                : 'outlined'
+                                                        "
+                                                    >
+                                                        {{ formatToolLabel(entry.tool) }}
+                                                    </v-chip>
+                                                    <span
+                                                        class="text-body-2 font-weight-medium verbose-primary-line"
+                                                    >
+                                                        {{
+                                                            entry.argsSummary ||
+                                                            'No request summary'
+                                                        }}
+                                                    </span>
+                                                </div>
+                                                <div class="d-flex align-center ga-2 flex-wrap">
+                                                    <span class="text-caption text-medium-emphasis">
+                                                        {{ formatTimestamp(entry.timestamp) }}
+                                                    </span>
+                                                    <v-chip
+                                                        size="x-small"
+                                                        :color="
+                                                            entry.status === 'error'
+                                                                ? 'error'
+                                                                : undefined
+                                                        "
+                                                        variant="tonal"
+                                                    >
+                                                        {{ formatDuration(entry.durationMs) }}
+                                                    </v-chip>
+                                                </div>
+                                            </div>
+                                            <div
+                                                class="text-caption"
+                                                :class="
+                                                    entry.status === 'error'
+                                                        ? 'text-error'
+                                                        : 'text-medium-emphasis'
+                                                "
+                                            >
+                                                {{ entry.responseSummary || 'No response summary' }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                        </v-expansion-panels>
                     </div>
                 </v-expand-transition>
             </v-card-text>
@@ -79,7 +225,7 @@
                         :action-disabled="overview.status === 'processing' || rebuilding"
                         @run-analysis="handleRunAnalysis"
                     />
-                    <SourceDocumentsCompactCard :documents="overview.documents" />
+                    <SourceDocumentsCompactCard :sources="overview.initialSources" />
                 </div>
             </div>
         </div>
@@ -95,6 +241,7 @@
         rebuilding,
         rebuild,
         rebuildSteps,
+        mcpLog,
         setTab,
         addGeminiUsage,
     } = useCollectionWorkspace();
@@ -103,24 +250,115 @@
     const narrativeCitations = ref<Array<{ label: string; neid?: string }>>([]);
     const narrativeLoading = ref(false);
     const pipelineExpanded = ref(true);
+    const verboseProgressPanel = ref<number[]>([]);
+    const verboseProgressMode = ref<'phase' | 'all'>('phase');
 
     const overview = computed(() => overviewViewModel.value);
     const showPipelinePanel = computed(
         () => rebuilding.value || rebuildSteps.value.some((step) => step.status !== 'pending')
     );
+    const showVerboseProgressPanel = computed(() => rebuilding.value || mcpLog.value.length > 0);
     const pipelineTotalDurationMs = computed(() =>
         rebuildSteps.value.reduce((sum, step) => sum + (step.durationMs ?? 0), 0)
     );
+    const eventLookupCount = computed(
+        () => mcpLog.value.filter((entry) => entry.tool === 'elemental_get_events').length
+    );
+    const mcpErrorCount = computed(
+        () => mcpLog.value.filter((entry) => entry.status === 'error').length
+    );
+    const sortedMcpEntries = computed(() =>
+        [...mcpLog.value].sort((a, b) => {
+            const timeA = parseDateMs(a.timestamp) ?? 0;
+            const timeB = parseDateMs(b.timestamp) ?? 0;
+            return timeB - timeA;
+        })
+    );
+    const currentRebuildStep = computed(
+        () => rebuildSteps.value.find((step) => step.status === 'working') ?? null
+    );
+    const currentVerbosePhase = computed(() => {
+        const label = currentRebuildStep.value?.label ?? '';
+        const detail = currentRebuildStep.value?.detail ?? '';
+        const haystack = `${label} ${detail}`.toLowerCase();
+        if (
+            haystack.includes('events:') ||
+            haystack.includes('loading document events') ||
+            haystack.includes('event hub')
+        ) {
+            return {
+                id: 'events',
+                label: 'event lookups',
+                tools: ['elemental_get_events'],
+            };
+        }
+        if (
+            haystack.includes('hop ') ||
+            haystack.includes('linking graph') ||
+            haystack.includes('loading document graph')
+        ) {
+            return {
+                id: 'relationships',
+                label: 'relationship lookups',
+                tools: ['elemental_get_related'],
+            };
+        }
+        if (haystack.includes('validating graph entities')) {
+            return {
+                id: 'entities',
+                label: 'entity validation',
+                tools: ['elemental_get_entity'],
+            };
+        }
+        return {
+            id: 'all',
+            label: 'latest rebuild calls',
+            tools: [] as string[],
+        };
+    });
+    const visibleMcpEntries = computed(() => {
+        if (verboseProgressMode.value === 'all') {
+            return sortedMcpEntries.value.slice(0, 12);
+        }
+        const phaseTools = currentVerbosePhase.value.tools;
+        if (!phaseTools.length) return sortedMcpEntries.value.slice(0, 12);
+        return sortedMcpEntries.value
+            .filter((entry) => phaseTools.includes(entry.tool))
+            .slice(0, 12);
+    });
+    const verboseProgressModeSummary = computed(() => {
+        if (verboseProgressMode.value === 'all') {
+            return 'Showing the latest rebuild calls across all phases';
+        }
+        return `Showing current phase only: ${currentVerbosePhase.value.label}`;
+    });
+    const emptyVerboseProgressMessage = computed(() => {
+        if (!sortedMcpEntries.value.length)
+            return 'Waiting for the first MCP calls to be reported…';
+        if (verboseProgressMode.value === 'phase') {
+            return `No MCP calls matched the current ${currentVerbosePhase.value.label} filter yet.`;
+        }
+        return 'No MCP calls have been reported yet.';
+    });
 
     watch(rebuilding, (isRunning, wasRunning) => {
         if (isRunning) {
             pipelineExpanded.value = true;
+            verboseProgressPanel.value = [0];
+            verboseProgressMode.value = 'phase';
             return;
         }
         if (!isRunning && wasRunning && isReady.value && overview.value.status !== 'error') {
             pipelineExpanded.value = false;
         }
     });
+
+    function parseDateMs(value?: string): number | null {
+        if (!value) return null;
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return parsed.getTime();
+    }
 
     function normalizeWhitespace(input: string): string {
         return input.replace(/\s+/g, ' ').trim();
@@ -295,6 +533,20 @@
         return `${min}m ${sec}s`;
     }
 
+    function formatTimestamp(value?: string): string {
+        const parsedMs = parseDateMs(value);
+        if (parsedMs === null) return 'Unknown time';
+        return new Intl.DateTimeFormat(undefined, {
+            hour: 'numeric',
+            minute: '2-digit',
+            second: '2-digit',
+        }).format(new Date(parsedMs));
+    }
+
+    function formatToolLabel(tool: string): string {
+        return tool.replace(/^elemental_/, '').replace(/^get_/, '');
+    }
+
     onMounted(() => {
         if (isReady.value) loadOverviewLanguage();
     });
@@ -344,6 +596,22 @@
         display: flex;
         align-items: center;
         gap: 8px;
+    }
+
+    .verbose-progress-list {
+        max-height: 420px;
+        overflow-y: auto;
+    }
+
+    .verbose-progress-item {
+        border: 1px solid var(--app-divider);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: color-mix(in srgb, var(--app-surface) 94%, white 6%);
+    }
+
+    .verbose-primary-line {
+        word-break: break-word;
     }
 
     .overview-strip {

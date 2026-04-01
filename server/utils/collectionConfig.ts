@@ -105,6 +105,12 @@ function errorMessage(error: unknown): string {
     return (error as any).message ? String((error as any).message) : String(error);
 }
 
+function summarizeError(error: unknown): string {
+    const message = errorMessage(error).replace(/\s+/g, ' ').trim();
+    if (!message) return 'Unknown MCP error';
+    return message.slice(0, 220);
+}
+
 function isSessionNotFoundError(error: unknown): boolean {
     const message = errorMessage(error).toLowerCase();
     return (
@@ -214,6 +220,7 @@ export async function mcpCallTool(
     const startMs = Date.now();
     let result: unknown;
     let status: 'success' | 'error' = 'success';
+    let failureSummary = '';
 
     try {
         const attempts = Math.max(1, options?.attempts ?? 2);
@@ -250,6 +257,7 @@ export async function mcpCallTool(
     } catch (e) {
         status = 'error';
         result = null;
+        failureSummary = summarizeError(e);
         throw e;
     } finally {
         const durationMs = Date.now() - startMs;
@@ -257,7 +265,10 @@ export async function mcpCallTool(
             id: ++_logIdCounter,
             tool: toolName,
             argsSummary: summarizeArgs(toolName, args),
-            responseSummary: status === 'error' ? 'error' : summarizeResponse(toolName, result),
+            responseSummary:
+                status === 'error'
+                    ? failureSummary || 'Unknown MCP error'
+                    : summarizeResponse(toolName, result),
             durationMs,
             status,
             timestamp: new Date().toISOString(),

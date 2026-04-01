@@ -121,6 +121,9 @@ const EVENTS_TOOL_TIMEOUT_MS = 8_000;
 const RELATED_CALL_CONCURRENCY = 10;
 const EVENT_CALL_CONCURRENCY = 4;
 const PROGRESS_REPORT_INTERVAL_MS = 12_000;
+const LIVE_PROGRESS_HEARTBEAT_MS = 5_000;
+const MAX_PROGRESS_ACTIVITY_ITEMS = 3;
+const MAX_PROGRESS_LABEL_LENGTH = 56;
 const EVENT_TIME_WINDOWS: Array<{ time_range?: { after?: string; before?: string } }> = [
     { time_range: { after: '2018-01-01', before: '2026-12-31' } },
     { time_range: { before: '2018-01-01' } },
@@ -241,6 +244,23 @@ function normalizeTotalCount(value: unknown, fallbackCount: number): number {
     return fallbackCount;
 }
 
+function formatDurationCompact(ms: number): string {
+    if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`;
+    const minutes = Math.floor(ms / 60_000);
+    const seconds = Math.floor((ms % 60_000) / 1000);
+    if (minutes < 60) return `${minutes}m ${seconds}s`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+}
+
+function compactProgressLabel(value: string, fallback: string): string {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    const resolved = normalized || fallback;
+    if (resolved.length <= MAX_PROGRESS_LABEL_LENGTH) return resolved;
+    return `${resolved.slice(0, MAX_PROGRESS_LABEL_LENGTH - 1).trimEnd()}…`;
+}
+
 async function pMap<T>(
     items: T[],
     fn: (item: T) => Promise<void>,
@@ -311,6 +331,8 @@ export async function runEnrichmentExpansion(
         entities.length >= maxEntities || relationships.length >= maxRelationships;
     const eventPhaseCapsReached = () => capsReached() || events.length >= maxEvents;
     let lastProgressReportAt = 0;
+    const activeEventTasks = new Map<string, { startedAt: number; label: string }>();
+    const recentEventResults: string[] = [];
 
     function reportProgress(
         update: Omit<
@@ -330,6 +352,67 @@ export async function runEnrichmentExpansion(
             relationshipCount: relationships.length,
             eventCount: events.length,
         });
+    }
+
+    function labelForProgressNeid(neid: string): string {
+        const normalizedNeid = normalizeNeid(neid);
+        const fallback = `hub ${normalizedNeid.slice(-6)}`;
+        const name = entityByNeid.get(normalizedNeid)?.name;
+        return compactProgressLabel(typeof name === 'string' ? name : '', fallback);
+    }
+
+    function pushRecentEventResult(summary: string): void {
+        recentEventResults.unshift(summary);
+        if (recentEventResults.length > MAX_PROGRESS_ACTIVITY_ITEMS) {
+            recentEventResults.length = MAX_PROGRESS_ACTIVITY_ITEMS;
+        }
+    }
+
+    function buildEventProgressDetail(
+        completedTasks: number,
+        totalTasks: number,
+        phaseStartedAt: number
+    ): string {
+        const now = Date.now();
+        const elapsedMs = now - phaseStartedAt;
+        const ratePerMinute =
+            completedTasks > 0 && elapsedMs > 0 ? completedTasks / (elapsedMs / 60_000) : 0;
+        const remainingTasks = Math.max(0, totalTasks - completedTasks);
+        const etaMs =
+            completedTasks > 0 && ratePerMinute > 0
+                ? Math.round((remainingTasks / ratePerMinute) * 60_000)
+                : null;
+        const activitySummary = Array.from(activeEventTasks.values())
+            .map((task) => ({
+                label: task.label,
+                ageMs: now - task.startedAt,
+            }))
+            .sort((a, b) => b.ageMs - a.ageMs)
+            .slice(0, MAX_PROGRESS_ACTIVITY_ITEMS)
+            .map((task) => `${task.label} (${formatDurationCompact(task.ageMs)})`)
+            .join(', ');
+        const recentSummary = recentEventResults.join('; ');
+        const rateSummary =
+            completedTasks > 0
+                ? `${ratePerMinute.toFixed(ratePerMinute >= 10 ? 0 : 1)} hubs/min`
+                : 'warming up';
+        const etaSummary =
+            etaMs && Number.isFinite(etaMs) ? `, ETA ${formatDurationCompact(etaMs)}` : '';
+        const errorSummary = eventErrors
+            ? ` ${eventErrors.toLocaleString()} lookup error${eventErrors === 1 ? '' : 's'} so far.`
+            : '';
+        const inFlightSummary = activitySummary
+            ? ` In flight (${activeEventTasks.size.toLocaleString()}): ${activitySummary}.`
+            : '';
+        const recentCompletedSummary = recentSummary ? ` Recent: ${recentSummary}.` : '';
+        return (
+            `Events: processed ${completedTasks.toLocaleString()}/${totalTasks.toLocaleString()} event hubs in ` +
+            `${formatDurationCompact(elapsedMs)} (${rateSummary}${etaSummary}), collected ` +
+            `${events.length.toLocaleString()} curated events so far.` +
+            errorSummary +
+            inFlightSummary +
+            recentCompletedSummary
+        );
     }
 
     function addRawEntityCandidate(neid: string, depth: number): void {
@@ -647,118 +730,155 @@ export async function runEnrichmentExpansion(
                 completedTasks: completedEventTasks,
                 totalTasks: eventHubNeids.length,
                 detail:
-                    `Events: starting ${eventHubNeids.length.toLocaleString()} event hub lookups` +
+                    `Events: starting ${eventHubNeids.length.toLocaleString()} event hub lookups at ` +
+                    `${EVENT_CALL_CONCURRENCY.toLocaleString()}x concurrency` +
                     (eventHubsTruncated
                         ? ` (trimmed from ${sortedHubNeids.length.toLocaleString()} hubs).`
                         : '.'),
             },
             true
         );
-        await pMap(
-            eventHubNeids,
-            async (hubNeid) => {
-                const hubDepth = entityDepthByNeid.get(hubNeid) ?? 0;
-                const eventDepth = Math.max(1, Math.min(hops, hubDepth || 1));
-                try {
-                    eventCalls += 1;
-                    const allowRowProcessing = !eventPhaseCapsReached();
-                    const eventsByNeid = new Map<string, any>();
-                    for (const window of EVENT_TIME_WINDOWS) {
-                        const result = await mcpCallTool(
-                            'elemental_get_events',
-                            {
-                                entity_id: { id_type: 'neid', id: hubNeid },
-                                limit: allowRowProcessing ? MAX_EVENTS_PER_HUB : 1,
-                                include_participants: true,
-                                ...(window.time_range ? { time_range: window.time_range } : {}),
-                            },
-                            { timeoutMs: EVENTS_TOOL_TIMEOUT_MS }
+        const eventProgressTicker = setInterval(() => {
+            reportProgress(
+                {
+                    phase: 'events',
+                    completedTasks: completedEventTasks,
+                    totalTasks: eventHubNeids.length,
+                    detail: buildEventProgressDetail(
+                        completedEventTasks,
+                        eventHubNeids.length,
+                        eventsStartedAt
+                    ),
+                },
+                true
+            );
+        }, LIVE_PROGRESS_HEARTBEAT_MS);
+        try {
+            await pMap(
+                eventHubNeids,
+                async (hubNeid) => {
+                    const hubDepth = entityDepthByNeid.get(hubNeid) ?? 0;
+                    const eventDepth = Math.max(1, Math.min(hops, hubDepth || 1));
+                    const hubLabel = labelForProgressNeid(hubNeid);
+                    let recentHubOutcome = `${hubLabel} (0 new)`;
+                    let hubNewEvents = 0;
+                    activeEventTasks.set(hubNeid, {
+                        startedAt: Date.now(),
+                        label: hubLabel,
+                    });
+                    try {
+                        eventCalls += 1;
+                        const allowRowProcessing = !eventPhaseCapsReached();
+                        const eventsByNeid = new Map<string, any>();
+                        for (const window of EVENT_TIME_WINDOWS) {
+                            const result = await mcpCallTool(
+                                'elemental_get_events',
+                                {
+                                    entity_id: { id_type: 'neid', id: hubNeid },
+                                    limit: allowRowProcessing ? MAX_EVENTS_PER_HUB : 1,
+                                    include_participants: true,
+                                    ...(window.time_range ? { time_range: window.time_range } : {}),
+                                },
+                                { timeoutMs: EVENTS_TOOL_TIMEOUT_MS }
+                            );
+                            const totalEvents = normalizeTotalCount(
+                                result?.total,
+                                Array.isArray(result?.events) ? result.events.length : 0
+                            );
+                            addKgEventTotal(hubNeid, totalEvents);
+                            if (!allowRowProcessing) {
+                                if (events.length >= maxEvents) eventsTruncated = true;
+                                continue;
+                            }
+                            for (const evt of result?.events ?? []) {
+                                if (!evt?.neid) continue;
+                                const normalizedEventNeid = normalizeNeid(String(evt.neid));
+                                addRawEventCandidate(normalizedEventNeid, eventDepth);
+                                addRawPropertyCandidate(countRecordProperties(evt), eventDepth);
+                                eventsByNeid.set(normalizedEventNeid, evt);
+                            }
+                        }
+                        const sortedEvents = Array.from(eventsByNeid.values()).sort(
+                            (a: any, b: any) =>
+                                normalizeNeid(String(a?.neid ?? '')).localeCompare(
+                                    normalizeNeid(String(b?.neid ?? ''))
+                                )
                         );
-                        const totalEvents = normalizeTotalCount(
-                            result?.total,
-                            Array.isArray(result?.events) ? result.events.length : 0
-                        );
-                        addKgEventTotal(hubNeid, totalEvents);
-                        if (!allowRowProcessing) {
-                            if (events.length >= maxEvents) eventsTruncated = true;
-                            continue;
-                        }
-                        for (const evt of result?.events ?? []) {
-                            if (!evt?.neid) continue;
-                            const normalizedEventNeid = normalizeNeid(String(evt.neid));
-                            addRawEventCandidate(normalizedEventNeid, eventDepth);
-                            addRawPropertyCandidate(countRecordProperties(evt), eventDepth);
-                            eventsByNeid.set(normalizedEventNeid, evt);
-                        }
-                    }
-                    const sortedEvents = Array.from(eventsByNeid.values()).sort((a: any, b: any) =>
-                        normalizeNeid(String(a?.neid ?? '')).localeCompare(
-                            normalizeNeid(String(b?.neid ?? ''))
-                        )
-                    );
-                    for (const evt of sortedEvents) {
-                        if (eventPhaseCapsReached()) {
-                            eventsTruncated = true;
-                            break;
-                        }
-                        const eventNeid = upsertEvent(evt, eventDepth);
-                        if (!eventNeid) continue;
-                        for (const participant of evt.participants ?? []) {
-                            if (capsReached()) {
-                                entitiesTruncated = true;
-                                relationshipsTruncated = true;
+                        for (const evt of sortedEvents) {
+                            if (eventPhaseCapsReached()) {
+                                eventsTruncated = true;
                                 break;
                             }
-                            if (!participant?.neid) continue;
-                            addRawEntityCandidate(String(participant.neid), eventDepth);
-                            addRawRelationshipCandidate(1, eventDepth);
-                            addRawPropertyCandidate(
-                                countRecordProperties({
-                                    properties: participant?.properties ?? {},
-                                }),
-                                eventDepth
-                            );
-                            const participantNeid = upsertEntity(
-                                {
-                                    neid: participant.neid,
-                                    name: participant.name,
-                                    flavor: participant.flavor ?? 'organization',
-                                    properties: participant.properties ?? {},
-                                },
-                                'organization',
-                                eventDepth
-                            );
-                            if (!participantNeid) continue;
-                            upsertRelationship(
-                                participantNeid,
-                                eventNeid,
-                                participantRelationshipType,
-                                {
-                                    properties: participant?.properties ?? {},
-                                    citations: Array.isArray(participant?.citations)
-                                        ? participant.citations
-                                        : [],
-                                },
-                                eventDepth
-                            );
+                            const eventNeid = normalizeNeid(String(evt?.neid ?? ''));
+                            const wasAlreadySeen = seenEvents.has(eventNeid);
+                            const upsertedEventNeid = upsertEvent(evt, eventDepth);
+                            if (!upsertedEventNeid) continue;
+                            if (!wasAlreadySeen) hubNewEvents += 1;
+                            for (const participant of evt.participants ?? []) {
+                                if (capsReached()) {
+                                    entitiesTruncated = true;
+                                    relationshipsTruncated = true;
+                                    break;
+                                }
+                                if (!participant?.neid) continue;
+                                addRawEntityCandidate(String(participant.neid), eventDepth);
+                                addRawRelationshipCandidate(1, eventDepth);
+                                addRawPropertyCandidate(
+                                    countRecordProperties({
+                                        properties: participant?.properties ?? {},
+                                    }),
+                                    eventDepth
+                                );
+                                const participantNeid = upsertEntity(
+                                    {
+                                        neid: participant.neid,
+                                        name: participant.name,
+                                        flavor: participant.flavor ?? 'organization',
+                                        properties: participant.properties ?? {},
+                                    },
+                                    'organization',
+                                    eventDepth
+                                );
+                                if (!participantNeid) continue;
+                                upsertRelationship(
+                                    participantNeid,
+                                    upsertedEventNeid,
+                                    participantRelationshipType,
+                                    {
+                                        properties: participant?.properties ?? {},
+                                        citations: Array.isArray(participant?.citations)
+                                            ? participant.citations
+                                            : [],
+                                    },
+                                    eventDepth
+                                );
+                            }
                         }
+                        recentHubOutcome = `${hubLabel} (${hubNewEvents.toLocaleString()} new)`;
+                    } catch {
+                        eventErrors += 1;
+                        recentHubOutcome = `${hubLabel} (error)`;
+                    } finally {
+                        activeEventTasks.delete(hubNeid);
+                        pushRecentEventResult(recentHubOutcome);
+                        completedEventTasks += 1;
+                        reportProgress({
+                            phase: 'events',
+                            completedTasks: completedEventTasks,
+                            totalTasks: eventHubNeids.length,
+                            detail: buildEventProgressDetail(
+                                completedEventTasks,
+                                eventHubNeids.length,
+                                eventsStartedAt
+                            ),
+                        });
                     }
-                } catch {
-                    eventErrors += 1;
-                } finally {
-                    completedEventTasks += 1;
-                    reportProgress({
-                        phase: 'events',
-                        completedTasks: completedEventTasks,
-                        totalTasks: eventHubNeids.length,
-                        detail:
-                            `Events: processed ${completedEventTasks.toLocaleString()}/${eventHubNeids.length.toLocaleString()} event hubs, collected ` +
-                            `${events.length.toLocaleString()} curated events so far.`,
-                    });
-                }
-            },
-            EVENT_CALL_CONCURRENCY
-        );
+                },
+                EVENT_CALL_CONCURRENCY
+            );
+        } finally {
+            clearInterval(eventProgressTicker);
+        }
         eventsMs = Date.now() - eventsStartedAt;
         reportProgress(
             {
