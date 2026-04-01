@@ -333,6 +333,14 @@ function formatMs(ms: number): string {
     return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function formatElapsed(ms: number): string {
+    if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+    const minutes = Math.floor(ms / 60_000);
+    const seconds = Math.floor((ms % 60_000) / 1000);
+    return `${minutes}m ${seconds}s`;
+}
+
 function formatCount(value: number): string {
     return value.toLocaleString();
 }
@@ -394,6 +402,7 @@ export default defineEventHandler(async (event) => {
 
     let clientDisconnected = false;
     let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let phase6ProgressHeartbeat: ReturnType<typeof setInterval> | null = null;
     const send = (type: string, data: Record<string, unknown>) => {
         if (clientDisconnected || event.node.res.destroyed || event.node.res.writableEnded) return;
         try {
@@ -1182,6 +1191,16 @@ export default defineEventHandler(async (event) => {
             'Preparing Workspace',
             'Merging the document graph with curated 1-hop context...'
         );
+        const phase6StartedAt = Date.now();
+        let phase6Checkpoint = 'Running curated 1-hop enrichment';
+        phase6ProgressHeartbeat = setInterval(() => {
+            sendStep(
+                6,
+                'working',
+                'Preparing Workspace',
+                `${phase6Checkpoint} (elapsed ${formatElapsed(Date.now() - phase6StartedAt)}).`
+            );
+        }, 8_000);
 
         const documentEntities = Array.from(entityByKey.values());
         const documentEvents = Array.from(eventByKey.values());
@@ -1206,13 +1225,28 @@ export default defineEventHandler(async (event) => {
                 },
             }
         );
+        phase6Checkpoint = 'Finalizing graph merge from enrichment results';
+        sendStep(
+            6,
+            'working',
+            'Preparing Workspace',
+            `Events complete. Finalizing graph merge... Current graph: ${formatCount(enrichmentResult.entities.length + documentEntities.length)} entities, ${formatCount(enrichmentResult.relationships.length + documentRelationshipCount)} edges, ${formatCount(enrichmentResult.events.length + documentEvents.length)} events.`
+        );
         for (const relationship of enrichmentResult.relationships) {
             upsertRelationship(relationshipMap, relationship);
         }
+        phase6Checkpoint = 'Assembling merged entity, relationship, and event records';
         const entities = mergeEntities(documentEntities, enrichmentResult.entities);
         const events = mergeEvents(documentEvents, enrichmentResult.events);
         const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
         const relationships = Array.from(relationshipMap.values());
+        sendStep(
+            6,
+            'working',
+            'Preparing Workspace',
+            `Merged graph assembled. Entities: ${formatCount(entities.length)}, edges: ${formatCount(relationships.length)}, events: ${formatCount(events.length)}.`
+        );
+        phase6Checkpoint = 'Preparing workspace metadata and cache payload';
         const selectedDocuments: DocumentRecord[] =
             requestSeedNeids.length > 0 || !isPresetProject
                 ? documentRootNeids.map((neid) => ({
@@ -1286,7 +1320,19 @@ export default defineEventHandler(async (event) => {
         const state: CollectionState = {
             ...baseState,
         };
+        phase6Checkpoint = 'Persisting rebuilt workspace cache';
+        sendStep(6, 'working', 'Preparing Workspace', 'Persisting rebuilt workspace cache...');
         const cachedState = await setCachedCollection(state, requestProjectId);
+        if (phase6ProgressHeartbeat) {
+            clearInterval(phase6ProgressHeartbeat);
+            phase6ProgressHeartbeat = null;
+        }
+        sendStep(
+            6,
+            'working',
+            'Preparing Workspace',
+            `Workspace cache persisted after ${formatElapsed(Date.now() - phase6StartedAt)}. Emitting final state...`
+        );
 
         sendStep(
             6,
@@ -1307,6 +1353,7 @@ export default defineEventHandler(async (event) => {
         sendMcpLogSnapshot();
         send('done', {});
     } finally {
+        if (phase6ProgressHeartbeat) clearInterval(phase6ProgressHeartbeat);
         if (heartbeat) clearInterval(heartbeat);
         if (!event.node.res.writableEnded && !event.node.res.destroyed) {
             event.node.res.end();

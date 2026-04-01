@@ -3052,7 +3052,7 @@ export function useCollectionWorkspace() {
                     try {
                         const msg = JSON.parse(line.slice(6));
                         if (msg?.type === 'error') streamReportedError = true;
-                        if (msg?.type && msg.type !== 'heartbeat') {
+                        if (msg?.type) {
                             lastMeaningfulProgressAt = Date.now();
                         }
                         handleStreamMessage(msg);
