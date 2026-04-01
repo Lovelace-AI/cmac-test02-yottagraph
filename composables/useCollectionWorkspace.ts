@@ -501,6 +501,20 @@ export function useCollectionWorkspace() {
             const flavor = String(entity.flavor ?? '').trim() || 'entity';
             flavorCounts.set(flavor, (flavorCounts.get(flavor) ?? 0) + 1);
         }
+        if ((activeProject.value.seedEntities?.length ?? 0) === 0) {
+            const seedNeids = new Set(activeProject.value.seedNeids ?? []);
+            const seedDocumentNeids = new Set(
+                (activeProject.value.seedDocuments ?? []).map((doc) =>
+                    String(doc.neid ?? '').trim()
+                )
+            );
+            const inferredEntityCount = Array.from(seedNeids).filter(
+                (neid) => !seedDocumentNeids.has(neid)
+            ).length;
+            if (inferredEntityCount > 0) {
+                flavorCounts.set('entity', (flavorCounts.get('entity') ?? 0) + inferredEntityCount);
+            }
+        }
         const totalCount = Array.from(flavorCounts.values()).reduce((sum, count) => sum + count, 0);
         if (!totalCount) {
             return `${activeProject.value.seedNeids.length || 0} project seeds`;
