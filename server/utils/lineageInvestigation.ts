@@ -9,6 +9,15 @@ import type {
 interface LineageInvestigationOptions {
     maxHops?: number;
     maxOrganizations?: number;
+    onProgress?: (progress: {
+        stage: 'schema' | 'crawl';
+        detail: string;
+        scannedOrganizations: number;
+        queueSize: number;
+        currentHop: number;
+        relationshipCount: number;
+        roots: number;
+    }) => void;
 }
 
 const DEFAULT_MAX_HOPS = 6;
@@ -172,12 +181,40 @@ export async function runCorporateLineageInvestigation(
         };
     }
 
+    options.onProgress?.({
+        stage: 'schema',
+        detail: `Preparing lineage scan from ${roots.length} root organizations...`,
+        scannedOrganizations: roots.length,
+        queueSize: roots.length,
+        currentHop: 0,
+        relationshipCount: 0,
+        roots: roots.length,
+    });
+
     const schemaTypeCandidates = new Set<string>();
     try {
         const schemaResult = await mcpCallTool('elemental_get_schema', {}, { timeoutMs: 20_000 });
         collectRelationshipTypeCandidates(schemaResult, schemaTypeCandidates);
+        options.onProgress?.({
+            stage: 'schema',
+            detail: `Loaded schema hints for lineage scan (${schemaTypeCandidates.size} candidate relationship types).`,
+            scannedOrganizations: roots.length,
+            queueSize: roots.length,
+            currentHop: 0,
+            relationshipCount: 0,
+            roots: roots.length,
+        });
     } catch {
         // Continue with runtime relationship detection from related results.
+        options.onProgress?.({
+            stage: 'schema',
+            detail: 'Schema lookup unavailable; continuing with runtime lineage detection only.',
+            scannedOrganizations: roots.length,
+            queueSize: roots.length,
+            currentHop: 0,
+            relationshipCount: 0,
+            roots: roots.length,
+        });
     }
 
     const runtimeTypeCandidates = new Set<string>();
@@ -219,10 +256,33 @@ export async function runCorporateLineageInvestigation(
     }
 
     const queue: Array<{ neid: string; hop: number }> = roots.map((neid) => ({ neid, hop: 0 }));
+    let processedOrganizations = 0;
+    let lastProgressAt = 0;
+    const emitProgress = (currentHop: number, detail: string, force = false) => {
+        const now = Date.now();
+        if (!force && now - lastProgressAt < 1500) return;
+        lastProgressAt = now;
+        options.onProgress?.({
+            stage: 'crawl',
+            detail,
+            scannedOrganizations: seenOrganizations.size,
+            queueSize: queue.length,
+            currentHop,
+            relationshipCount: relationships.length,
+            roots: roots.length,
+        });
+    };
+
+    emitProgress(0, `Starting lineage crawl across ${roots.length} root organizations...`, true);
     while (queue.length > 0) {
         const current = queue.shift()!;
         if (current.hop >= maxHops) continue;
         if (seenOrganizations.size >= maxOrganizations) break;
+        processedOrganizations += 1;
+        emitProgress(
+            current.hop,
+            `Scanning organization ${processedOrganizations} of up to ${maxOrganizations} at hop ${current.hop + 1}/${maxHops}...`
+        );
         try {
             const result = await mcpCallTool(
                 'elemental_get_related',
@@ -269,8 +329,16 @@ export async function runCorporateLineageInvestigation(
                     }
                 }
             }
+            emitProgress(
+                current.hop,
+                `Scanned ${processedOrganizations} organizations; ${queue.length} remaining in queue and ${relationships.length} lineage edges found so far.`
+            );
         } catch {
             // Ignore per-node failures and continue breadth-first crawl.
+            emitProgress(
+                current.hop,
+                `Skipped one organization after a related-entity error; continuing with ${queue.length} remaining in queue.`
+            );
         }
     }
 
@@ -281,6 +349,12 @@ export async function runCorporateLineageInvestigation(
         .sort((a, b) => normalizeRelationshipType(a).localeCompare(normalizeRelationshipType(b)));
     const matchedTypes = Array.from(matchedRelationshipTypes).sort((a, b) =>
         normalizeRelationshipType(a).localeCompare(normalizeRelationshipType(b))
+    );
+
+    emitProgress(
+        maxHops,
+        `Lineage crawl complete: ${seenOrganizations.size} organizations scanned and ${relationships.length} lineage edges collected.`,
+        true
     );
 
     return {

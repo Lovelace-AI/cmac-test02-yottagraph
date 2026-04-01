@@ -1275,6 +1275,15 @@ export default defineEventHandler(async (event) => {
         const lineageInvestigation = await runCorporateLineageInvestigation(baseState, {
             maxHops: 6,
             maxOrganizations: 250,
+            onProgress: (progress) => {
+                sendStep(
+                    6,
+                    'working',
+                    'Preparing Workspace',
+                    `${progress.detail} Roots: ${formatCount(progress.roots)}, scanned: ${formatCount(progress.scannedOrganizations)}, queue: ${formatCount(progress.queueSize)}, edges: ${formatCount(progress.relationshipCount)}.`
+                );
+                sendMcpLogSnapshot();
+            },
         }).catch((error: any) => ({
             status: 'error' as const,
             startedAt: new Date().toISOString(),
