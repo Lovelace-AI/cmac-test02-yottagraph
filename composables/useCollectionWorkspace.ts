@@ -4,6 +4,7 @@ import type {
     EntityRecord,
     EventRecord,
     LineageEvidenceMode,
+    LineageInvestigationProgressEntry,
     LineageInvestigationRelationship,
     LineageInvestigationResult,
     LineageResultViewModel,
@@ -274,6 +275,7 @@ function normalizeNeid(neid: string): string {
 function sanitizeLineageInvestigation(
     value?: Partial<LineageInvestigationResult> | null
 ): LineageInvestigationResult {
+    const progressLog = Array.isArray(value?.progressLog) ? value.progressLog : [];
     return {
         status: value?.status ?? 'idle',
         startedAt: value?.startedAt,
@@ -290,6 +292,17 @@ function sanitizeLineageInvestigation(
         traversedHops: typeof value?.traversedHops === 'number' ? value.traversedHops : 0,
         relationships: Array.isArray(value?.relationships) ? value.relationships : [],
         chains: Array.isArray(value?.chains) ? value.chains : [],
+        rootsProcessed: typeof value?.rootsProcessed === 'number' ? value.rootsProcessed : 0,
+        organizationsDiscovered:
+            typeof value?.organizationsDiscovered === 'number'
+                ? value.organizationsDiscovered
+                : typeof value?.scannedOrganizations === 'number'
+                  ? value.scannedOrganizations
+                  : 0,
+        queueRemaining: typeof value?.queueRemaining === 'number' ? value.queueRemaining : 0,
+        progressLog: progressLog.filter((entry): entry is LineageInvestigationProgressEntry =>
+            Boolean(entry && typeof entry === 'object')
+        ),
         error: value?.error,
     };
 }
@@ -400,6 +413,7 @@ const enrichmentWatchlistLoading = ref(false);
 const enrichmentWatchlistError = ref<string | null>(null);
 const enrichmentWatchlistGeneratedAt = ref<string | null>(null);
 const lineageInvestigation = ref<LineageInvestigationResult>(sanitizeLineageInvestigation());
+const lineageDebugEntries = ref<LineageInvestigationProgressEntry[]>([]);
 const enrichmentLanguageByInsightId = ref<Record<string, EnrichmentLanguageCard>>({});
 const enrichmentLanguageLoading = ref(false);
 const enrichmentLanguageError = ref<string | null>(null);
@@ -2690,20 +2704,10 @@ export function useCollectionWorkspace() {
             const params = activeProject.value ? { projectId: activeProject.value.id } : undefined;
             const data = await $fetch<CollectionState>('/api/collection/bootstrap', { params });
             collection.value = data;
-            if (data.lineageInvestigation) {
-                lineageInvestigation.value = sanitizeLineageInvestigation(
-                    data.lineageInvestigation
-                );
-            }
+            lineageInvestigation.value = sanitizeLineageInvestigation(data.lineageInvestigation);
+            lineageDebugEntries.value = [...(lineageInvestigation.value.progressLog ?? [])];
             if (data.status === 'ready') {
-                const hasReadyLineage =
-                    data.lineageInvestigation?.status === 'ready' &&
-                    (data.lineageInvestigation.relationships?.length ?? 0) > 0;
-                await Promise.all([
-                    generateEnrichmentLanguage(),
-                    loadEnrichmentContextData(),
-                    hasReadyLineage ? Promise.resolve() : runLineageInvestigation(),
-                ]);
+                await Promise.all([generateEnrichmentLanguage(), loadEnrichmentContextData()]);
             }
         } catch (e: any) {
             collection.value.error = e.message || 'Failed to bootstrap';
@@ -2851,13 +2855,18 @@ export function useCollectionWorkspace() {
 
     async function runLineageInvestigation(): Promise<void> {
         if (collection.value.status !== 'ready') return;
+        const startedAt = new Date().toISOString();
         lineageInvestigation.value = {
             ...lineageInvestigation.value,
             status: 'running',
-            startedAt: new Date().toISOString(),
+            startedAt,
             completedAt: undefined,
             error: undefined,
+            progressLog: [],
+            rootsProcessed: 0,
+            queueRemaining: 0,
         };
+        lineageDebugEntries.value = [];
         try {
             const result = await $fetch<LineageInvestigationResult>(
                 '/api/collection/lineage-investigation',
@@ -2876,12 +2885,14 @@ export function useCollectionWorkspace() {
                 startedAt: result.startedAt ?? lineageInvestigation.value.startedAt,
                 completedAt: result.completedAt ?? new Date().toISOString(),
             });
+            lineageDebugEntries.value = [...(lineageInvestigation.value.progressLog ?? [])];
             collection.value.lineageInvestigation = lineageInvestigation.value;
         } catch (error: any) {
             lineageInvestigation.value = sanitizeLineageInvestigation({
                 ...lineageInvestigation.value,
                 status: 'error',
                 completedAt: new Date().toISOString(),
+                progressLog: lineageDebugEntries.value,
                 error:
                     error?.data?.statusMessage ||
                     error?.message ||
@@ -3092,9 +3103,6 @@ export function useCollectionWorkspace() {
         } finally {
             if (timeoutPoll) clearInterval(timeoutPoll);
             rebuilding.value = false;
-            if (collection.value.status === 'ready') {
-                void runLineageInvestigation();
-            }
         }
     }
 
@@ -3131,11 +3139,10 @@ export function useCollectionWorkspace() {
                 const state = msg.state as CollectionState;
                 if (state) {
                     collection.value = state;
-                    if (state.lineageInvestigation) {
-                        lineageInvestigation.value = sanitizeLineageInvestigation(
-                            state.lineageInvestigation
-                        );
-                    }
+                    lineageInvestigation.value = sanitizeLineageInvestigation(
+                        state.lineageInvestigation
+                    );
+                    lineageDebugEntries.value = [...(lineageInvestigation.value.progressLog ?? [])];
                 }
                 break;
             }
@@ -3760,6 +3767,7 @@ export function useCollectionWorkspace() {
         lineageInsights,
         lineageResults,
         lineageInvestigation: computed(() => lineageInvestigation.value),
+        lineageDebugEntries: computed(() => lineageDebugEntries.value),
         broaderActivityInsights,
         eventTimelineInsights,
         peopleAffiliationInsights,
@@ -3816,6 +3824,7 @@ export function useCollectionWorkspace() {
         sortDedupedNewsArticles,
         generateEnrichmentWatchlist,
         fetchPropertyHistory,
+        runLineageInvestigation,
         runAgentAction,
         runAskYottaAction,
         addGeminiUsage,

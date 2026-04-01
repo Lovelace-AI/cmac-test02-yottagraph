@@ -50,6 +50,18 @@
                     >
                         Reload Graph
                     </v-btn>
+                    <v-btn
+                        v-if="isReady"
+                        size="x-small"
+                        variant="tonal"
+                        color="secondary"
+                        prepend-icon="mdi-family-tree"
+                        :loading="lineageRunning"
+                        :disabled="rebuilding || lineageRunning"
+                        @click="handleRunLineage"
+                    >
+                        Run Corporate Lineage
+                    </v-btn>
                 </div>
                 <v-expand-transition>
                     <div v-if="pipelineExpanded" class="pt-2">
@@ -70,6 +82,14 @@
                                             {{ mcpLog.length }} MCP calls
                                         </v-chip>
                                         <v-chip
+                                            v-if="lineageDebugEntries.length"
+                                            size="x-small"
+                                            color="secondary"
+                                            variant="tonal"
+                                        >
+                                            {{ lineageDebugEntries.length }} lineage updates
+                                        </v-chip>
+                                        <v-chip
                                             v-if="eventLookupCount"
                                             size="x-small"
                                             variant="tonal"
@@ -88,11 +108,122 @@
                                 </v-expansion-panel-title>
                                 <v-expansion-panel-text>
                                     <div class="text-caption text-medium-emphasis mb-3">
-                                        Recent MCP activity from the rebuild stream. Use this to
-                                        confirm the pipeline is still actively working even when a
-                                        long event hub lookup is taking a while to return.
+                                        Rebuild MCP activity and corporate lineage debug updates.
+                                    </div>
+                                    <div v-if="showLineageDebugSection" class="mb-4">
+                                        <div class="d-flex align-center ga-2 flex-wrap mb-2">
+                                            <v-chip
+                                                size="x-small"
+                                                color="secondary"
+                                                variant="outlined"
+                                            >
+                                                Lineage
+                                            </v-chip>
+                                            <v-chip size="x-small" variant="tonal">
+                                                Roots: {{ lineageCounters.rootsDiscovered }}
+                                            </v-chip>
+                                            <v-chip size="x-small" variant="tonal">
+                                                Processed: {{ lineageCounters.rootsProcessed }}
+                                            </v-chip>
+                                            <v-chip size="x-small" variant="tonal">
+                                                Discovered:
+                                                {{ lineageCounters.organizationsDiscovered }}
+                                            </v-chip>
+                                            <v-chip size="x-small" variant="tonal">
+                                                Queue: {{ lineageCounters.queueRemaining }}
+                                            </v-chip>
+                                            <v-chip size="x-small" variant="tonal">
+                                                Edges: {{ lineageCounters.edgesCollected }}
+                                            </v-chip>
+                                        </div>
+                                        <div
+                                            v-if="lineageRoots.length"
+                                            class="text-caption text-medium-emphasis mb-2"
+                                        >
+                                            Root NEIDs: {{ lineageRoots.join(', ') }}
+                                        </div>
+                                        <div
+                                            v-if="visibleLineageEntries.length"
+                                            class="verbose-progress-list d-flex flex-column ga-2"
+                                        >
+                                            <div
+                                                v-for="(entry, idx) in visibleLineageEntries"
+                                                :key="`lineage-${entry.timestamp}-${idx}`"
+                                                class="verbose-progress-item"
+                                            >
+                                                <div
+                                                    class="d-flex align-center justify-space-between ga-2 mb-1 flex-wrap"
+                                                >
+                                                    <div
+                                                        class="d-flex align-center ga-2 flex-wrap min-w-0"
+                                                    >
+                                                        <v-chip
+                                                            size="x-small"
+                                                            :color="
+                                                                entry.error ? 'error' : 'secondary'
+                                                            "
+                                                            :variant="
+                                                                entry.error ? 'tonal' : 'outlined'
+                                                            "
+                                                        >
+                                                            {{ entry.stage }}
+                                                        </v-chip>
+                                                        <span
+                                                            class="text-body-2 font-weight-medium verbose-primary-line"
+                                                        >
+                                                            {{ entry.detail }}
+                                                        </span>
+                                                    </div>
+                                                    <span class="text-caption text-medium-emphasis">
+                                                        {{ formatTimestamp(entry.timestamp) }}
+                                                    </span>
+                                                </div>
+                                                <div class="text-caption text-medium-emphasis">
+                                                    Roots {{ entry.rootsDiscovered }} | processed
+                                                    {{ entry.rootsProcessed }} | discovered
+                                                    {{ entry.organizationsDiscovered }} | queue
+                                                    {{ entry.queueRemaining }} | edges
+                                                    {{ entry.edgesCollected }}
+                                                </div>
+                                                <div
+                                                    v-if="entry.currentRootNeid"
+                                                    class="text-caption text-medium-emphasis"
+                                                >
+                                                    Root NEID: {{ entry.currentRootNeid }}
+                                                </div>
+                                                <div
+                                                    v-if="entry.request"
+                                                    class="text-caption text-medium-emphasis"
+                                                >
+                                                    Request: elemental_get_related(entity_neid={{
+                                                        entry.request.entityNeid
+                                                    }}, related_flavor={{
+                                                        entry.request.relatedFlavor
+                                                    }}, direction={{ entry.request.direction }},
+                                                    limit={{ entry.request.limit }},
+                                                    relationship_types={{
+                                                        entry.request.relationshipTypes.join(', ')
+                                                    }})
+                                                </div>
+                                                <div
+                                                    v-if="entry.result"
+                                                    class="text-caption text-medium-emphasis"
+                                                >
+                                                    Result: {{ entry.result.relatedCount }} rows,
+                                                    {{ entry.result.lineageMatchCount }} lineage
+                                                    matches, {{ entry.result.queuedCount }} queued
+                                                </div>
+                                                <div
+                                                    v-if="entry.error"
+                                                    class="text-caption text-error"
+                                                >
+                                                    Error: {{ entry.error }}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div
+                                        v-if="mcpLog.length"
                                         class="d-flex align-center justify-space-between ga-2 mb-3 flex-wrap"
                                     >
                                         <div class="d-flex align-center ga-2 flex-wrap">
@@ -124,13 +255,13 @@
                                         </div>
                                     </div>
                                     <div
-                                        v-if="!visibleMcpEntries.length"
+                                        v-if="mcpLog.length && !visibleMcpEntries.length"
                                         class="text-body-2 text-medium-emphasis"
                                     >
                                         {{ emptyVerboseProgressMessage }}
                                     </div>
                                     <div
-                                        v-else
+                                        v-else-if="mcpLog.length"
                                         class="verbose-progress-list d-flex flex-column ga-2"
                                     >
                                         <div
@@ -234,6 +365,7 @@
 
 <script setup lang="ts">
     import type { InitialSourceRow } from '~/utils/overviewBriefing';
+    import type { LineageInvestigationProgressEntry } from '~/utils/collectionTypes';
 
     const {
         overviewViewModel,
@@ -244,6 +376,9 @@
         rebuild,
         rebuildSteps,
         mcpLog,
+        lineageInvestigation,
+        lineageDebugEntries,
+        runLineageInvestigation,
         setTab,
         addGeminiUsage,
     } = useCollectionWorkspace();
@@ -264,9 +399,18 @@
         }))
     );
     const showPipelinePanel = computed(
-        () => rebuilding.value || rebuildSteps.value.some((step) => step.status !== 'pending')
+        () =>
+            isReady.value ||
+            rebuilding.value ||
+            rebuildSteps.value.some((step) => step.status !== 'pending')
     );
-    const showVerboseProgressPanel = computed(() => rebuilding.value || mcpLog.value.length > 0);
+    const lineageRunning = computed(() => lineageInvestigation.value.status === 'running');
+    const showLineageDebugSection = computed(
+        () => lineageRunning.value || lineageDebugEntries.value.length > 0
+    );
+    const showVerboseProgressPanel = computed(
+        () => rebuilding.value || mcpLog.value.length > 0 || showLineageDebugSection.value
+    );
     const pipelineTotalDurationMs = computed(() =>
         rebuildSteps.value.reduce((sum, step) => sum + (step.durationMs ?? 0), 0)
     );
@@ -283,6 +427,32 @@
             return timeB - timeA;
         })
     );
+    const lineageRoots = computed(() => lineageInvestigation.value.roots ?? []);
+    const sortedLineageEntries = computed<LineageInvestigationProgressEntry[]>(() =>
+        [...lineageDebugEntries.value].sort((a, b) => {
+            const timeA = parseDateMs(a.timestamp) ?? 0;
+            const timeB = parseDateMs(b.timestamp) ?? 0;
+            return timeB - timeA;
+        })
+    );
+    const visibleLineageEntries = computed(() => sortedLineageEntries.value.slice(0, 20));
+    const lineageCounters = computed(() => {
+        const latest = sortedLineageEntries.value[0];
+        return {
+            rootsDiscovered: latest?.rootsDiscovered ?? lineageRoots.value.length,
+            rootsProcessed:
+                latest?.rootsProcessed ?? lineageInvestigation.value.rootsProcessed ?? 0,
+            organizationsDiscovered:
+                latest?.organizationsDiscovered ??
+                lineageInvestigation.value.organizationsDiscovered ??
+                lineageInvestigation.value.scannedOrganizations ??
+                0,
+            queueRemaining:
+                latest?.queueRemaining ?? lineageInvestigation.value.queueRemaining ?? 0,
+            edgesCollected:
+                latest?.edgesCollected ?? lineageInvestigation.value.relationships?.length ?? 0,
+        };
+    });
     const currentRebuildStep = computed(
         () => rebuildSteps.value.find((step) => step.status === 'working') ?? null
     );
@@ -628,6 +798,13 @@
 
     async function handleReloadGraph() {
         await handleRunAnalysis();
+    }
+
+    async function handleRunLineage() {
+        if (rebuilding.value || lineageRunning.value) return;
+        pipelineExpanded.value = true;
+        verboseProgressPanel.value = [0];
+        await runLineageInvestigation();
     }
 
     async function handlePrimaryAction() {

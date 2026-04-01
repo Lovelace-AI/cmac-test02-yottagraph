@@ -2,6 +2,7 @@ import { mcpCallTool } from '~/server/utils/collectionConfig';
 import type {
     CollectionState,
     LineageInvestigationChain,
+    LineageInvestigationProgressEntry,
     LineageInvestigationRelationship,
     LineageInvestigationResult,
 } from '~/utils/collectionTypes';
@@ -9,15 +10,15 @@ import type {
 interface LineageInvestigationOptions {
     maxHops?: number;
     maxOrganizations?: number;
-    onProgress?: (progress: {
-        stage: 'schema' | 'crawl';
-        detail: string;
-        scannedOrganizations: number;
-        queueSize: number;
-        currentHop: number;
-        relationshipCount: number;
-        roots: number;
-    }) => void;
+    onProgress?: (
+        progress: LineageInvestigationProgressEntry & {
+            // Backward-compatible counters for existing callers.
+            scannedOrganizations: number;
+            queueSize: number;
+            relationshipCount: number;
+            roots: number;
+        }
+    ) => void;
 }
 
 const DEFAULT_MAX_HOPS = 6;
@@ -186,50 +187,83 @@ export async function runCorporateLineageInvestigation(
             traversedHops: 0,
             relationships: [],
             chains: [],
+            rootsProcessed: 0,
+            organizationsDiscovered: 0,
+            queueRemaining: 0,
+            progressLog: [],
         };
     }
 
-    options.onProgress?.({
-        stage: 'schema',
-        detail: `Preparing lineage scan from ${roots.length} root organizations...`,
-        scannedOrganizations: roots.length,
-        queueSize: roots.length,
-        currentHop: 0,
-        relationshipCount: 0,
-        roots: roots.length,
-    });
-
     const schemaTypeCandidates = new Set<string>();
-    try {
-        const schemaResult = await mcpCallTool('elemental_get_schema', {}, { timeoutMs: 20_000 });
-        collectRelationshipTypeCandidates(schemaResult, schemaTypeCandidates);
-        options.onProgress?.({
-            stage: 'schema',
-            detail: `Loaded schema hints for lineage scan (${schemaTypeCandidates.size} candidate relationship types).`,
-            scannedOrganizations: roots.length,
-            queueSize: roots.length,
-            currentHop: 0,
-            relationshipCount: 0,
-            roots: roots.length,
-        });
-    } catch {
-        // Continue with runtime relationship detection from related results.
-        options.onProgress?.({
-            stage: 'schema',
-            detail: 'Schema lookup unavailable; continuing with runtime lineage detection only.',
-            scannedOrganizations: roots.length,
-            queueSize: roots.length,
-            currentHop: 0,
-            relationshipCount: 0,
-            roots: roots.length,
-        });
-    }
-
+    const progressLog: LineageInvestigationProgressEntry[] = [];
     const runtimeTypeCandidates = new Set<string>();
     const matchedRelationshipTypes = new Set<string>();
     const seenOrganizations = new Set<string>(roots);
     const seenEdgeIds = new Set<string>();
     const relationships: LineageInvestigationRelationship[] = [];
+    const queue: Array<{ neid: string; hop: number; rootNeid: string }> = roots.map((neid) => ({
+        neid,
+        hop: 0,
+        rootNeid: neid,
+    }));
+    let processedOrganizations = 0;
+
+    const publishProgress = (
+        progress: Omit<
+            LineageInvestigationProgressEntry,
+            | 'timestamp'
+            | 'rootsDiscovered'
+            | 'rootsProcessed'
+            | 'organizationsDiscovered'
+            | 'queueRemaining'
+            | 'edgesCollected'
+        >
+    ) => {
+        const entry: LineageInvestigationProgressEntry = {
+            timestamp: new Date().toISOString(),
+            rootsDiscovered: roots.length,
+            rootsProcessed: processedOrganizations,
+            organizationsDiscovered: seenOrganizations.size,
+            queueRemaining: queue.length,
+            edgesCollected: relationships.length,
+            ...progress,
+        };
+        progressLog.push(entry);
+        options.onProgress?.({
+            ...entry,
+            scannedOrganizations: entry.rootsProcessed,
+            queueSize: entry.queueRemaining,
+            relationshipCount: entry.edgesCollected,
+            roots: entry.rootsDiscovered,
+        });
+    };
+
+    publishProgress({
+        stage: 'schema',
+        detail: `Preparing lineage scan from ${roots.length} root organizations...`,
+        currentHop: 0,
+        rootNeids: [...roots],
+    });
+
+    try {
+        const schemaResult = await mcpCallTool('elemental_get_schema', {}, { timeoutMs: 20_000 });
+        collectRelationshipTypeCandidates(schemaResult, schemaTypeCandidates);
+        publishProgress({
+            stage: 'schema',
+            detail: `Loaded schema hints for lineage scan (${schemaTypeCandidates.size} candidate relationship types).`,
+            currentHop: 0,
+            rootNeids: [...roots],
+        });
+    } catch (error: any) {
+        // Continue with runtime relationship detection from related results.
+        publishProgress({
+            stage: 'schema',
+            detail: 'Schema lookup unavailable; continuing with runtime lineage detection only.',
+            currentHop: 0,
+            rootNeids: [...roots],
+            error: error?.message || 'Schema lookup failed',
+        });
+    }
 
     // Seed from currently loaded relationships first.
     for (const relationship of collection.relationships) {
@@ -262,35 +296,31 @@ export async function runCorporateLineageInvestigation(
         seenEdgeIds.add(id);
         relationships.push(edge);
     }
-
-    const queue: Array<{ neid: string; hop: number }> = roots.map((neid) => ({ neid, hop: 0 }));
-    let processedOrganizations = 0;
-    let lastProgressAt = 0;
-    const emitProgress = (currentHop: number, detail: string, force = false) => {
-        const now = Date.now();
-        if (!force && now - lastProgressAt < 1500) return;
-        lastProgressAt = now;
-        options.onProgress?.({
-            stage: 'crawl',
-            detail,
-            scannedOrganizations: seenOrganizations.size,
-            queueSize: queue.length,
-            currentHop,
-            relationshipCount: relationships.length,
-            roots: roots.length,
-        });
-    };
-
-    emitProgress(0, `Starting lineage crawl across ${roots.length} root organizations...`, true);
+    publishProgress({
+        stage: 'crawl',
+        detail: `Starting lineage crawl across ${roots.length} root organizations...`,
+        currentHop: 0,
+        rootNeids: [...roots],
+    });
     while (queue.length > 0) {
         const current = queue.shift()!;
         if (current.hop >= maxHops) continue;
         if (seenOrganizations.size >= maxOrganizations) break;
         processedOrganizations += 1;
-        emitProgress(
-            current.hop,
-            `Scanning organization ${processedOrganizations} of up to ${maxOrganizations} at hop ${current.hop + 1}/${maxHops}...`
-        );
+        publishProgress({
+            stage: 'crawl',
+            detail: `Scanning organization ${processedOrganizations} of up to ${maxOrganizations} at hop ${current.hop + 1}/${maxHops}...`,
+            currentHop: current.hop,
+            currentRootNeid: current.rootNeid,
+            request: {
+                tool: 'elemental_get_related',
+                entityNeid: current.neid,
+                relatedFlavor: 'organization',
+                direction: 'both',
+                limit: RELATED_LIMIT,
+                relationshipTypes: [...LINEAGE_RELATIONSHIP_TYPES],
+            },
+        });
         try {
             const result = await mcpCallTool(
                 'elemental_get_related',
@@ -304,6 +334,8 @@ export async function runCorporateLineageInvestigation(
                 { timeoutMs: 15_000 }
             );
             const rows = Array.isArray(result?.relationships) ? result.relationships : [];
+            let rowLineageMatchCount = 0;
+            let rowQueuedCount = 0;
             for (const row of rows) {
                 if (!row?.neid) continue;
                 const targetNeid = normalizeNeid(String(row.neid));
@@ -329,25 +361,41 @@ export async function runCorporateLineageInvestigation(
                     if (seenEdgeIds.has(id)) continue;
                     seenEdgeIds.add(id);
                     relationships.push(edge);
+                    rowLineageMatchCount += 1;
                     if (
                         !seenOrganizations.has(targetNeid) &&
                         seenOrganizations.size < maxOrganizations
                     ) {
                         seenOrganizations.add(targetNeid);
-                        queue.push({ neid: targetNeid, hop: current.hop + 1 });
+                        queue.push({
+                            neid: targetNeid,
+                            hop: current.hop + 1,
+                            rootNeid: current.rootNeid,
+                        });
+                        rowQueuedCount += 1;
                     }
                 }
             }
-            emitProgress(
-                current.hop,
-                `Scanned ${processedOrganizations} organizations; ${queue.length} remaining in queue and ${relationships.length} lineage edges found so far.`
-            );
-        } catch {
+            publishProgress({
+                stage: 'crawl',
+                detail: `Scanned ${processedOrganizations} organizations; ${queue.length} remaining in queue and ${relationships.length} lineage edges found so far.`,
+                currentHop: current.hop,
+                currentRootNeid: current.rootNeid,
+                result: {
+                    relatedCount: rows.length,
+                    lineageMatchCount: rowLineageMatchCount,
+                    queuedCount: rowQueuedCount,
+                },
+            });
+        } catch (error: any) {
             // Ignore per-node failures and continue breadth-first crawl.
-            emitProgress(
-                current.hop,
-                `Skipped one organization after a related-entity error; continuing with ${queue.length} remaining in queue.`
-            );
+            publishProgress({
+                stage: 'crawl',
+                detail: `Skipped one organization after a related-entity error; continuing with ${queue.length} remaining in queue.`,
+                currentHop: current.hop,
+                currentRootNeid: current.rootNeid,
+                error: error?.message || 'elemental_get_related failed',
+            });
         }
     }
 
@@ -360,11 +408,11 @@ export async function runCorporateLineageInvestigation(
         normalizeRelationshipType(a).localeCompare(normalizeRelationshipType(b))
     );
 
-    emitProgress(
-        maxHops,
-        `Lineage crawl complete: ${seenOrganizations.size} organizations scanned and ${relationships.length} lineage edges collected.`,
-        true
-    );
+    publishProgress({
+        stage: 'crawl',
+        detail: `Lineage crawl complete: ${processedOrganizations} processed, ${seenOrganizations.size} discovered, ${queue.length} remaining, ${relationships.length} edges collected.`,
+        currentHop: maxHops,
+    });
 
     return {
         status: 'ready',
@@ -377,5 +425,9 @@ export async function runCorporateLineageInvestigation(
         traversedHops: maxHops,
         relationships,
         chains: buildChains(roots, relationships, maxHops),
+        rootsProcessed: processedOrganizations,
+        organizationsDiscovered: seenOrganizations.size,
+        queueRemaining: queue.length,
+        progressLog,
     };
 }

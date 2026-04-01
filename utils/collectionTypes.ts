@@ -98,6 +98,34 @@ export interface LineageInvestigationChain {
     relationshipTypes: string[];
 }
 
+export interface LineageInvestigationProgressEntry {
+    timestamp: string;
+    stage: 'schema' | 'crawl';
+    detail: string;
+    rootsDiscovered: number;
+    rootsProcessed: number;
+    organizationsDiscovered: number;
+    queueRemaining: number;
+    edgesCollected: number;
+    currentHop: number;
+    rootNeids?: string[];
+    currentRootNeid?: string;
+    request?: {
+        tool: 'elemental_get_related';
+        entityNeid: string;
+        relatedFlavor: 'organization';
+        direction: 'both';
+        limit: number;
+        relationshipTypes: string[];
+    };
+    result?: {
+        relatedCount: number;
+        lineageMatchCount: number;
+        queuedCount: number;
+    };
+    error?: string;
+}
+
 export interface LineageInvestigationResult {
     status: 'idle' | 'running' | 'ready' | 'error';
     startedAt?: string;
@@ -109,6 +137,10 @@ export interface LineageInvestigationResult {
     traversedHops: number;
     relationships: LineageInvestigationRelationship[];
     chains: LineageInvestigationChain[];
+    rootsProcessed?: number;
+    organizationsDiscovered?: number;
+    queueRemaining?: number;
+    progressLog?: LineageInvestigationProgressEntry[];
     error?: string;
 }
 

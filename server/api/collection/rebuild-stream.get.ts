@@ -6,7 +6,6 @@ import {
     citationToDocumentNeid,
 } from '~/server/utils/extractedSeedGraph';
 import { runEnrichmentExpansion } from '~/server/utils/enrichmentExpand';
-import { runCorporateLineageInvestigation } from '~/server/utils/lineageInvestigation';
 import {
     BNY_DOCUMENTS,
     BNY_PRESET_PROJECT,
@@ -1284,35 +1283,8 @@ export default defineEventHandler(async (event) => {
             propertySeries,
             status: 'ready',
         };
-        sendStep(6, 'working', 'Preparing Workspace', 'Running corporate lineage investigation...');
-        const lineageInvestigation = await runCorporateLineageInvestigation(baseState, {
-            maxHops: 6,
-            maxOrganizations: 250,
-            onProgress: (progress) => {
-                sendStep(
-                    6,
-                    'working',
-                    'Preparing Workspace',
-                    `${progress.detail} Roots: ${formatCount(progress.roots)}, scanned: ${formatCount(progress.scannedOrganizations)}, queue: ${formatCount(progress.queueSize)}, edges: ${formatCount(progress.relationshipCount)}.`
-                );
-                sendMcpLogSnapshot();
-            },
-        }).catch((error: any) => ({
-            status: 'error' as const,
-            startedAt: new Date().toISOString(),
-            completedAt: new Date().toISOString(),
-            roots: [],
-            scannedRelationshipTypes: [],
-            matchedRelationshipTypes: [],
-            scannedOrganizations: 0,
-            traversedHops: 0,
-            relationships: [],
-            chains: [],
-            error: error?.message || 'Lineage investigation failed during rebuild.',
-        }));
         const state: CollectionState = {
             ...baseState,
-            lineageInvestigation,
         };
         const cachedState = await setCachedCollection(state, requestProjectId);
 

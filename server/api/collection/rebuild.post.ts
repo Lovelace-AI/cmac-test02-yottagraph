@@ -21,7 +21,6 @@ import {
     type PropertySeriesRecord,
     type CollectionState,
 } from '~/utils/collectionTypes';
-import { runCorporateLineageInvestigation } from '~/server/utils/lineageInvestigation';
 
 interface RebuildRequestBody {
     projectId?: string;
@@ -694,25 +693,8 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
         propertySeries,
         status: 'ready',
     };
-    const lineageInvestigation = await runCorporateLineageInvestigation(baseState, {
-        maxHops: 6,
-        maxOrganizations: 250,
-    }).catch((error: any) => ({
-        status: 'error' as const,
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        roots: [],
-        scannedRelationshipTypes: [],
-        matchedRelationshipTypes: [],
-        scannedOrganizations: 0,
-        traversedHops: 0,
-        relationships: [],
-        chains: [],
-        error: error?.message || 'Lineage investigation failed during rebuild.',
-    }));
     const state: CollectionState = {
         ...baseState,
-        lineageInvestigation,
     };
 
     try {
