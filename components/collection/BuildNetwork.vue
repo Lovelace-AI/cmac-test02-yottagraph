@@ -153,51 +153,76 @@
                                 rows="2"
                                 class="mb-2"
                             />
-                            <v-text-field
-                                v-model="entityQuery"
-                                label="Search seed entity"
+                            <v-textarea
+                                v-model="entitySeedInput"
+                                label="Entity NEIDs (comma or newline separated)"
                                 variant="outlined"
+                                rows="4"
                                 class="mb-3"
                             />
                             <div class="d-flex ga-2 mb-4">
                                 <v-btn
                                     variant="tonal"
-                                    :loading="searchingEntity"
-                                    @click="searchEntity"
+                                    :loading="resolvingEntities"
+                                    @click="resolveEntitySeeds"
                                 >
-                                    Find Entity
-                                </v-btn>
-                                <v-btn
-                                    variant="tonal"
-                                    :disabled="!selectedEntityNeid"
-                                    :loading="loadingNeighborhood"
-                                    @click="loadNeighborhood"
-                                >
-                                    Preview Neighborhood
+                                    Resolve Entities
                                 </v-btn>
                                 <v-btn
                                     color="primary"
-                                    :disabled="!selectedEntityNeid"
+                                    :disabled="selectedEntitySeedNeids.length === 0"
                                     :loading="savingEntityProject"
                                     @click="saveEntityProject"
                                 >
                                     Save Project
                                 </v-btn>
                             </div>
-                            <v-card v-if="selectedEntityNeid" variant="outlined" class="mb-3">
-                                <v-card-text class="text-caption">
-                                    <div class="text-subtitle-2">{{ selectedEntityName }}</div>
-                                    <div class="text-medium-emphasis">{{ selectedEntityNeid }}</div>
-                                </v-card-text>
-                            </v-card>
-                            <v-list v-if="neighborhood.length > 0" density="compact">
-                                <v-list-subheader>Neighborhood Preview</v-list-subheader>
+
+                            <div
+                                v-if="resolvedEntityCandidates.length > 0"
+                                class="d-flex align-center ga-2 mb-2"
+                            >
+                                <span class="text-caption text-medium-emphasis">
+                                    Select Entities To Include
+                                </span>
+                                <v-spacer />
+                                <v-btn
+                                    size="x-small"
+                                    variant="text"
+                                    color="primary"
+                                    @click="selectAllEntitySeeds"
+                                >
+                                    Select All
+                                </v-btn>
+                                <v-btn
+                                    size="x-small"
+                                    variant="text"
+                                    color="primary"
+                                    @click="clearEntitySeedSelection"
+                                >
+                                    Clear All
+                                </v-btn>
+                            </div>
+                            <v-list v-if="resolvedEntityCandidates.length > 0" density="compact">
                                 <v-list-item
-                                    v-for="neighbor in neighborhood"
-                                    :key="neighbor.neid"
-                                    :title="neighbor.name || neighbor.neid"
-                                    :subtitle="`${neighbor.neid} • influence ${Math.round(neighbor.influence ?? 0)}`"
-                                />
+                                    v-for="candidate in resolvedEntityCandidates"
+                                    :key="candidate.neid"
+                                >
+                                    <template #prepend>
+                                        <v-checkbox
+                                            v-model="selectedEntitySeedNeids"
+                                            :value="candidate.neid"
+                                            hide-details
+                                            density="compact"
+                                        />
+                                    </template>
+                                    <v-list-item-title>
+                                        {{ candidate.name || candidate.neid }}
+                                    </v-list-item-title>
+                                    <v-list-item-subtitle>
+                                        {{ candidate.neid }} • {{ candidate.flavor || 'unknown' }}
+                                    </v-list-item-subtitle>
+                                </v-list-item>
                             </v-list>
                         </v-card-text>
                     </v-window-item>
@@ -214,10 +239,6 @@
         neid: string;
         name?: string;
         flavor?: string;
-    }
-
-    interface NeighborhoodEntity extends SimpleEntity {
-        influence?: number;
     }
 
     const { projects, activeProject, loadProjects, selectProject, deleteProject, createProject } =
@@ -238,12 +259,10 @@
 
     const entityProjectName = ref('');
     const entityProjectDescription = ref('');
-    const entityQuery = ref('');
-    const selectedEntityNeid = ref('');
-    const selectedEntityName = ref('');
-    const neighborhood = ref<NeighborhoodEntity[]>([]);
-    const searchingEntity = ref(false);
-    const loadingNeighborhood = ref(false);
+    const entitySeedInput = ref('');
+    const resolvedEntityCandidates = ref<SimpleEntity[]>([]);
+    const selectedEntitySeedNeids = ref<string[]>([]);
+    const resolvingEntities = ref(false);
     const savingEntityProject = ref(false);
 
     onMounted(async () => {
@@ -349,54 +368,53 @@
         }
     }
 
-    async function searchEntity() {
-        clearMessages();
-        searchingEntity.value = true;
-        try {
-            const query = entityQuery.value.trim();
-            if (!query) {
-                error.value = 'Enter an entity name or NEID.';
-                return;
-            }
-            const result = await $fetch<{
-                entity: { neid: string; name?: string } | null;
-            }>('/api/collection/entity-search', {
-                method: 'POST',
-                body: { query },
-            });
-            selectedEntityNeid.value = result?.entity?.neid || '';
-            selectedEntityName.value = result?.entity?.name || query;
-            neighborhood.value = [];
-            if (!selectedEntityNeid.value) {
-                error.value = 'No entity match found.';
-            }
-        } catch (e: any) {
-            error.value = e?.message || 'Entity search failed';
-        } finally {
-            searchingEntity.value = false;
-        }
+    function parseEntitySeedInput(input: string): string[] {
+        return [
+            ...new Set(
+                input
+                    .split(/[\n,]+/)
+                    .map((token) => token.trim())
+                    .filter(Boolean)
+            ),
+        ];
     }
 
-    async function loadNeighborhood() {
+    async function resolveEntitySeeds() {
         clearMessages();
-        loadingNeighborhood.value = true;
+        resolvingEntities.value = true;
         try {
-            if (!selectedEntityNeid.value) return;
-            const result = await $fetch<{ neighbors: NeighborhoodEntity[] }>(
-                '/api/collection/entity-neighborhood',
-                {
+            const queries = parseEntitySeedInput(entitySeedInput.value);
+            if (!queries.length) {
+                error.value = 'Enter at least one NEID.';
+                return;
+            }
+
+            const resolved: SimpleEntity[] = [];
+            const seen = new Set<string>();
+            for (const query of queries.slice(0, 50)) {
+                const result = await $fetch<{
+                    entity: { neid: string; name?: string; flavor?: string } | null;
+                }>('/api/collection/entity-search', {
                     method: 'POST',
-                    body: { neid: selectedEntityNeid.value, size: 15 },
-                }
-            );
-            neighborhood.value = result.neighbors || [];
-            if (neighborhood.value.length === 0) {
-                successMessage.value = 'No neighborhood neighbors returned for this entity.';
+                    body: { query },
+                });
+                const entity = result?.entity;
+                if (!entity?.neid || seen.has(entity.neid)) continue;
+                seen.add(entity.neid);
+                resolved.push(entity);
+            }
+
+            resolvedEntityCandidates.value = resolved;
+            selectedEntitySeedNeids.value = resolved.map((entity) => entity.neid);
+            if (!resolved.length) {
+                error.value = 'No entities resolved from the provided NEIDs.';
+            } else {
+                successMessage.value = `Resolved ${resolved.length} entities. Select which to include.`;
             }
         } catch (e: any) {
-            error.value = e?.message || 'Neighborhood lookup failed';
+            error.value = e?.message || 'Failed to resolve entity seeds';
         } finally {
-            loadingNeighborhood.value = false;
+            resolvingEntities.value = false;
         }
     }
 
@@ -404,39 +422,47 @@
         clearMessages();
         savingEntityProject.value = true;
         try {
-            if (!selectedEntityNeid.value) {
-                error.value = 'Select an entity first.';
+            if (!selectedEntitySeedNeids.value.length) {
+                error.value = 'Resolve entities and select at least one.';
                 return;
             }
-            const name = entityProjectName.value.trim() || `${selectedEntityName.value} Network`;
+            const selectedEntities = resolvedEntityCandidates.value.filter((entity) =>
+                selectedEntitySeedNeids.value.includes(entity.neid)
+            );
+            const name =
+                entityProjectName.value.trim() ||
+                (selectedEntities.length === 1
+                    ? `${selectedEntities[0].name || selectedEntities[0].neid} Network`
+                    : 'Entity Seed Project');
             const description =
-                entityProjectDescription.value.trim() || 'Entity-seeded project with neighborhood';
-            const neighborSeeds = neighborhood.value.map((item) => item.neid).filter(Boolean);
-            const seedNeids = [...new Set([selectedEntityNeid.value, ...neighborSeeds])];
+                entityProjectDescription.value.trim() ||
+                'Entity-seeded project from selected NEIDs';
+            const seedNeids = selectedEntities.map((entity) => entity.neid);
             await createProject({
                 name,
                 description,
                 type: 'entity',
                 seedNeids,
-                seedEntities: [
-                    {
-                        neid: selectedEntityNeid.value,
-                        name: selectedEntityName.value || selectedEntityNeid.value,
-                        flavor: 'unknown',
-                    },
-                    ...neighborhood.value.map((item) => ({
-                        neid: item.neid,
-                        name: item.name || item.neid,
-                        flavor: item.flavor || 'unknown',
-                    })),
-                ],
+                seedEntities: selectedEntities.map((entity) => ({
+                    neid: entity.neid,
+                    name: entity.name || entity.neid,
+                    flavor: entity.flavor || 'unknown',
+                })),
             });
-            successMessage.value = 'Entity project created and selected.';
+            successMessage.value = `Entity project created with ${seedNeids.length} selected seeds.`;
         } catch (e: any) {
             error.value = e?.message || 'Failed to save entity project';
         } finally {
             savingEntityProject.value = false;
         }
+    }
+
+    function selectAllEntitySeeds() {
+        selectedEntitySeedNeids.value = resolvedEntityCandidates.value.map((entity) => entity.neid);
+    }
+
+    function clearEntitySeedSelection() {
+        selectedEntitySeedNeids.value = [];
     }
 </script>
 
