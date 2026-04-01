@@ -533,17 +533,23 @@ export function useCollectionWorkspace() {
     }
     function countDistinctProjectSeeds(): number {
         if (!activeProject.value) return 0;
-        const rawCount =
-            (activeProject.value.seedDocuments?.length ?? 0) +
-            (activeProject.value.seedEntities?.length ?? 0);
-        const neidCount = activeProject.value.seedNeids?.length ?? 0;
-        // Keep pipeline seed count aligned with visible collection context when
-        // legacy project payloads under-report non-document seeded entities.
-        const visibleSeedCount = Math.max(
-            collection.value.documents.length,
-            collection.value.meta.documentCount ?? 0
-        );
-        return Math.max(rawCount, neidCount, visibleSeedCount);
+        const seedNeids = new Set<string>();
+        for (const neid of activeProject.value.seedNeids ?? []) {
+            const raw = String(neid ?? '').trim();
+            if (!raw) continue;
+            seedNeids.add(normalizeNeid(raw));
+        }
+        for (const doc of activeProject.value.seedDocuments ?? []) {
+            const raw = String(doc.neid ?? '').trim();
+            if (!raw) continue;
+            seedNeids.add(normalizeNeid(raw));
+        }
+        for (const entity of activeProject.value.seedEntities ?? []) {
+            const raw = String(entity.neid ?? '').trim();
+            if (!raw) continue;
+            seedNeids.add(normalizeNeid(raw));
+        }
+        return seedNeids.size;
     }
     function projectRequestPayload() {
         if (!activeProject.value) return null;
