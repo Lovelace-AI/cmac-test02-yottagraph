@@ -29,6 +29,7 @@ interface RebuildRequestBody {
         name?: string;
         description?: string;
         seedDocuments?: DocumentRecord[];
+        seedEntities?: Array<{ neid?: string }>;
     };
 }
 
@@ -225,6 +226,18 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     const requestSeedNeids = Array.isArray(body.seedNeids)
         ? body.seedNeids.map((neid) => normalizeNeid(neid))
         : [];
+    const explicitSeedDocumentNeids = Array.isArray(body.project?.seedDocuments)
+        ? body.project.seedDocuments
+              .map((doc) => String(doc?.neid ?? '').trim())
+              .filter(Boolean)
+              .map((neid) => normalizeNeid(neid))
+        : [];
+    const explicitSeedEntityNeids = Array.isArray(body.project?.seedEntities)
+        ? body.project.seedEntities
+              .map((entity) => String(entity?.neid ?? '').trim())
+              .filter(Boolean)
+              .map((neid) => normalizeNeid(neid))
+        : [];
     const isPresetProject = requestProjectId === BNY_PRESET_PROJECT.id;
 
     const seed = { entities: [], events: [], relationships: [] };
@@ -232,12 +245,27 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
         rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
     };
     const seedHints = loadSeedGraphHints();
+    const seedRootNeids = [
+        ...new Set([
+            ...explicitSeedDocumentNeids,
+            ...explicitSeedEntityNeids,
+            ...requestSeedNeids,
+            ...(isPresetProject &&
+            explicitSeedDocumentNeids.length === 0 &&
+            explicitSeedEntityNeids.length === 0 &&
+            requestSeedNeids.length === 0
+                ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
+                : []),
+        ]),
+    ];
     const strictDocumentNeids =
-        requestSeedNeids.length > 0
-            ? requestSeedNeids
-            : isPresetProject
-              ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
-              : [];
+        explicitSeedDocumentNeids.length > 0
+            ? explicitSeedDocumentNeids
+            : requestSeedNeids.length > 0 && explicitSeedEntityNeids.length === 0
+              ? requestSeedNeids
+              : isPresetProject
+                ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
+                : [];
     const strictDocumentNeidSet = new Set(strictDocumentNeids);
     const entityMap = new Map<string, EntityRecord>();
     const relationships: RelationshipRecord[] = [];
@@ -316,7 +344,7 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     // Expected: ~127 unique non-document entities.
     // ─────────────────────────────────────────────────────────────
     try {
-        for (const docNeid of strictDocumentNeids) {
+        for (const docNeid of seedRootNeids) {
             for (const flavor of HOP1_FLAVORS) {
                 try {
                     const result = await mcpCallTool('elemental_get_related', {
@@ -469,8 +497,6 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
                             ...participantSourceDocNeids,
                         ])
                     );
-                    if (sourceDocuments.length === 0) continue;
-
                     // Record participant → event relationships (only for known entities)
                     for (const p of evt.participants ?? []) {
                         if (p.neid && entityMap.has(p.neid)) {
@@ -623,7 +649,12 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     let enrichmentResult: EnrichmentExpandResult;
     try {
         enrichmentResult = await runEnrichmentExpansion({
-            anchorNeids: documentEntities.map((entity) => entity.neid),
+            anchorNeids: [
+                ...new Set([
+                    ...documentEntities.map((entity) => entity.neid),
+                    ...explicitSeedEntityNeids,
+                ]),
+            ],
             includeEvents: true,
             maxEntities: ENRICHMENT_MAX_ENTITIES,
             maxRelationships: ENRICHMENT_MAX_RELATIONSHIPS,
@@ -632,7 +663,7 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
         });
     } catch (error: any) {
         console.error(
-            'Enrichment expansion failed; returning document-only fallback state:',
+            'Enrichment expansion failed; returning seed-scoped fallback state:',
             error?.message
         );
         enrichmentResult = emptyEnrichmentResult();
@@ -646,14 +677,16 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     const selectedDocuments: DocumentRecord[] =
         body.project?.seedDocuments && body.project.seedDocuments.length > 0
             ? body.project.seedDocuments
-            : requestSeedNeids.length > 0 || requestProjectId !== BNY_PRESET_PROJECT.id
+            : strictDocumentNeids.length > 0
               ? strictDocumentNeids.map((neid) => ({
                     neid,
                     documentId: neid,
                     title: `Seed ${neid}`,
                     kind: 'User selected seed',
                 }))
-              : BNY_DOCUMENTS;
+              : isPresetProject
+                ? BNY_DOCUMENTS
+                : [];
     const projectName =
         body.project?.name?.trim() ||
         (isPresetProject ? BNY_PRESET_PROJECT.name : 'Custom Network');

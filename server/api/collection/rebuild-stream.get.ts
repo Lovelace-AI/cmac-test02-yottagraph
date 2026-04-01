@@ -21,6 +21,8 @@ import {
 interface StreamRebuildQuery {
     projectId?: string;
     seedNeids?: string | string[];
+    seedDocumentNeids?: string | string[];
+    seedEntityNeids?: string | string[];
     seedDocumentCount?: string;
     seedEntityCount?: string;
     seedSummaryLabel?: string;
@@ -350,6 +352,15 @@ function parseCountParam(value: string | undefined): number {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function parseNeidList(value: string | string[] | undefined): string[] {
+    const raw = Array.isArray(value) ? value.join(',') : value || '';
+    return raw
+        .split(',')
+        .map((token) => token.trim())
+        .filter(Boolean)
+        .map((neid) => normalizeNeid(neid));
+}
+
 function formatSeedSummary(seedDocumentCount: number, seedEntityCount: number): string {
     const parts: string[] = [];
     if (seedDocumentCount > 0) {
@@ -381,14 +392,9 @@ function resolveSeedSummaryLabel(
 export default defineEventHandler(async (event) => {
     const query = getQuery(event) as StreamRebuildQuery;
     const requestProjectId = query.projectId?.trim() || BNY_PRESET_PROJECT.id;
-    const querySeedRaw = Array.isArray(query.seedNeids)
-        ? query.seedNeids.join(',')
-        : query.seedNeids || '';
-    const requestSeedNeids = querySeedRaw
-        .split(',')
-        .map((token) => token.trim())
-        .filter(Boolean)
-        .map((neid) => normalizeNeid(neid));
+    const requestSeedNeids = parseNeidList(query.seedNeids);
+    const explicitSeedDocumentNeids = parseNeidList(query.seedDocumentNeids);
+    const explicitSeedEntityNeids = parseNeidList(query.seedEntityNeids);
     const seedDocumentCount = parseCountParam(query.seedDocumentCount);
     const seedEntityCount = parseCountParam(query.seedEntityCount);
     const isPresetProject = requestProjectId === BNY_PRESET_PROJECT.id;
@@ -441,19 +447,26 @@ export default defineEventHandler(async (event) => {
         rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
     };
     const seedHints = loadSeedGraphHints();
-    const documentRootNeids =
-        requestSeedNeids.length > 0
-            ? requestSeedNeids
-            : isPresetProject
-              ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
-              : [];
+    const seedRootNeids = [
+        ...new Set([
+            ...explicitSeedDocumentNeids,
+            ...explicitSeedEntityNeids,
+            ...requestSeedNeids,
+            ...(isPresetProject &&
+            explicitSeedDocumentNeids.length === 0 &&
+            explicitSeedEntityNeids.length === 0 &&
+            requestSeedNeids.length === 0
+                ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
+                : []),
+        ]),
+    ];
     const seedSummaryLabel = resolveSeedSummaryLabel(
         query.seedSummaryLabel,
         seedDocumentCount,
         seedEntityCount,
-        documentRootNeids.length
+        seedRootNeids.length
     );
-    strictDocumentNeidSet = new Set(documentRootNeids);
+    strictDocumentNeidSet = new Set(explicitSeedDocumentNeids);
     let baselineExtractedPropertyCount = 0;
     let baselineExtractedPropertyRecordCount = 0;
     const entityByKey = new Map<string, EntityRecord>();
@@ -466,9 +479,9 @@ export default defineEventHandler(async (event) => {
     try {
         // ─── Phase 1: Load project seed documents ─────────────────────
         t0 = Date.now();
-        sendStep(1, 'working', 'Loading Seed Documents', `Traversing ${seedSummaryLabel}...`);
+        sendStep(1, 'working', 'Loading Seed Context', `Traversing ${seedSummaryLabel}...`);
 
-        const seedTraversalTasks = documentRootNeids.flatMap((docNeid) =>
+        const seedTraversalTasks = seedRootNeids.flatMap((docNeid) =>
             HOP1_FLAVORS.map((flavor) => ({ docNeid, flavor }))
         );
         let phase1Resolved = 0;
@@ -539,7 +552,7 @@ export default defineEventHandler(async (event) => {
         sendStep(
             1,
             'completed',
-            'Loading Seed Documents',
+            'Loading Seed Context',
             `Resolved ${formatCount(entityByKey.size)} entities from ${seedSummaryLabel}.`,
             Date.now() - t0
         );
@@ -554,7 +567,7 @@ export default defineEventHandler(async (event) => {
                 (entity) => entity.flavor === flavor && !entity.mcpConfirmed
             )
         );
-        const phase1Tasks = documentRootNeids.flatMap((docNeid) =>
+        const phase1Tasks = seedRootNeids.flatMap((docNeid) =>
             unresolvedFlavors.map((flavor) => ({ docNeid, flavor }))
         );
         let phase2Resolved = 0;
@@ -646,7 +659,7 @@ export default defineEventHandler(async (event) => {
             'Confirming Entity Profiles',
             phase1Tasks.length > 0
                 ? `Confirmed ${formatCount(phase2Resolved)} entity matches across ${formatCount(phase1Tasks.length)} live graph lookups.`
-                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers discovered from seeded documents.`,
+                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers discovered from seeded roots.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
@@ -659,11 +672,7 @@ export default defineEventHandler(async (event) => {
             Array.from(entityByKey.values()).find((entity) => entity.neid === neid);
         const strictEventHubNeids = seedHints.eventHubNeids
             .map((hubNeidRaw) => normalizeNeid(hubNeidRaw))
-            .filter((hubNeid) => {
-                const hubEntity = getEntityByNeid(hubNeid);
-                if (!hubEntity) return false;
-                return hubEntity.sourceDocuments.some((docNeid) => isStrictDocumentNeid(docNeid));
-            })
+            .filter((hubNeid) => Boolean(getEntityByNeid(hubNeid)))
             .filter((hubNeid, idx, arr) => arr.indexOf(hubNeid) === idx);
         let phase3MatchedEvents = 0;
         let phase3ReturnedEvents = 0;
@@ -852,8 +861,6 @@ export default defineEventHandler(async (event) => {
                                 ].map((neid) => normalizeNeid(neid))
                             ),
                         ].filter((docNeid) => isStrictDocumentNeid(docNeid));
-                        const hasStrictDocumentEvidence = docNeids.length > 0;
-                        if (!hasStrictDocumentEvidence) continue;
                         for (const docNeid of docNeids) {
                             if (!seededEvent.sourceDocuments.includes(docNeid)) {
                                 seededEvent.sourceDocuments.push(docNeid);
@@ -916,7 +923,7 @@ export default defineEventHandler(async (event) => {
                                 3,
                                 'working',
                                 'Loading Document Events',
-                                `Processing ${hubLabel}... ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete, kept ${formatCount(phase3ProcessedEvents)} document-backed events so far.${activeHubSummary()}`
+                                `Processing ${hubLabel}... ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete, kept ${formatCount(phase3ProcessedEvents)} scoped events so far.${activeHubSummary()}`
                             );
                         }
                     }
@@ -936,7 +943,7 @@ export default defineEventHandler(async (event) => {
                             3,
                             'working',
                             'Loading Document Events',
-                            `Completed ${hubLabel}. ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete, reviewed ${formatCount(phase3ReturnedEvents)} graph events, kept ${formatCount(phase3ProcessedEvents)} document-backed events so far.${activeHubSummary()}`
+                            `Completed ${hubLabel}. ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete, reviewed ${formatCount(phase3ReturnedEvents)} graph events, kept ${formatCount(phase3ProcessedEvents)} scoped events so far.${activeHubSummary()}`
                         );
                     }
                 }
@@ -955,34 +962,13 @@ export default defineEventHandler(async (event) => {
             );
         }
 
-        // Keep only strict document-backed events in the baseline document graph.
-        const strictDocumentBackedEvents = Array.from(eventByKey.entries()).filter(
-            ([eventKey, eventItem]) => {
-                const sourceDocNeids = [
-                    ...(eventItem.sourceDocuments ?? []),
-                    ...(eventItem.extraSourceDocuments ?? []),
-                ]
-                    .map((docNeid) => normalizeNeid(docNeid))
-                    .filter((docNeid) => isStrictDocumentNeid(docNeid));
-                if (sourceDocNeids.length > 0) return true;
-                const seededDocSet = seedEventDocsByKey.get(eventKey);
-                if (!seededDocSet || seededDocSet.size === 0) return false;
-                return Array.from(seededDocSet.values())
-                    .map((docNeid) => normalizeNeid(docNeid))
-                    .some((docNeid) => isStrictDocumentNeid(docNeid));
-            }
-        );
-        eventByKey.clear();
-        for (const [eventKey, eventItem] of strictDocumentBackedEvents) {
-            eventByKey.set(eventKey, eventItem);
-        }
         phase3ProcessedEvents = eventByKey.size;
 
         sendStep(
             3,
             'completed',
             'Loading Document Events',
-            `Loaded ${formatCount(eventByKey.size)} document-backed events and linked them to participants and documents.`,
+            `Loaded ${formatCount(eventByKey.size)} scoped events and linked them to participants and relevant context.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
@@ -1248,9 +1234,15 @@ export default defineEventHandler(async (event) => {
         const documentEntities = Array.from(entityByKey.values());
         const documentEvents = Array.from(eventByKey.values());
         const documentRelationshipCount = relationshipMap.size;
+        const enrichmentAnchorNeids = [
+            ...new Set([
+                ...documentEntities.map((entity) => entity.neid),
+                ...explicitSeedEntityNeids,
+            ]),
+        ];
         const enrichmentResult = await runEnrichmentExpansion(
             {
-                anchorNeids: documentEntities.map((entity) => entity.neid),
+                anchorNeids: enrichmentAnchorNeids,
                 includeEvents: true,
                 maxEntities: ENRICHMENT_MAX_ENTITIES,
                 maxRelationships: ENRICHMENT_MAX_RELATIONSHIPS,
@@ -1291,14 +1283,16 @@ export default defineEventHandler(async (event) => {
         );
         phase6Checkpoint = 'Preparing workspace metadata and cache payload';
         const selectedDocuments: DocumentRecord[] =
-            requestSeedNeids.length > 0 || !isPresetProject
-                ? documentRootNeids.map((neid) => ({
+            explicitSeedDocumentNeids.length > 0
+                ? explicitSeedDocumentNeids.map((neid) => ({
                       neid,
                       documentId: neid,
                       title: `Seed ${neid}`,
                       kind: 'User selected seed',
                   }))
-                : BNY_DOCUMENTS;
+                : isPresetProject
+                  ? BNY_DOCUMENTS
+                  : [];
         const projectName = isPresetProject ? BNY_PRESET_PROJECT.name : 'Custom Network';
         const projectDescription = isPresetProject
             ? BNY_PRESET_PROJECT.description

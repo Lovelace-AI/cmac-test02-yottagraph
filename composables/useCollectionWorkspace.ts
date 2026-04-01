@@ -336,8 +336,8 @@ const INITIAL_STEPS: RebuildStep[] = [
     {
         step: 1,
         status: 'pending',
-        label: 'Loading Seed Documents',
-        detail: 'Traversing seeded documents...',
+        label: 'Loading Seed Context',
+        detail: 'Traversing seeded roots...',
     },
     {
         step: 2,
@@ -571,10 +571,7 @@ export function useCollectionWorkspace() {
     );
 
     const documentEntities = computed(() =>
-        collection.value.entities.filter(
-            (entity) =>
-                entity.origin === 'document' && hasStrictDocumentSource(entity.sourceDocuments)
-        )
+        collection.value.entities.filter((entity) => entity.origin === 'document')
     );
     const enrichedEntities = computed(() =>
         collection.value.entities.filter((e) => e.origin === 'enriched')
@@ -586,11 +583,7 @@ export function useCollectionWorkspace() {
         enrichedEntities.value.filter((entity) => (entity.enrichmentDepth ?? 2) <= 2)
     );
     const documentEvents = computed(() =>
-        collection.value.events.filter(
-            (eventItem) =>
-                eventItem.extractedSeed !== false &&
-                hasStrictDocumentSource(eventItem.sourceDocuments)
-        )
+        collection.value.events.filter((eventItem) => eventItem.extractedSeed !== false)
     );
     const enrichedEvents = computed(() =>
         collection.value.events.filter(
@@ -606,10 +599,7 @@ export function useCollectionWorkspace() {
         enrichedEvents.value.filter((eventItem) => (eventItem.enrichmentDepth ?? 2) <= 2)
     );
     const documentRelationships = computed(() =>
-        collection.value.relationships.filter(
-            (relationship) =>
-                relationship.origin === 'document' && hasStrictRelationshipEvidence(relationship)
-        )
+        collection.value.relationships.filter((relationship) => relationship.origin === 'document')
     );
     const enrichedRelationships = computed(() =>
         collection.value.relationships.filter((relationship) => relationship.origin === 'enriched')

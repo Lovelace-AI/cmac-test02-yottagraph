@@ -24,9 +24,21 @@ export default defineEventHandler(async (event) => {
     }
     if (Array.isArray(body.project?.seedDocuments)) {
         url.searchParams.set('seedDocumentCount', String(body.project.seedDocuments.length));
+        const seedDocumentNeids = body.project.seedDocuments
+            .map((document) => String(document?.neid ?? '').trim())
+            .filter(Boolean);
+        if (seedDocumentNeids.length > 0) {
+            url.searchParams.set('seedDocumentNeids', seedDocumentNeids.join(','));
+        }
     }
     if (Array.isArray(body.project?.seedEntities)) {
         url.searchParams.set('seedEntityCount', String(body.project.seedEntities.length));
+        const seedEntityNeids = body.project.seedEntities
+            .map((entity) => String(entity?.neid ?? '').trim())
+            .filter(Boolean);
+        if (seedEntityNeids.length > 0) {
+            url.searchParams.set('seedEntityNeids', seedEntityNeids.join(','));
+        }
     }
     if (
         typeof body.project?.seedSummaryLabel === 'string' &&
