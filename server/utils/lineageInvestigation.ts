@@ -162,7 +162,7 @@ export async function runCorporateLineageInvestigation(
         10,
         Math.min(options.maxOrganizations ?? DEFAULT_MAX_ORGANIZATIONS, 2000)
     );
-    const strictDocumentNeids = new Set(
+    const strictSeedNeids = new Set(
         collection.documents.map((document) => normalizeNeid(document.neid))
     );
     const roots = collection.entities
@@ -170,7 +170,7 @@ export async function runCorporateLineageInvestigation(
             (entity) =>
                 entity.flavor === 'organization' &&
                 entity.sourceDocuments.some((docNeid) =>
-                    strictDocumentNeids.has(normalizeNeid(docNeid))
+                    strictSeedNeids.has(normalizeNeid(docNeid))
                 )
         )
         .map((entity) => normalizeNeid(entity.neid));

@@ -298,7 +298,7 @@ function confidenceLabel(summary: TrustCoverageSummary, status: OverviewStatus):
 function metricForTab(tab: WorkspaceTab, state: CollectionState): string {
     if (tab === 'graph') return `${formatCount(state.meta.entityCount)} mapped entities`;
     if (tab === 'timeline') return `${formatCount(state.meta.eventCount)} extracted events`;
-    if (tab === 'validation') return `${formatCount(state.meta.documentCount)} source documents`;
+    if (tab === 'validation') return `${formatCount(state.meta.documentCount)} seeded entities`;
     return `${formatCount(state.entities.filter((entity) => entity.origin === 'enriched').length)} enriched matches`;
 }
 
@@ -420,7 +420,7 @@ export function mapCollectionToOverviewViewModel(params: {
         subtitle:
             activeProject?.description ||
             state.meta.description ||
-            'Collection-level extraction and synthesis across the provided source documents.',
+            'Collection-level extraction and synthesis across the provided seed entities.',
         detectedDealType: dealType,
         status,
         statusLabel: statusLabel(status),
@@ -453,7 +453,7 @@ export function mapCollectionToOverviewViewModel(params: {
         ],
         healthItems: [
             {
-                label: 'Documents ingested',
+                label: 'Seed entities ingested',
                 value: `${state.documents.length} of ${state.meta.documentCount}`,
                 tone: state.documents.length ? 'success' : 'warning',
             },

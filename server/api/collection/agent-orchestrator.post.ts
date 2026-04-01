@@ -90,7 +90,7 @@ function deterministicFallbackText(args: {
                 : 'This collection has limited entity grounding.',
             topEvents
                 ? `Key milestones include ${topEvents}.`
-                : 'No major document-backed milestones were identified.',
+                : 'No major seed-backed milestones were identified.',
             'The available evidence suggests these documents describe a connected financial process rather than isolated records.',
         ]
             .filter(Boolean)
@@ -99,11 +99,11 @@ function deterministicFallbackText(args: {
     return [
         baseline,
         topEntities
-            ? `Most central entities in the document graph: ${topEntities}.`
+            ? `Most central entities in the seed-scoped graph: ${topEntities}.`
             : 'No central entities are currently available.',
         topEvents
-            ? `Most material document-backed events: ${topEvents}.`
-            : 'No material document-backed events are currently available.',
+            ? `Most material seed-backed events: ${topEvents}.`
+            : 'No material seed-backed events are currently available.',
         args.question ? `Analyst focus: ${args.question}` : '',
     ]
         .filter(Boolean)
@@ -129,7 +129,7 @@ function completeStep(steps: AgentPipelineStep[], step: number, startedAt: numbe
     return finishedAt;
 }
 
-function documentScopedState(collection: CollectionState): {
+function strictSeedScopedState(collection: CollectionState): {
     entities: EntityRecord[];
     relationships: RelationshipRecord[];
     events: EventRecord[];
@@ -322,7 +322,7 @@ function normalizePlanningOutput(args: {
 
 function coverageEvidenceLines(
     collection: CollectionState,
-    scoped: ReturnType<typeof documentScopedState>
+    scoped: ReturnType<typeof strictSeedScopedState>
 ): string[] {
     const evidenceBackedRelationships = scoped.relationships.filter(
         (relationship) =>
@@ -346,7 +346,7 @@ function coverageEvidenceLines(
     const notes = [
         `Coverage score ${coverageScore}/100 based on source-backed entities and relationships.`,
         `${evidenceBackedRelationships} evidence-backed relationships versus ${inferredRelationships} inferred relationships.`,
-        `${sourceBackedEntities} of ${scoped.entities.length} document entities have direct source-document grounding (${sourceCoverageShare}%).`,
+        `${sourceBackedEntities} of ${scoped.entities.length} seed entities have direct source-document grounding (${sourceCoverageShare}%).`,
     ];
     if (collection.propertySeries.length === 0) {
         notes.push(
@@ -360,7 +360,7 @@ function coverageEvidenceLines(
 }
 
 function relationshipEvidenceLines(
-    scoped: ReturnType<typeof documentScopedState>,
+    scoped: ReturnType<typeof strictSeedScopedState>,
     topEntityRows: ReturnType<typeof toContextEntityRow>[]
 ): string[] {
     const entityNames = new Map(topEntityRows.map((row) => [row.neid, row.name]));
@@ -397,7 +397,7 @@ function contextFallbackBundle(
     answerStyle?: PlanningAgentOutput['answerStyle'],
     conversationHistory: AskYottaHistoryTurn[] = []
 ): ContextAgentOutput {
-    const scoped = documentScopedState(collection);
+    const scoped = strictSeedScopedState(collection);
     const topEntityRows = topEntities(scoped.entities, scoped.relationships, scoped.events).map(
         (entity) => toContextEntityRow(entity)
     );
@@ -409,10 +409,10 @@ function contextFallbackBundle(
         .slice(0, 20)
         .map((relationship) => toContextRelationshipRow(relationship));
     const evidenceLines = [
-        `${collection.documents.length} source documents`,
-        `${scoped.entities.length} document entities`,
-        `${scoped.events.length} document events`,
-        `${scoped.relationships.length} document relationships`,
+        `${collection.documents.length} seed entities`,
+        `${scoped.entities.length} seed entities`,
+        `${scoped.events.length} seed events`,
+        `${scoped.relationships.length} seed relationships`,
         targetEntity
             ? `Focus entity: ${targetEntity.name} (${targetEntity.flavor})`
             : 'No focus entity',

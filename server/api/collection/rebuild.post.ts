@@ -258,14 +258,7 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
                 : []),
         ]),
     ];
-    const strictDocumentNeids =
-        explicitSeedDocumentNeids.length > 0
-            ? explicitSeedDocumentNeids
-            : requestSeedNeids.length > 0 && explicitSeedEntityNeids.length === 0
-              ? requestSeedNeids
-              : isPresetProject
-                ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
-                : [];
+    const strictDocumentNeids = [...seedRootNeids];
     const strictDocumentNeidSet = new Set(strictDocumentNeids);
     const entityMap = new Map<string, EntityRecord>();
     const relationships: RelationshipRecord[] = [];
@@ -274,7 +267,7 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     const entityNeidBySeedKey = new Map<string, string>();
     const eventNeidBySeedKey = new Map<string, string>();
 
-    // Legacy extracted baseline removed; rebuild now starts from project seed documents.
+    // Legacy extracted baseline removed; rebuild now starts from project seed entities.
     for (const seedEntity of seed.entities) {
         const neid = seedEntity.canonicalNeid ? normalizeNeid(seedEntity.canonicalNeid) : '';
         if (!neid) continue;
@@ -680,19 +673,12 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     const entities = mergeEntities(documentEntities, enrichmentResult.entities);
     const events = mergeEvents(documentEvents, enrichmentResult.events);
     const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
-    const selectedDocuments: DocumentRecord[] =
-        body.project?.seedDocuments && body.project.seedDocuments.length > 0
-            ? body.project.seedDocuments
-            : strictDocumentNeids.length > 0
-              ? strictDocumentNeids.map((neid) => ({
-                    neid,
-                    documentId: neid,
-                    title: `Seed ${neid}`,
-                    kind: 'User selected seed',
-                }))
-              : isPresetProject
-                ? BNY_DOCUMENTS
-                : [];
+    const selectedDocuments: DocumentRecord[] = seedRootNeids.map((neid) => ({
+        neid,
+        documentId: neid,
+        title: `Seed ${neid}`,
+        kind: 'User selected seed',
+    }));
     const projectName =
         body.project?.name?.trim() ||
         (isPresetProject ? BNY_PRESET_PROJECT.name : 'Custom Network');

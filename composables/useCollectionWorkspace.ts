@@ -348,8 +348,8 @@ const INITIAL_STEPS: RebuildStep[] = [
     {
         step: 3,
         status: 'pending',
-        label: 'Loading Document Events',
-        detail: 'Loading document events...',
+        label: 'Loading Seed Events',
+        detail: 'Loading seed events...',
     },
     {
         step: 4,
@@ -558,17 +558,34 @@ export function useCollectionWorkspace() {
     const entities = computed(() => collection.value.entities);
     const events = computed(() => collection.value.events);
     const relationships = computed(() => collection.value.relationships);
-    const strictDocumentNeidSet = computed(
-        () => new Set(collection.value.documents.map((document) => document.neid))
-    );
+    const strictDocumentNeidSet = computed(() => {
+        const seedNeids = new Set<string>();
+        for (const neid of activeProject.value?.seedNeids ?? []) {
+            const raw = String(neid ?? '').trim();
+            if (!raw) continue;
+            seedNeids.add(normalizeNeid(raw));
+        }
+        for (const doc of activeProject.value?.seedDocuments ?? []) {
+            const raw = String(doc.neid ?? '').trim();
+            if (!raw) continue;
+            seedNeids.add(normalizeNeid(raw));
+        }
+        for (const entity of activeProject.value?.seedEntities ?? []) {
+            const raw = String(entity.neid ?? '').trim();
+            if (!raw) continue;
+            seedNeids.add(normalizeNeid(raw));
+        }
+        if (seedNeids.size > 0) return seedNeids;
+        return new Set(collection.value.documents.map((document) => normalizeNeid(document.neid)));
+    });
     const hasStrictDocumentSource = (sourceDocuments: string[] | undefined): boolean =>
         Array.isArray(sourceDocuments) &&
-        sourceDocuments.some((docNeid) => strictDocumentNeidSet.value.has(docNeid));
+        sourceDocuments.some((docNeid) => strictDocumentNeidSet.value.has(normalizeNeid(docNeid)));
     const hasRelationshipCitationEvidence = (relationship: RelationshipRecord): boolean =>
         Array.isArray(relationship.citations) && relationship.citations.length > 0;
     const hasStrictRelationshipEvidence = (relationship: RelationshipRecord): boolean =>
         (relationship.sourceDocumentNeid
-            ? strictDocumentNeidSet.value.has(relationship.sourceDocumentNeid)
+            ? strictDocumentNeidSet.value.has(normalizeNeid(relationship.sourceDocumentNeid))
             : false) || hasRelationshipCitationEvidence(relationship);
     const propertySeries = computed(() => strictDocumentPropertySeries.value);
     const meta = computed(() => collection.value.meta);
@@ -600,7 +617,11 @@ export function useCollectionWorkspace() {
     );
 
     const documentEntities = computed(() =>
-        collection.value.entities.filter((entity) => entity.origin === 'document')
+        collection.value.entities.filter(
+            (entity) =>
+                strictDocumentNeidSet.value.has(normalizeNeid(entity.neid)) ||
+                entity.origin === 'document'
+        )
     );
     const enrichedEntities = computed(() =>
         collection.value.entities.filter((e) => e.origin === 'enriched')
@@ -612,7 +633,11 @@ export function useCollectionWorkspace() {
         enrichedEntities.value.filter((entity) => (entity.enrichmentDepth ?? 2) <= 2)
     );
     const documentEvents = computed(() =>
-        collection.value.events.filter((eventItem) => eventItem.extractedSeed !== false)
+        collection.value.events.filter(
+            (eventItem) =>
+                eventItem.extractedSeed !== false ||
+                hasStrictDocumentSource(eventItem.sourceDocuments)
+        )
     );
     const enrichedEvents = computed(() =>
         collection.value.events.filter(
@@ -628,7 +653,10 @@ export function useCollectionWorkspace() {
         enrichedEvents.value.filter((eventItem) => (eventItem.enrichmentDepth ?? 2) <= 2)
     );
     const documentRelationships = computed(() =>
-        collection.value.relationships.filter((relationship) => relationship.origin === 'document')
+        collection.value.relationships.filter(
+            (relationship) =>
+                relationship.origin === 'document' || hasStrictRelationshipEvidence(relationship)
+        )
     );
     const enrichedRelationships = computed(() =>
         collection.value.relationships.filter((relationship) => relationship.origin === 'enriched')
@@ -2524,7 +2552,7 @@ export function useCollectionWorkspace() {
     const keyCoverageNotes = computed(() => {
         const notes: string[] = [];
         if (collection.value.documents.length === 0) {
-            notes.push('No source documents are loaded yet.');
+            notes.push('No seed entities are loaded yet.');
         }
         if (
             trustCoverageSummary.value.inferredRelationships >
@@ -2557,7 +2585,7 @@ export function useCollectionWorkspace() {
         const eventLine = topEvent
             ? `Most significant event: ${topEvent.name}${topEvent.date ? ` (${topEvent.date.slice(0, 10)})` : ''}.`
             : 'No significant events have been identified yet.';
-        return `${docCount} source document${docCount === 1 ? '' : 's'} produced ${entityCount} entities and ${eventCount} events. ${entityLine} ${eventLine}`;
+        return `${docCount} seed entit${docCount === 1 ? 'y' : 'ies'} produced ${entityCount} entities and ${eventCount} events. ${entityLine} ${eventLine}`;
     });
 
     const recommendedActions = computed<CollectionAction[]>(() => [
@@ -2582,7 +2610,7 @@ export function useCollectionWorkspace() {
         {
             id: 'compare-fact-evolution',
             label: 'Compare Fact Evolution',
-            description: 'Track how entity facts change across source documents.',
+            description: 'Track how entity facts change across seed context.',
             tab: 'timeline',
         },
         {
@@ -2636,7 +2664,7 @@ export function useCollectionWorkspace() {
         const eventLine = topEvent
             ? `Most significant event: ${topEvent.name}${topEvent.date ? ` (${topEvent.date.slice(0, 10)})` : ''}.`
             : 'No significant events have been identified yet.';
-        return `${docCount} source document${docCount === 1 ? '' : 's'} produced ${entityCount} entities and ${eventCount} events. ${entityLine} ${eventLine}`;
+        return `${docCount} seed entit${docCount === 1 ? 'y' : 'ies'} produced ${entityCount} entities and ${eventCount} events. ${entityLine} ${eventLine}`;
     });
 
     async function generateEnrichmentLanguage(): Promise<void> {
@@ -2681,7 +2709,7 @@ export function useCollectionWorkspace() {
                 try {
                     const lineageQuestion = [
                         `Write a clear narrative for this lineage relationship: ${card.title}.`,
-                        `Document context: ${card.documentContext}`,
+                        `Seed context: ${card.documentContext}`,
                         `Graph context: ${card.kgContext}`,
                         `Evidence: ${card.evidence.slice(0, 3).join(' | ')}`,
                         'Return 1-2 plain sentences for an analyst. Be specific about the transition and why it matters.',

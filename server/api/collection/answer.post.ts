@@ -218,7 +218,7 @@ function entityEvidenceSnippets(
     return Array.from(snippets).slice(0, 3);
 }
 
-function documentScopedState(collection: CollectionState): {
+function strictSeedScopedState(collection: CollectionState): {
     entities: EntityRecord[];
     relationships: RelationshipRecord[];
     events: EventRecord[];
@@ -363,16 +363,16 @@ function fallbackResponse(
         .slice(0, 4)
         .map((row) => `${row.name} (${row.date})`)
         .join('; ');
-    const baseline = `${docCount} source document${docCount === 1 ? '' : 's'} support this answer context.`;
+    const baseline = `${docCount} seed entity${docCount === 1 ? '' : 's'} support this answer context.`;
     if (action === 'answer_question' || action === 'summarize_collection') {
         return [
             baseline,
             topEntities
-                ? `Most central entities in the document graph: ${topEntities}.`
+                ? `Most central entities in the seed-scoped graph: ${topEntities}.`
                 : 'No central entities are currently available.',
             topEvents
-                ? `Most material document-backed events: ${topEvents}.`
-                : 'No material document-backed events are currently available.',
+                ? `Most material seed-backed events: ${topEvents}.`
+                : 'No material seed-backed events are currently available.',
             question ? `Analyst focus: ${question}` : '',
         ]
             .filter(Boolean)
@@ -382,11 +382,11 @@ function fallbackResponse(
         return [
             baseline,
             topEntities
-                ? `Lineage should be interpreted using named organization transitions anchored in document entities such as ${topEntities}.`
+                ? `Lineage should be interpreted using named organization transitions anchored in seed entities such as ${topEntities}.`
                 : 'Lineage context is currently limited because organization anchors are sparse.',
             topEvents
                 ? `Relevant timeline anchors include: ${topEvents}.`
-                : 'No lineage events are currently linked in the document-backed timeline.',
+                : 'No lineage events are currently linked in the seed-backed timeline.',
         ].join(' ');
     }
     return [
@@ -419,7 +419,7 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
     let startedAt = nowMs();
     startedAt = completeStep(steps, 1, startedAt);
 
-    const scoped = documentScopedState(collection);
+    const scoped = strictSeedScopedState(collection);
     const names = nameByNeid(collection);
     const targetEntity = entityNeid
         ? scoped.entities.find((entity) => entity.neid === entityNeid)
@@ -484,7 +484,7 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
             timeoutMs: 40000,
             retries: 2,
             systemInstruction:
-                'You are Ask Yotta. Answer with collection-grounded evidence only. Be specific: name relationships, events, and source documents when available. Never claim tools are unavailable. Do not include recommendations, suggested next steps, or action items unless the user explicitly asks for them.',
+                'You are Ask Yotta. Answer with collection-grounded evidence only. Be specific: name relationships, events, and seed entitys when available. Never claim tools are unavailable. Do not include recommendations, suggested next steps, or action items unless the user explicitly asks for them.',
             prompt: [
                 'Return strict JSON only with this schema:',
                 '{"output":"","citations":[{"type":"entity|event|document","neid":"","label":""}]}',
@@ -492,7 +492,7 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
                 `Action: ${action}`,
                 `Question: ${questionLine || 'N/A'}`,
                 `Collection: ${collection.meta.name}`,
-                `Document counts: ${collection.documents.length} docs, ${scoped.entities.length} document entities, ${scoped.events.length} document events, ${scoped.relationships.length} document relationships.`,
+                `Seed-scope counts: ${collection.documents.length} docs, ${scoped.entities.length} seed entities, ${scoped.events.length} seed events, ${scoped.relationships.length} seed relationships.`,
                 '',
                 targetEntity
                     ? `Focus entity: ${targetEntity.name} (${targetEntity.flavor})`
@@ -507,8 +507,8 @@ export default defineEventHandler(async (event): Promise<CollectionAnswerRespons
                     ? `Entity event evidence: ${entityEventLines.join(' | ') || 'none'}`
                     : 'Entity event evidence: n/a',
                 targetEntity
-                    ? `Entity source documents: ${entityDocLines.join(', ') || 'none'}`
-                    : 'Entity source documents: n/a',
+                    ? `Entity seed entitys: ${entityDocLines.join(', ') || 'none'}`
+                    : 'Entity seed entitys: n/a',
                 targetEntity
                     ? `Entity background description: ${entityBackgroundDescription || 'none'}`
                     : 'Entity background description: n/a',

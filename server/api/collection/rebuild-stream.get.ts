@@ -434,7 +434,7 @@ export default defineEventHandler(async (event) => {
         Number.parseInt(String(query.seedSourceCount ?? ''), 10) || 0
     );
     const seedSummaryLabel = buildSeedSummaryLabel(clientSeedSourceCount, seedRootNeids.length);
-    strictDocumentNeidSet = new Set(explicitSeedDocumentNeids);
+    strictDocumentNeidSet = new Set(seedRootNeids);
     let baselineExtractedPropertyCount = 0;
     let baselineExtractedPropertyRecordCount = 0;
     const entityByKey = new Map<string, EntityRecord>();
@@ -634,7 +634,7 @@ export default defineEventHandler(async (event) => {
 
         // ─── Phase 3: Seeded event enrichment ──────────────────────────
         t0 = Date.now();
-        sendStep(3, 'working', 'Loading Document Events', 'Loading document events...');
+        sendStep(3, 'working', 'Loading Seed Events', 'Loading seed events...');
 
         const getEntityByNeid = (neid: string) =>
             Array.from(entityByKey.values()).find((entity) => entity.neid === neid);
@@ -674,7 +674,7 @@ export default defineEventHandler(async (event) => {
                 sendStep(
                     3,
                     'working',
-                    'Loading Document Events',
+                    'Loading Seed Events',
                     `Starting ${hubLabel}. ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete.${activeHubSummary()}`
                 );
                 try {
@@ -893,7 +893,7 @@ export default defineEventHandler(async (event) => {
                             sendStep(
                                 3,
                                 'working',
-                                'Loading Document Events',
+                                'Loading Seed Events',
                                 `Processing ${hubLabel}... ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete, kept ${formatCount(phase3ProcessedEvents)} scoped events so far.${activeHubSummary()}`
                             );
                         }
@@ -913,7 +913,7 @@ export default defineEventHandler(async (event) => {
                         sendStep(
                             3,
                             'working',
-                            'Loading Document Events',
+                            'Loading Seed Events',
                             `Completed ${hubLabel}. ${formatCount(phase3ProcessedHubs)}/${formatCount(strictEventHubNeids.length)} hubs complete, reviewed ${formatCount(phase3ReturnedEvents)} graph events, kept ${formatCount(phase3ProcessedEvents)} scoped events so far.${activeHubSummary()}`
                         );
                     }
@@ -928,8 +928,8 @@ export default defineEventHandler(async (event) => {
             sendStep(
                 3,
                 'working',
-                'Loading Document Events',
-                `Event loading hit the ${Math.round(PHASE3_DEADLINE_MS / 1000)}s phase budget; continuing with ${formatCount(phase3ProcessedEvents)} document-backed events.`
+                'Loading Seed Events',
+                `Event loading hit the ${Math.round(PHASE3_DEADLINE_MS / 1000)}s phase budget; continuing with ${formatCount(phase3ProcessedEvents)} seed-backed events.`
             );
         }
 
@@ -938,7 +938,7 @@ export default defineEventHandler(async (event) => {
         sendStep(
             3,
             'completed',
-            'Loading Document Events',
+            'Loading Seed Events',
             `Loaded ${formatCount(eventByKey.size)} scoped events and linked them to participants and relevant context.`,
             Date.now() - t0
         );
@@ -1189,7 +1189,7 @@ export default defineEventHandler(async (event) => {
             6,
             'working',
             'Preparing Workspace',
-            'Merging the document graph with curated 1-hop context...'
+            'Merging the strict seed graph with curated 1-hop context...'
         );
         const phase6StartedAt = Date.now();
         let phase6Checkpoint = 'Running curated 1-hop enrichment';
@@ -1253,17 +1253,12 @@ export default defineEventHandler(async (event) => {
             `Merged graph assembled. Entities: ${formatCount(entities.length)}, edges: ${formatCount(relationships.length)}, events: ${formatCount(events.length)}.`
         );
         phase6Checkpoint = 'Preparing workspace metadata and cache payload';
-        const selectedDocuments: DocumentRecord[] =
-            explicitSeedDocumentNeids.length > 0
-                ? explicitSeedDocumentNeids.map((neid) => ({
-                      neid,
-                      documentId: neid,
-                      title: `Seed ${neid}`,
-                      kind: 'User selected seed',
-                  }))
-                : isPresetProject
-                  ? BNY_DOCUMENTS
-                  : [];
+        const selectedDocuments: DocumentRecord[] = seedRootNeids.map((neid) => ({
+            neid,
+            documentId: neid,
+            title: `Seed ${neid}`,
+            kind: 'User selected seed',
+        }));
         const projectName = isPresetProject ? BNY_PRESET_PROJECT.name : 'Custom Network';
         const projectDescription = isPresetProject
             ? BNY_PRESET_PROJECT.description

@@ -473,6 +473,7 @@
         if (
             haystack.includes('events:') ||
             haystack.includes('loading document events') ||
+            haystack.includes('loading seed events') ||
             haystack.includes('event hub')
         ) {
             return {
@@ -737,10 +738,10 @@
             return [];
 
         const fallback = [
-            `This corpus combines ${overview.value.documentCount} source documents about one financing transaction and the parties involved in it.`,
-            `The documents center on ${municipalBondName.value}, and describe that bond deal and its surrounding obligations.`,
+            `This corpus combines ${overview.value.documentCount} seeded entities around one financing transaction and the parties involved in it.`,
+            `These seeded entities center on ${municipalBondName.value}, and describe that bond deal and its surrounding obligations.`,
             `Together, the files describe the deal structure, legal agreements, and key timeline events around the same transaction narrative.`,
-            `Use this view to understand what the documents are saying before reviewing broader graph context.`,
+            `Use this view to understand what the seeded entities establish before reviewing broader graph context.`,
         ].join(' ');
 
         const source = liveNarrative.value || fallback;
