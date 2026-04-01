@@ -670,10 +670,13 @@ export default defineEventHandler(async (event) => {
 
         const getEntityByNeid = (neid: string) =>
             Array.from(entityByKey.values()).find((entity) => entity.neid === neid);
-        const strictEventHubNeids = seedHints.eventHubNeids
-            .map((hubNeidRaw) => normalizeNeid(hubNeidRaw))
-            .filter((hubNeid) => Boolean(getEntityByNeid(hubNeid)))
-            .filter((hubNeid, idx, arr) => arr.indexOf(hubNeid) === idx);
+        const strictEventHubNeids = [
+            ...new Set([
+                ...seedHints.eventHubNeids.map((hubNeidRaw) => normalizeNeid(hubNeidRaw)),
+                ...explicitSeedEntityNeids,
+                ...seedRootNeids,
+            ]),
+        ].filter((hubNeid) => Boolean(getEntityByNeid(hubNeid) || seedRootNeids.includes(hubNeid)));
         let phase3MatchedEvents = 0;
         let phase3ReturnedEvents = 0;
         let phase3ProcessedHubs = 0;

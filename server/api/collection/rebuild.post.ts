@@ -404,7 +404,13 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
     // must be in the hop-1 entity set.
     // Expected: ~53 unique event NEIDs.
     // ─────────────────────────────────────────────────────────────
-    const strictEventHubNeids = seedHints.eventHubNeids.filter((hubNeid) => entityMap.has(hubNeid));
+    const strictEventHubNeids = [
+        ...new Set([
+            ...seedHints.eventHubNeids.map((hubNeid) => normalizeNeid(hubNeid)),
+            ...explicitSeedEntityNeids,
+            ...seedRootNeids,
+        ]),
+    ].filter((hubNeid) => entityMap.has(hubNeid) || seedRootNeids.includes(hubNeid));
     try {
         for (const hubNeid of strictEventHubNeids) {
             try {
