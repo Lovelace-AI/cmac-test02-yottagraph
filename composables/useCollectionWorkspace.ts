@@ -537,7 +537,13 @@ export function useCollectionWorkspace() {
             (activeProject.value.seedDocuments?.length ?? 0) +
             (activeProject.value.seedEntities?.length ?? 0);
         const neidCount = activeProject.value.seedNeids?.length ?? 0;
-        return Math.max(rawCount, neidCount);
+        // Keep pipeline seed count aligned with visible collection context when
+        // legacy project payloads under-report non-document seeded entities.
+        const visibleSeedCount = Math.max(
+            collection.value.documents.length,
+            collection.value.meta.documentCount ?? 0
+        );
+        return Math.max(rawCount, neidCount, visibleSeedCount);
     }
     function projectRequestPayload() {
         if (!activeProject.value) return null;
