@@ -18,15 +18,26 @@
     const { servers, getConfiguredServers, startChecking, stopChecking } = useServerStatus();
 
     // Only show warning if configured servers are unavailable
+    const configuredServers = computed(() =>
+        getConfiguredServers().filter(
+            (
+                server
+            ): server is NonNullable<
+                typeof getConfiguredServers extends () => infer R ? R[number] : never
+            > => Boolean(server)
+        )
+    );
     const showWarning = computed(() => {
-        const configured = getConfiguredServers();
-        return configured.length > 0 && configured.some((s) => s.status === 'unavailable');
+        return (
+            configuredServers.value.length > 0 &&
+            configuredServers.value.some((server) => server.status === 'unavailable')
+        );
     });
 
     const warningMessage = computed(() => {
-        const unavailable = getConfiguredServers()
-            .filter((s) => s.status === 'unavailable')
-            .map((s) => s.name);
+        const unavailable = configuredServers.value
+            .filter((server) => server.status === 'unavailable')
+            .map((server) => server.name || server.type || 'Server');
 
         if (unavailable.length === 1) {
             return `${unavailable[0]} is unavailable. Some features may not work properly.`;

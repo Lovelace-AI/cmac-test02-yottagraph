@@ -581,7 +581,8 @@
             ...new Set(
                 riskEvents.value
                     .slice(0, 3)
-                    .map((eventItem) => String(eventItem.category || eventItem.name))
+                    .map((eventItem) => eventItem?.category || eventItem?.name)
+                    .filter((label): label is string => Boolean(label))
             ),
         ];
 

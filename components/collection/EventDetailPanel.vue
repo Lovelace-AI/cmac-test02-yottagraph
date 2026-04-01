@@ -252,7 +252,8 @@
         const dateText = resolveEventDate(selectedEvent.value)?.slice(0, 10) ?? 'an unknown date';
         const participantText =
             participantEntities.value
-                .map((entity) => entity.name)
+                .map((entity) => entity?.name)
+                .filter((name): name is string => Boolean(name))
                 .slice(0, 4)
                 .join(', ') || 'no named participants';
         const confidenceText = selectedEvent.value.likelihood

@@ -1277,7 +1277,8 @@
             `Event count: ${selectedEntityEvents.value.length}.`,
             `Top relationship counterparties: ${
                 relationshipPeerPreview.value
-                    .map((peer) => peer.name)
+                    .map((peer) => peer?.name)
+                    .filter((name): name is string => Boolean(name))
                     .slice(0, 6)
                     .join(', ') || 'none'
             }.`,

@@ -1084,7 +1084,10 @@ export function useCollectionWorkspace() {
         return null;
     };
     const broaderActivityTheme = (items: EventRecord[]): string | null => {
-        const names = items.map((item) => item.name);
+        const names = items
+            .map((item) => item?.name)
+            .filter((name): name is string => Boolean(name));
+        if (!names.length) return null;
         const locAmendmentCount = names.filter((name) => /LOC Amendment/i.test(name)).length;
         if (locAmendmentCount >= Math.min(3, names.length)) {
             return 'Most of these examples are later letter-of-credit amendments tied to the same financing relationships, not missing facts from the uploaded document set.';
@@ -1683,7 +1686,10 @@ export function useCollectionWorkspace() {
                 (documentEntityNeids.value.has(anchorNeid) ? 15 : 0) -
                 breadthPenalty;
             const eventSignature = eventRows
-                .map((eventItem) => `${eventItem.name}|${eventDateLabel(eventItem) ?? ''}`)
+                .map(
+                    (eventItem) =>
+                        `${eventItem?.name ?? 'Event'}|${eventDateLabel(eventItem) ?? ''}`
+                )
                 .sort((a, b) => a.localeCompare(b))
                 .join('||');
             const followOnActivityContext = themeSummary?.includes('letter-of-credit amendments')
