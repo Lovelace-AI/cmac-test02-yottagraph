@@ -128,12 +128,19 @@
                                 </v-btn>
                             </div>
                             <v-list v-if="validatedDocuments.length > 0" density="compact">
-                                <v-list-item
-                                    v-for="doc in validatedDocuments"
-                                    :key="doc.neid"
-                                    :title="doc.name || doc.neid"
-                                    :subtitle="`${doc.neid} • ${doc.flavor || 'unknown'}`"
-                                />
+                                <v-list-item v-for="doc in validatedDocuments" :key="doc.neid">
+                                    <v-list-item-title>
+                                        {{ doc.name || doc.neid }}
+                                    </v-list-item-title>
+                                    <v-list-item-subtitle>
+                                        {{ doc.neid }}
+                                    </v-list-item-subtitle>
+                                    <template #append>
+                                        <v-chip size="x-small" variant="tonal">
+                                            {{ displayLookupFlavor(doc, 'document') }}
+                                        </v-chip>
+                                    </template>
+                                </v-list-item>
                             </v-list>
                         </v-card-text>
                     </v-window-item>
@@ -220,8 +227,13 @@
                                         {{ candidate.name || candidate.neid }}
                                     </v-list-item-title>
                                     <v-list-item-subtitle>
-                                        {{ candidate.neid }} • {{ candidate.flavor || 'unknown' }}
+                                        {{ candidate.neid }}
                                     </v-list-item-subtitle>
+                                    <template #append>
+                                        <v-chip size="x-small" variant="tonal">
+                                            {{ displayLookupFlavor(candidate, 'entity') }}
+                                        </v-chip>
+                                    </template>
                                 </v-list-item>
                             </v-list>
                         </v-card-text>
@@ -239,6 +251,8 @@
         neid: string;
         name?: string;
         flavor?: string;
+        resolution?: unknown;
+        message?: string | null;
     }
 
     const { projects, activeProject, loadProjects, selectProject, deleteProject, createProject } =
@@ -304,6 +318,43 @@
         ];
     }
 
+    function normalizeFlavorLabel(value?: string | null): string | null {
+        const text = String(value ?? '')
+            .trim()
+            .replace(/^schema::flavor::/, '')
+            .replace(/_/g, ' ');
+        return text || null;
+    }
+
+    function flavorFromResolution(resolution: unknown): string | null {
+        if (!resolution || typeof resolution !== 'object') return null;
+        const record = resolution as Record<string, unknown>;
+        const direct = normalizeFlavorLabel(record.flavor as string | undefined);
+        if (direct) return direct;
+        if (record.resolved && typeof record.resolved === 'object') {
+            const nested = normalizeFlavorLabel(
+                (record.resolved as Record<string, unknown>).flavor as string | undefined
+            );
+            if (nested) return nested;
+        }
+        if (record.entity && typeof record.entity === 'object') {
+            const nested = normalizeFlavorLabel(
+                (record.entity as Record<string, unknown>).flavor as string | undefined
+            );
+            if (nested) return nested;
+        }
+        return null;
+    }
+
+    function displayLookupFlavor(entity: SimpleEntity, fallbackLabel: string): string {
+        return (
+            normalizeFlavorLabel(entity.flavor) ||
+            flavorFromResolution(entity.resolution) ||
+            entity.message?.trim() ||
+            fallbackLabel
+        );
+    }
+
     async function validateDocumentNeids() {
         clearMessages();
         validatingDocuments.value = true;
@@ -319,12 +370,18 @@
             for (const neid of neids.slice(0, 25)) {
                 const result = await $fetch<{
                     entity: { neid: string; name?: string; flavor?: string } | null;
+                    resolution?: unknown;
+                    message?: string | null;
                 }>('/api/collection/entity-search', {
                     method: 'POST',
                     body: { query: neid },
                 });
                 if (result?.entity?.neid) {
-                    resolved.push(result.entity);
+                    resolved.push({
+                        ...result.entity,
+                        resolution: result.resolution,
+                        message: result.message,
+                    });
                 }
             }
 
@@ -394,6 +451,8 @@
             for (const query of queries.slice(0, 50)) {
                 const result = await $fetch<{
                     entity: { neid: string; name?: string; flavor?: string } | null;
+                    resolution?: unknown;
+                    message?: string | null;
                 }>('/api/collection/entity-search', {
                     method: 'POST',
                     body: { query },
@@ -401,7 +460,11 @@
                 const entity = result?.entity;
                 if (!entity?.neid || seen.has(entity.neid)) continue;
                 seen.add(entity.neid);
-                resolved.push(entity);
+                resolved.push({
+                    ...entity,
+                    resolution: result.resolution,
+                    message: result.message,
+                });
             }
 
             resolvedEntityCandidates.value = resolved;

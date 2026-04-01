@@ -5,6 +5,13 @@ interface SearchBody {
     flavor?: string;
 }
 
+function normalizeFlavor(value: unknown): string | undefined {
+    const text = String(value ?? '')
+        .trim()
+        .replace(/^schema::flavor::/, '');
+    return text || undefined;
+}
+
 export default defineEventHandler(async (event) => {
     const body = (await readBody(event)) as SearchBody;
     const query = body.query?.trim();
@@ -17,17 +24,21 @@ export default defineEventHandler(async (event) => {
             entity: query,
             ...(body.flavor ? { flavor: body.flavor } : {}),
         });
+        const resolvedEntity = result?.entity ?? result?.resolved ?? null;
+        const resolvedFlavor = normalizeFlavor(
+            result?.entity?.flavor ?? result?.resolved?.flavor ?? result?.resolution?.flavor
+        );
 
         return {
-            entity: result?.entity
+            entity: resolvedEntity
                 ? {
-                      neid: result.entity.neid,
-                      name: result.entity.name,
-                      flavor: result.entity.flavor,
-                      score: result.entity.score,
+                      neid: resolvedEntity.neid,
+                      name: resolvedEntity.name,
+                      flavor: resolvedFlavor,
+                      score: resolvedEntity.score,
                   }
                 : null,
-            resolution: result?.resolution ?? null,
+            resolution: result?.resolution ?? result?.resolved ?? null,
             message: result?.message,
         };
     } catch (e: any) {
