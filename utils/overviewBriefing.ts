@@ -170,6 +170,7 @@ function isNeidLike(value: string): boolean {
 }
 
 function entityLabel(entity?: CollectionState['entities'][number]): string {
+    if (!entity) return '';
     const name = String(entity.name ?? '').trim();
     if (name && !isNeidLike(name)) return name;
     const props = (entity.properties ?? {}) as Record<string, unknown>;
