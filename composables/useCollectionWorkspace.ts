@@ -480,6 +480,7 @@ export function useCollectionWorkspace() {
                 name: activeProject.value.name,
                 description: activeProject.value.description,
                 seedDocuments: activeProject.value.seedDocuments,
+                seedEntities: activeProject.value.seedEntities,
             },
         };
     }
@@ -2972,6 +2973,7 @@ export function useCollectionWorkspace() {
                         ? {
                               projectId: streamPayload.projectId,
                               seedNeids: streamPayload.seedNeids,
+                              project: streamPayload.project,
                           }
                         : {}
                 ),

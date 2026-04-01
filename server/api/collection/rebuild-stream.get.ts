@@ -22,6 +22,8 @@ import {
 interface StreamRebuildQuery {
     projectId?: string;
     seedNeids?: string | string[];
+    seedDocumentCount?: string;
+    seedEntityCount?: string;
 }
 
 const FUND_ACCOUNT_HISTORY_PROPERTIES = [
@@ -335,6 +337,28 @@ function formatCount(value: number): string {
     return value.toLocaleString();
 }
 
+function parseCountParam(value: string | undefined): number {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function formatSeedSummary(seedDocumentCount: number, seedEntityCount: number): string {
+    const parts: string[] = [];
+    if (seedDocumentCount > 0) {
+        parts.push(
+            `${formatCount(seedDocumentCount)} seeded document${seedDocumentCount === 1 ? '' : 's'}`
+        );
+    }
+    if (seedEntityCount > 0) {
+        parts.push(
+            `${formatCount(seedEntityCount)} seed entit${seedEntityCount === 1 ? 'y' : 'ies'}`
+        );
+    }
+    if (!parts.length) return 'project seeds';
+    if (parts.length === 1) return parts[0];
+    return `${parts[0]} and ${parts[1]}`;
+}
+
 export default defineEventHandler(async (event) => {
     const query = getQuery(event) as StreamRebuildQuery;
     const requestProjectId = query.projectId?.trim() || BNY_PRESET_PROJECT.id;
@@ -346,6 +370,8 @@ export default defineEventHandler(async (event) => {
         .map((token) => token.trim())
         .filter(Boolean)
         .map((neid) => normalizeNeid(neid));
+    const seedDocumentCount = parseCountParam(query.seedDocumentCount);
+    const seedEntityCount = parseCountParam(query.seedEntityCount);
     const isPresetProject = requestProjectId === BNY_PRESET_PROJECT.id;
 
     setResponseHeaders(event, {
@@ -418,7 +444,7 @@ export default defineEventHandler(async (event) => {
             1,
             'working',
             'Loading Seed Documents',
-            `Traversing ${formatCount(documentRootNeids.length)} seeded documents...`
+            `Traversing ${formatSeedSummary(seedDocumentCount || documentRootNeids.length, seedEntityCount)}...`
         );
 
         const seedTraversalTasks = documentRootNeids.flatMap((docNeid) =>
@@ -493,7 +519,7 @@ export default defineEventHandler(async (event) => {
             1,
             'completed',
             'Loading Seed Documents',
-            `Resolved ${formatCount(entityByKey.size)} entities from ${formatCount(documentRootNeids.length)} seeded documents.`,
+            `Resolved ${formatCount(entityByKey.size)} entities from ${formatSeedSummary(seedDocumentCount || documentRootNeids.length, seedEntityCount)}.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
