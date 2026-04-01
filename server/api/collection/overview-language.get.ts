@@ -235,10 +235,12 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
     }
 }
 
-export default defineEventHandler(async () => {
-    const inMemoryCollection = getCachedCollection();
+export default defineEventHandler(async (event) => {
+    const query = getQuery(event);
+    const projectId = typeof query.projectId === 'string' ? query.projectId : undefined;
+    const inMemoryCollection = getCachedCollection(projectId);
     const collection =
-        inMemoryCollection ?? (await readCollectionCache()).state ?? inMemoryCollection;
+        inMemoryCollection ?? (await readCollectionCache(projectId)).state ?? inMemoryCollection;
     if (!collection) {
         throw createError({
             statusCode: 409,

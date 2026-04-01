@@ -1,332 +1,180 @@
 <template>
     <div class="d-flex flex-column fill-height">
-        <!-- Header -->
-        <div class="workspace-header flex-shrink-0 px-4 pt-3 pb-0">
-            <div class="d-flex align-start justify-space-between flex-wrap ga-3 mb-3">
-                <div class="workspace-tabs-wrap flex-grow-1">
-                    <v-tabs
-                        v-model="currentTab"
-                        density="compact"
-                        color="primary"
-                        slider-color="primary"
-                        class="workspace-tabs"
-                    >
-                        <v-tab v-for="tab in tabs" :key="tab.value" :value="tab.value" size="small">
-                            <v-icon start size="small">{{ tab.icon }}</v-icon>
-                            {{ tab.label }}
-                        </v-tab>
-                    </v-tabs>
-                </div>
-                <div class="d-flex align-center ga-2 flex-shrink-0">
-                    <v-chip
-                        v-if="rebuilding && currentTab !== 'overview'"
-                        size="small"
-                        color="info"
-                        variant="tonal"
-                        class="pipeline-inline-chip"
-                    >
-                        <v-icon start size="12" class="pipeline-inline-chip__spinner">
-                            mdi-loading
-                        </v-icon>
-                        Pipeline running
-                    </v-chip>
-                    <template v-if="currentTab !== 'overview'">
-                        <v-chip
-                            size="small"
-                            :color="isReady ? 'success' : 'default'"
-                            variant="tonal"
+        <template v-if="hasActiveProject">
+            <!-- Header -->
+            <div class="workspace-header flex-shrink-0 px-4 pt-3 pb-0">
+                <div class="d-flex align-start justify-space-between flex-wrap ga-3 mb-3">
+                    <div class="workspace-tabs-wrap flex-grow-1">
+                        <v-tabs
+                            v-model="currentTab"
+                            density="compact"
+                            color="primary"
+                            slider-color="primary"
+                            class="workspace-tabs"
                         >
-                            {{ isReady ? 'Analysis complete' : 'Analysis pending' }}
+                            <v-tab
+                                v-for="tab in tabs"
+                                :key="tab.value"
+                                :value="tab.value"
+                                size="small"
+                            >
+                                <v-icon start size="small">{{ tab.icon }}</v-icon>
+                                {{ tab.label }}
+                            </v-tab>
+                        </v-tabs>
+                    </div>
+                    <div class="d-flex align-center ga-2 flex-shrink-0">
+                        <v-chip size="small" variant="tonal" color="primary">
+                            {{ activeProject?.name || 'Project' }}
                         </v-chip>
-                        <v-btn
-                            size="small"
-                            variant="tonal"
-                            prepend-icon="mdi-refresh"
-                            :loading="rebuilding"
-                            :disabled="rebuilding"
-                            @click="handleRebuild"
-                        >
-                            {{ isReady ? 'Re-run Extraction' : 'Run Initial Analysis' }}
+                        <v-btn size="small" variant="text" @click="handleSwitchProject">
+                            Switch project
                         </v-btn>
-                    </template>
+                        <v-chip
+                            v-if="rebuilding && currentTab !== 'overview'"
+                            size="small"
+                            color="info"
+                            variant="tonal"
+                            class="pipeline-inline-chip"
+                        >
+                            <v-icon start size="12" class="pipeline-inline-chip__spinner">
+                                mdi-loading
+                            </v-icon>
+                            Pipeline running
+                        </v-chip>
+                        <template v-if="currentTab !== 'overview'">
+                            <v-chip
+                                size="small"
+                                :color="isReady ? 'success' : 'default'"
+                                variant="tonal"
+                            >
+                                {{ isReady ? 'Analysis complete' : 'Analysis pending' }}
+                            </v-chip>
+                            <v-btn
+                                size="small"
+                                variant="tonal"
+                                prepend-icon="mdi-refresh"
+                                :loading="rebuilding"
+                                :disabled="rebuilding"
+                                @click="handleRebuild"
+                            >
+                                {{ isReady ? 'Re-run Extraction' : 'Run Initial Analysis' }}
+                            </v-btn>
+                        </template>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Post-rebuild meta bar -->
-        <div
-            v-if="isReady && !rebuilding && currentTab !== 'overview' && currentTab !== 'graph'"
-            class="meta-bar flex-shrink-0 px-4 py-1"
-        >
-            <div class="workspace-content-shell">
-                <SummaryMetaBar
-                    :entity-count="primaryMeta.entityCount"
-                    :event-count="primaryMeta.eventCount"
-                    :relationship-count="primaryMeta.relationshipCount"
-                    :property-count="extractedPropertyCount"
-                    :property-record-count="propertyBearingRecordCount"
-                    :property-series="propertySeries.length"
-                />
-            </div>
-        </div>
-
-        <div class="workspace-main-shell flex-grow-1">
+            <!-- Post-rebuild meta bar -->
             <div
-                class="workspace-scroll-region px-4"
-                :class="currentTab === 'overview' ? 'py-2' : 'py-4'"
+                v-if="isReady && !rebuilding && currentTab !== 'overview' && currentTab !== 'graph'"
+                class="meta-bar flex-shrink-0 px-4 py-1"
             >
                 <div class="workspace-content-shell">
-                    <v-alert
-                        v-if="collection.error"
-                        type="error"
-                        variant="tonal"
-                        class="mb-4"
-                        closable
-                    >
-                        {{ collection.error }}
-                    </v-alert>
-                    <v-alert
-                        v-if="
-                            !isReady &&
-                            !rebuilding &&
-                            !collection.error &&
-                            currentTab !== 'overview'
-                        "
-                        type="info"
-                        variant="tonal"
-                        class="mb-4"
-                    >
-                        Run initial analysis to extract entities, events, relationships, and
-                        evidence-linked summaries from this document collection.
-                    </v-alert>
-
-                    <TaskActionStrip
-                        v-if="tabQuickActions.length"
-                        :actions="tabQuickActions"
-                        class="mb-3"
-                        @run="runTabQuickAction"
-                    />
-
-                    <CollectionOverview v-if="currentTab === 'overview'" />
-                    <GraphWorkspace
-                        v-else-if="currentTab === 'graph'"
-                        key="document-graph-workspace"
-                        :initial-source-backed-only="false"
-                        :initial-include-context-endpoints="true"
-                    />
-                    <EventsView v-else-if="currentTab === 'events'" />
-                    <TimelineComparisonView v-else-if="currentTab === 'timeline'" />
-                    <ValidationView v-else-if="currentTab === 'validation'" />
-                    <AgentWorkspace
-                        v-else-if="currentTab === 'agent'"
-                        @launch-question="launchStarterQuestion"
-                    />
-                    <EnrichmentView
-                        v-else-if="currentTab === 'enrichment'"
-                        @open-chat="launchStarterQuestion"
+                    <SummaryMetaBar
+                        :entity-count="primaryMeta.entityCount"
+                        :event-count="primaryMeta.eventCount"
+                        :relationship-count="primaryMeta.relationshipCount"
+                        :property-count="extractedPropertyCount"
+                        :property-record-count="propertyBearingRecordCount"
+                        :property-series="propertySeries.length"
                     />
                 </div>
             </div>
-            <div v-if="showEntityAsDrawer && entityDrawerOpen" class="entity-overlay-layer pa-2">
-                <div ref="entityPanelRoot" class="entity-panel-shell entity-panel-shell--desktop">
+
+            <div class="workspace-main-shell flex-grow-1">
+                <div
+                    class="workspace-scroll-region px-4"
+                    :class="currentTab === 'overview' ? 'py-2' : 'py-4'"
+                >
+                    <div class="workspace-content-shell">
+                        <v-alert
+                            v-if="collection.error"
+                            type="error"
+                            variant="tonal"
+                            class="mb-4"
+                            closable
+                        >
+                            {{ collection.error }}
+                        </v-alert>
+                        <v-alert
+                            v-if="
+                                !isReady &&
+                                !rebuilding &&
+                                !collection.error &&
+                                currentTab !== 'overview'
+                            "
+                            type="info"
+                            variant="tonal"
+                            class="mb-4"
+                        >
+                            Run initial analysis to extract entities, events, relationships, and
+                            evidence-linked summaries from this document collection.
+                        </v-alert>
+
+                        <TaskActionStrip
+                            v-if="tabQuickActions.length"
+                            :actions="tabQuickActions"
+                            class="mb-3"
+                            @run="runTabQuickAction"
+                        />
+
+                        <CollectionOverview v-if="currentTab === 'overview'" />
+                        <GraphWorkspace
+                            v-else-if="currentTab === 'graph'"
+                            key="document-graph-workspace"
+                            :initial-source-backed-only="false"
+                            :initial-include-context-endpoints="true"
+                        />
+                        <EventsView v-else-if="currentTab === 'events'" />
+                        <TimelineComparisonView v-else-if="currentTab === 'timeline'" />
+                        <ValidationView v-else-if="currentTab === 'validation'" />
+                        <AgentWorkspace
+                            v-else-if="currentTab === 'agent'"
+                            @launch-question="launchStarterQuestion"
+                        />
+                        <EnrichmentView
+                            v-else-if="currentTab === 'enrichment'"
+                            @open-chat="launchStarterQuestion"
+                        />
+                    </div>
+                </div>
+                <div
+                    v-if="showEntityAsDrawer && entityDrawerOpen"
+                    class="entity-overlay-layer pa-2"
+                >
+                    <div
+                        ref="entityPanelRoot"
+                        class="entity-panel-shell entity-panel-shell--desktop"
+                    >
+                        <EventDetailPanel v-if="selectedEvent" />
+                        <EntityDetailPanel v-else />
+                    </div>
+                </div>
+            </div>
+
+            <v-dialog
+                v-if="!showEntityAsDrawer"
+                v-model="entityDrawerOpen"
+                :fullscreen="entityDialogFullscreen"
+                max-width="760"
+                scrollable
+                class="entity-dialog"
+            >
+                <div ref="entityPanelRoot" class="entity-dialog-shell entity-panel-shell">
                     <EventDetailPanel v-if="selectedEvent" />
                     <EntityDetailPanel v-else />
                 </div>
-            </div>
-        </div>
+            </v-dialog>
 
-        <v-dialog
-            v-if="!showEntityAsDrawer"
-            v-model="entityDrawerOpen"
-            :fullscreen="entityDialogFullscreen"
-            max-width="760"
-            scrollable
-            class="entity-dialog"
-        >
-            <div ref="entityPanelRoot" class="entity-dialog-shell entity-panel-shell">
-                <EventDetailPanel v-if="selectedEvent" />
-                <EntityDetailPanel v-else />
-            </div>
-        </v-dialog>
-
-        <v-navigation-drawer
-            v-if="showChatAsDrawer"
-            v-model="chatDrawerOpen"
-            location="right"
-            width="430"
-            temporary
-            class="pa-2 chat-overlay-top"
-        >
-            <v-card class="chat-drawer-card" elevation="0">
-                <v-card-item>
-                    <v-card-title class="text-body-2 d-flex align-center ga-2">
-                        <v-icon size="16" color="warning">mdi-robot</v-icon>
-                        Ask Yotta
-                        <v-chip size="x-small" variant="tonal">{{ currentTabLabel }}</v-chip>
-                    </v-card-title>
-                    <v-card-subtitle
-                        >Evidence-backed chat scoped to this collection.</v-card-subtitle
-                    >
-                </v-card-item>
-                <v-card-text class="pt-0 chat-content">
-                    <div ref="askYottaScrollEl" class="chat-scroll-region">
-                        <!-- Starter questions (shown when idle) -->
-                        <template v-if="!hasAskYottaTurns && !askYottaLoading">
-                            <div class="text-caption text-medium-emphasis mb-2">
-                                Starter questions
-                            </div>
-                            <div class="d-flex flex-wrap ga-1 mb-2">
-                                <v-btn
-                                    v-for="prompt in askYottaPrompts"
-                                    :key="prompt"
-                                    size="x-small"
-                                    variant="outlined"
-                                    :disabled="!isReady || askYottaLoading"
-                                    @click="runAskYottaPrompt(prompt)"
-                                >
-                                    {{ prompt }}
-                                </v-btn>
-                            </div>
-                        </template>
-
-                        <!-- Conversation thread -->
-                        <template v-for="(turn, index) in askYottaThread" :key="turn.id">
-                            <div class="chat-bubble-row chat-bubble-row--user">
-                                <div class="chat-bubble chat-bubble--user text-caption">
-                                    {{ turn.question }}
-                                </div>
-                            </div>
-
-                            <div
-                                v-if="turn.steps.length"
-                                class="chat-bubble-row chat-bubble-row--assistant mt-2"
-                            >
-                                <div class="chat-agent-steps">
-                                    <SummaryAgentSteps :steps="turn.steps" />
-                                </div>
-                            </div>
-
-                            <div
-                                v-if="turn.answer?.output"
-                                class="chat-bubble-row chat-bubble-row--assistant mt-1"
-                            >
-                                <div
-                                    class="chat-bubble chat-bubble--assistant text-caption"
-                                    @click="handleOutputClick"
-                                    v-html="renderLinkedOutput(turn.answer)"
-                                />
-                            </div>
-
-                            <div
-                                v-if="turn.answer?.generationSource || turn.answer?.usage"
-                                class="d-flex align-center ga-1 flex-wrap mt-2"
-                            >
-                                <v-chip
-                                    v-if="askTurnModelLabel(turn)"
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="deep-purple"
-                                >
-                                    {{ askTurnModelLabel(turn) }}
-                                </v-chip>
-                                <v-chip
-                                    v-if="askTurnTokenLabel(turn)"
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="blue-grey"
-                                >
-                                    {{ askTurnTokenLabel(turn) }}
-                                </v-chip>
-                                <v-chip
-                                    v-if="turn.answer?.generationSource === 'fallback'"
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="error"
-                                >
-                                    Gemini fallback
-                                </v-chip>
-                            </div>
-                            <div
-                                v-if="
-                                    turn.answer?.generationSource === 'fallback' &&
-                                    turn.answer?.generationNote
-                                "
-                                class="text-caption text-error mt-1"
-                            >
-                                {{ turn.answer.generationNote }}
-                            </div>
-                            <div v-if="askTurnEvidenceLines(turn).length" class="mt-2">
-                                <div class="text-caption text-medium-emphasis mb-1">
-                                    Evidence used
-                                </div>
-                                <div class="d-flex flex-column ga-1">
-                                    <div
-                                        v-for="line in askTurnEvidenceLines(turn)"
-                                        :key="`${turn.id}-${line}`"
-                                        class="text-caption text-medium-emphasis"
-                                    >
-                                        {{ line }}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div
-                                v-if="
-                                    index === askYottaThread.length - 1 &&
-                                    turn.answer &&
-                                    !askYottaLoading
-                                "
-                                class="d-flex flex-wrap ga-1 mt-3"
-                            >
-                                <v-btn
-                                    v-for="prompt in askYottaPrompts"
-                                    :key="prompt"
-                                    size="x-small"
-                                    variant="outlined"
-                                    :disabled="!isReady || askYottaLoading"
-                                    @click="runAskYottaPrompt(prompt)"
-                                >
-                                    {{ prompt }}
-                                </v-btn>
-                            </div>
-                        </template>
-                    </div>
-                    <div class="chat-composer">
-                        <div class="d-flex ga-1">
-                            <v-text-field
-                                v-model="askYottaQuestion"
-                                density="compact"
-                                variant="outlined"
-                                hide-details
-                                placeholder="Ask a question..."
-                                :disabled="!isReady || askYottaLoading"
-                                @keydown.enter="runAskYottaQuestion"
-                            />
-                            <v-btn
-                                icon
-                                size="small"
-                                color="primary"
-                                :loading="askYottaLoading"
-                                :disabled="!isReady || !askYottaQuestion"
-                                @click="runAskYottaQuestion"
-                            >
-                                <v-icon size="18">mdi-send</v-icon>
-                            </v-btn>
-                        </div>
-                    </div>
-                </v-card-text>
-            </v-card>
-        </v-navigation-drawer>
-
-        <v-dialog
-            v-else
-            v-model="chatDrawerOpen"
-            :fullscreen="chatDialogFullscreen"
-            max-width="720"
-            scrollable
-            class="chat-dialog"
-        >
-            <div class="chat-dialog-shell">
+            <v-navigation-drawer
+                v-if="showChatAsDrawer"
+                v-model="chatDrawerOpen"
+                location="right"
+                width="430"
+                temporary
+                class="pa-2 chat-overlay-top"
+            >
                 <v-card class="chat-drawer-card" elevation="0">
                     <v-card-item>
                         <v-card-title class="text-body-2 d-flex align-center ga-2">
@@ -340,6 +188,7 @@
                     </v-card-item>
                     <v-card-text class="pt-0 chat-content">
                         <div ref="askYottaScrollEl" class="chat-scroll-region">
+                            <!-- Starter questions (shown when idle) -->
                             <template v-if="!hasAskYottaTurns && !askYottaLoading">
                                 <div class="text-caption text-medium-emphasis mb-2">
                                     Starter questions
@@ -358,6 +207,7 @@
                                 </div>
                             </template>
 
+                            <!-- Conversation thread -->
                             <template v-for="(turn, index) in askYottaThread" :key="turn.id">
                                 <div class="chat-bubble-row chat-bubble-row--user">
                                     <div class="chat-bubble chat-bubble--user text-caption">
@@ -484,8 +334,180 @@
                         </div>
                     </v-card-text>
                 </v-card>
-            </div>
-        </v-dialog>
+            </v-navigation-drawer>
+
+            <v-dialog
+                v-else
+                v-model="chatDrawerOpen"
+                :fullscreen="chatDialogFullscreen"
+                max-width="720"
+                scrollable
+                class="chat-dialog"
+            >
+                <div class="chat-dialog-shell">
+                    <v-card class="chat-drawer-card" elevation="0">
+                        <v-card-item>
+                            <v-card-title class="text-body-2 d-flex align-center ga-2">
+                                <v-icon size="16" color="warning">mdi-robot</v-icon>
+                                Ask Yotta
+                                <v-chip size="x-small" variant="tonal">{{
+                                    currentTabLabel
+                                }}</v-chip>
+                            </v-card-title>
+                            <v-card-subtitle
+                                >Evidence-backed chat scoped to this collection.</v-card-subtitle
+                            >
+                        </v-card-item>
+                        <v-card-text class="pt-0 chat-content">
+                            <div ref="askYottaScrollEl" class="chat-scroll-region">
+                                <template v-if="!hasAskYottaTurns && !askYottaLoading">
+                                    <div class="text-caption text-medium-emphasis mb-2">
+                                        Starter questions
+                                    </div>
+                                    <div class="d-flex flex-wrap ga-1 mb-2">
+                                        <v-btn
+                                            v-for="prompt in askYottaPrompts"
+                                            :key="prompt"
+                                            size="x-small"
+                                            variant="outlined"
+                                            :disabled="!isReady || askYottaLoading"
+                                            @click="runAskYottaPrompt(prompt)"
+                                        >
+                                            {{ prompt }}
+                                        </v-btn>
+                                    </div>
+                                </template>
+
+                                <template v-for="(turn, index) in askYottaThread" :key="turn.id">
+                                    <div class="chat-bubble-row chat-bubble-row--user">
+                                        <div class="chat-bubble chat-bubble--user text-caption">
+                                            {{ turn.question }}
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        v-if="turn.steps.length"
+                                        class="chat-bubble-row chat-bubble-row--assistant mt-2"
+                                    >
+                                        <div class="chat-agent-steps">
+                                            <SummaryAgentSteps :steps="turn.steps" />
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        v-if="turn.answer?.output"
+                                        class="chat-bubble-row chat-bubble-row--assistant mt-1"
+                                    >
+                                        <div
+                                            class="chat-bubble chat-bubble--assistant text-caption"
+                                            @click="handleOutputClick"
+                                            v-html="renderLinkedOutput(turn.answer)"
+                                        />
+                                    </div>
+
+                                    <div
+                                        v-if="turn.answer?.generationSource || turn.answer?.usage"
+                                        class="d-flex align-center ga-1 flex-wrap mt-2"
+                                    >
+                                        <v-chip
+                                            v-if="askTurnModelLabel(turn)"
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="deep-purple"
+                                        >
+                                            {{ askTurnModelLabel(turn) }}
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="askTurnTokenLabel(turn)"
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="blue-grey"
+                                        >
+                                            {{ askTurnTokenLabel(turn) }}
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="turn.answer?.generationSource === 'fallback'"
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="error"
+                                        >
+                                            Gemini fallback
+                                        </v-chip>
+                                    </div>
+                                    <div
+                                        v-if="
+                                            turn.answer?.generationSource === 'fallback' &&
+                                            turn.answer?.generationNote
+                                        "
+                                        class="text-caption text-error mt-1"
+                                    >
+                                        {{ turn.answer.generationNote }}
+                                    </div>
+                                    <div v-if="askTurnEvidenceLines(turn).length" class="mt-2">
+                                        <div class="text-caption text-medium-emphasis mb-1">
+                                            Evidence used
+                                        </div>
+                                        <div class="d-flex flex-column ga-1">
+                                            <div
+                                                v-for="line in askTurnEvidenceLines(turn)"
+                                                :key="`${turn.id}-${line}`"
+                                                class="text-caption text-medium-emphasis"
+                                            >
+                                                {{ line }}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        v-if="
+                                            index === askYottaThread.length - 1 &&
+                                            turn.answer &&
+                                            !askYottaLoading
+                                        "
+                                        class="d-flex flex-wrap ga-1 mt-3"
+                                    >
+                                        <v-btn
+                                            v-for="prompt in askYottaPrompts"
+                                            :key="prompt"
+                                            size="x-small"
+                                            variant="outlined"
+                                            :disabled="!isReady || askYottaLoading"
+                                            @click="runAskYottaPrompt(prompt)"
+                                        >
+                                            {{ prompt }}
+                                        </v-btn>
+                                    </div>
+                                </template>
+                            </div>
+                            <div class="chat-composer">
+                                <div class="d-flex ga-1">
+                                    <v-text-field
+                                        v-model="askYottaQuestion"
+                                        density="compact"
+                                        variant="outlined"
+                                        hide-details
+                                        placeholder="Ask a question..."
+                                        :disabled="!isReady || askYottaLoading"
+                                        @keydown.enter="runAskYottaQuestion"
+                                    />
+                                    <v-btn
+                                        icon
+                                        size="small"
+                                        color="primary"
+                                        :loading="askYottaLoading"
+                                        :disabled="!isReady || !askYottaQuestion"
+                                        @click="runAskYottaQuestion"
+                                    >
+                                        <v-icon size="18">mdi-send</v-icon>
+                                    </v-btn>
+                                </div>
+                            </div>
+                        </v-card-text>
+                    </v-card>
+                </div>
+            </v-dialog>
+        </template>
+        <BuildNetwork v-else />
     </div>
 </template>
 
@@ -494,6 +516,7 @@
     import type { AskYottaPipelineResponse } from '~/utils/agentPipeline';
     import type { WorkspaceTab } from '~/utils/collectionTypes';
     import { state } from '~/utils/appState';
+    const { hasActiveProject, activeProject, loadProjects, clearActiveProject } = useProjectStore();
 
     const {
         collection,
@@ -730,6 +753,11 @@
         await rebuild();
     }
 
+    async function handleSwitchProject() {
+        await clearActiveProject();
+        setTab('overview');
+    }
+
     const handleGlobalEsc = (event: KeyboardEvent) => {
         if (event.key !== 'Escape') return;
         if (entityDrawerOpen.value) {
@@ -744,8 +772,11 @@
         entityDrawerOpen.value = false;
     };
 
-    onMounted(() => {
-        bootstrap();
+    onMounted(async () => {
+        await loadProjects();
+        if (hasActiveProject.value) {
+            await bootstrap();
+        }
         window.addEventListener('keydown', handleGlobalEsc);
         document.addEventListener('pointerdown', handleGlobalPointerDown, true);
     });

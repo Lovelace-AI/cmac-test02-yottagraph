@@ -24,14 +24,20 @@ const COLLECTION_CACHE_VERSION = 'v1';
 const COLLECTION_CACHE_NAMESPACE = 'document-intelligence';
 
 let inMemoryCache: InMemoryCollectionCache | null = null;
+const inMemoryCacheByProject = new Map<string, InMemoryCollectionCache>();
+
+function normalizedProjectId(projectId?: string | null): string {
+    const raw = String(projectId ?? '').trim();
+    return raw || 'default-project';
+}
 
 function appIdForCacheKey(): string {
     const raw = String(process.env.NUXT_PUBLIC_APP_ID ?? '').trim();
     return raw || 'default-app';
 }
 
-function collectionCacheKey(): string {
-    return `collection:graph:${appIdForCacheKey()}:${COLLECTION_CACHE_NAMESPACE}:${COLLECTION_CACHE_VERSION}`;
+function collectionCacheKey(projectId?: string | null): string {
+    return `collection:graph:${appIdForCacheKey()}:${COLLECTION_CACHE_NAMESPACE}:${normalizedProjectId(projectId)}:${COLLECTION_CACHE_VERSION}`;
 }
 
 function cloneCollectionState(state: CollectionState): CollectionState {
@@ -70,7 +76,10 @@ function asCachePayload(raw: unknown): CollectionCachePayload | null {
     return { cachedAt, state };
 }
 
-export function getInMemoryCollectionCache(): CollectionState | null {
+export function getInMemoryCollectionCache(projectId?: string | null): CollectionState | null {
+    const normalizedProject = normalizedProjectId(projectId);
+    const scoped = inMemoryCacheByProject.get(normalizedProject);
+    if (scoped) return withCacheMeta(scoped.state, 'memory', scoped.cachedAt);
     if (!inMemoryCache) return null;
     return withCacheMeta(inMemoryCache.state, 'memory', inMemoryCache.cachedAt);
 }
@@ -89,9 +98,15 @@ export function getCollectionCacheMeta(meta: CollectionMeta): {
 
 export function setInMemoryCollectionCache(
     state: CollectionState,
-    cachedAt = new Date().toISOString()
+    cachedAt = new Date().toISOString(),
+    projectId?: string | null
 ): CollectionState {
     const memoryState = withCacheMeta(state, 'memory', cachedAt);
+    const normalizedProject = normalizedProjectId(projectId ?? state.meta.projectId);
+    inMemoryCacheByProject.set(normalizedProject, {
+        state: memoryState,
+        cachedAt,
+    });
     inMemoryCache = {
         state: memoryState,
         cachedAt,
@@ -99,7 +114,19 @@ export function setInMemoryCollectionCache(
     return cloneCollectionState(memoryState);
 }
 
-export async function readCollectionCache(): Promise<CollectionCacheReadResult> {
+export async function readCollectionCache(
+    projectId?: string | null
+): Promise<CollectionCacheReadResult> {
+    const normalizedProject = normalizedProjectId(projectId);
+    const scoped = inMemoryCacheByProject.get(normalizedProject);
+    if (scoped) {
+        return {
+            state: withCacheMeta(scoped.state, 'memory', scoped.cachedAt),
+            source: 'memory',
+            cachedAt: scoped.cachedAt,
+            cacheVersion: COLLECTION_CACHE_VERSION,
+        };
+    }
     if (inMemoryCache) {
         return {
             state: getInMemoryCollectionCache(),
@@ -119,7 +146,7 @@ export async function readCollectionCache(): Promise<CollectionCacheReadResult> 
     }
 
     try {
-        const key = collectionCacheKey();
+        const key = collectionCacheKey(projectId);
         const payload = asCachePayload(await redis.get(key));
         if (!payload?.state) {
             return {
@@ -129,7 +156,7 @@ export async function readCollectionCache(): Promise<CollectionCacheReadResult> 
             };
         }
         // Warm in-memory cache after a shared-cache hit.
-        setInMemoryCollectionCache(payload.state, payload.cachedAt);
+        setInMemoryCollectionCache(payload.state, payload.cachedAt, normalizedProject);
         return {
             state: withCacheMeta(payload.state, 'redis', payload.cachedAt),
             source: 'redis',
@@ -145,14 +172,18 @@ export async function readCollectionCache(): Promise<CollectionCacheReadResult> 
     }
 }
 
-export async function writeCollectionCache(state: CollectionState): Promise<CollectionState> {
+export async function writeCollectionCache(
+    state: CollectionState,
+    projectId?: string | null
+): Promise<CollectionState> {
     const cachedAt = new Date().toISOString();
-    const memoryState = setInMemoryCollectionCache(state, cachedAt);
+    const normalizedProject = normalizedProjectId(projectId ?? state.meta.projectId);
+    const memoryState = setInMemoryCollectionCache(state, cachedAt, normalizedProject);
     const redis = getRedis();
     if (!redis) return memoryState;
 
     try {
-        const key = collectionCacheKey();
+        const key = collectionCacheKey(normalizedProject);
         const payload: CollectionCachePayload = {
             cachedAt,
             state: withCacheMeta(state, 'redis', cachedAt),

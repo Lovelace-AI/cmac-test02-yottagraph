@@ -113,6 +113,7 @@ export interface LineageInvestigationResult {
 }
 
 export interface CollectionMeta {
+    projectId?: string;
     name: string;
     description: string;
     documentCount: number;
@@ -166,6 +167,24 @@ export interface CollectionState {
     lineageInvestigation?: LineageInvestigationResult;
     status: 'idle' | 'loading' | 'ready' | 'error';
     error?: string;
+}
+
+export interface ProjectSeedEntity {
+    neid: string;
+    name: string;
+    flavor: string;
+}
+
+export interface Project {
+    id: string;
+    name: string;
+    description: string;
+    type: 'document' | 'entity' | 'mixed';
+    seedNeids: string[];
+    seedEntities?: ProjectSeedEntity[];
+    seedDocuments?: DocumentRecord[];
+    createdAt: string;
+    preset?: boolean;
 }
 
 export type LineageConfidenceLabel = 'high' | 'medium' | 'low';
@@ -275,6 +294,18 @@ export const BNY_DOCUMENTS: DocumentRecord[] = [
 
 export const BNY_DOCUMENT_NEIDS = BNY_DOCUMENTS.map((d) => d.neid);
 
+export const BNY_PRESET_PROJECT: Project = {
+    id: 'bny-presidential-plaza',
+    name: 'BNY Rebate Analysis Collection',
+    description:
+        '$142M NJHMFA Multifamily Housing Revenue Refunding Bonds — Presidential Plaza at Newport Project',
+    type: 'document',
+    seedNeids: BNY_DOCUMENT_NEIDS,
+    seedDocuments: BNY_DOCUMENTS,
+    createdAt: '2026-03-25',
+    preset: true,
+};
+
 export const HOP1_FLAVORS = [
     'organization',
     'person',
@@ -317,13 +348,17 @@ export const PROPERTY_BEARING_NEIDS = [
     '08242646876499346416', // IRREVOCABLE LETTER OF CREDIT NO. 5094714
 ] as const;
 
-export function emptyCollectionState(): CollectionState {
+export function emptyCollectionState(project?: Project | null): CollectionState {
+    const selectedProject = project ?? BNY_PRESET_PROJECT;
+    const projectDocuments = selectedProject.seedDocuments?.length
+        ? selectedProject.seedDocuments
+        : BNY_DOCUMENTS;
     return {
         meta: {
-            name: 'BNY Rebate Analysis Collection',
-            description:
-                '$142M NJHMFA Multifamily Housing Revenue Refunding Bonds — Presidential Plaza at Newport Project',
-            documentCount: BNY_DOCUMENTS.length,
+            projectId: selectedProject.id,
+            name: selectedProject.name,
+            description: selectedProject.description,
+            documentCount: projectDocuments.length,
             entityCount: 0,
             eventCount: 0,
             relationshipCount: 0,
@@ -332,7 +367,7 @@ export function emptyCollectionState(): CollectionState {
             extractedPropertyRecordCount: 0,
             cacheSource: 'none',
         },
-        documents: [...BNY_DOCUMENTS],
+        documents: [...projectDocuments],
         entities: [],
         relationships: [],
         events: [],

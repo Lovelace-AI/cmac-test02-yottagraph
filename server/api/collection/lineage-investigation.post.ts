@@ -7,10 +7,13 @@ export default defineEventHandler(async (event): Promise<LineageInvestigationRes
     const body = (await readBody(event).catch(() => ({}))) as {
         maxHops?: number;
         maxOrganizations?: number;
+        projectId?: string;
     };
-    const inMemoryCollection = getCachedCollection();
+    const inMemoryCollection = getCachedCollection(body.projectId);
     const collection =
-        inMemoryCollection ?? (await readCollectionCache()).state ?? inMemoryCollection;
+        inMemoryCollection ??
+        (await readCollectionCache(body.projectId)).state ??
+        inMemoryCollection;
     if (!collection || collection.status !== 'ready') {
         throw createError({
             statusCode: 409,

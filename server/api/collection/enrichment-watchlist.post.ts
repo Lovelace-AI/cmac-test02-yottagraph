@@ -5,6 +5,7 @@ import type { EntityRecord, EventRecord } from '~/utils/collectionTypes';
 interface WatchlistRequest {
     maxThemes?: number;
     maxEvents?: number;
+    projectId?: string;
     context?: {
         entities?: Array<{ neid: string; name: string }>;
         events?: Array<{
@@ -193,7 +194,9 @@ export default defineEventHandler(async (event): Promise<WatchlistResponse> => {
             extractedSeed: eventItem.extractedSeed,
         }));
     } else {
-        const collection = getCachedCollection();
+        const collection = getCachedCollection(
+            typeof body?.projectId === 'string' ? body.projectId : undefined
+        );
         if (!collection || collection.status !== 'ready') {
             throw createError({
                 statusCode: 409,

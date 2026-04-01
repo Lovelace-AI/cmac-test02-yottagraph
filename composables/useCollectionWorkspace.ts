@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type {
     CollectionState,
     EntityRecord,
@@ -348,6 +348,7 @@ const INITIAL_STEPS: RebuildStep[] = [
 ];
 
 const collection = ref<CollectionState>(emptyCollectionState());
+const { activeProject } = useProjectStore();
 const activeTab = ref<WorkspaceTab>('overview');
 const selectedEntityNeid = ref<string | null>(null);
 const selectedEventNeid = ref<string | null>(null);
@@ -410,6 +411,19 @@ const enrichmentEconomicError = ref<string | null>(null);
 const enrichmentRelatedDeals = ref<EnrichmentRelatedDealInsight[]>([]);
 const enrichmentRelatedDealsLoading = ref(false);
 const enrichmentRelatedDealsError = ref<string | null>(null);
+
+function projectRequestPayload() {
+    if (!activeProject.value) return null;
+    return {
+        projectId: activeProject.value.id,
+        seedNeids: activeProject.value.seedNeids,
+        project: {
+            name: activeProject.value.name,
+            description: activeProject.value.description,
+            seedDocuments: activeProject.value.seedDocuments,
+        },
+    };
+}
 
 function gatewayPromptForAction(
     action: string,
@@ -2628,7 +2642,8 @@ export function useCollectionWorkspace() {
 
     async function bootstrap(): Promise<void> {
         try {
-            const data = await $fetch<CollectionState>('/api/collection/bootstrap');
+            const params = activeProject.value ? { projectId: activeProject.value.id } : undefined;
+            const data = await $fetch<CollectionState>('/api/collection/bootstrap', { params });
             collection.value = data;
             if (data.lineageInvestigation) {
                 lineageInvestigation.value = sanitizeLineageInvestigation(
@@ -2806,6 +2821,7 @@ export function useCollectionWorkspace() {
                     body: {
                         maxHops: 6,
                         maxOrganizations: 250,
+                        projectId: activeProject.value?.id,
                     },
                 }
             );
@@ -2852,8 +2868,10 @@ export function useCollectionWorkspace() {
         const previousEntityCount = collection.value.meta.entityCount ?? 0;
 
         const runFallbackRebuild = async (reason: string) => {
+            const payload = projectRequestPayload();
             const fallbackState = await $fetch<CollectionState>('/api/collection/rebuild', {
                 method: 'POST',
+                ...(payload ? { body: payload } : {}),
             });
             collection.value = fallbackState;
             rebuildSteps.value = INITIAL_STEPS.map((step, idx) => ({
@@ -2879,8 +2897,12 @@ export function useCollectionWorkspace() {
             const startedAt = Date.now();
             while (Date.now() - startedAt < STREAM_RECOVERY_TIMEOUT_MS) {
                 try {
+                    const params = activeProject.value
+                        ? { projectId: activeProject.value.id }
+                        : undefined;
                     const recoveredState = await $fetch<CollectionState>(
-                        '/api/collection/bootstrap'
+                        '/api/collection/bootstrap',
+                        { params }
                     );
                     if (canUseRecoveredState(recoveredState)) {
                         collection.value = recoveredState;
@@ -2927,7 +2949,20 @@ export function useCollectionWorkspace() {
                     );
                 }
             }, 2000);
+            const streamPayload = projectRequestPayload();
             const response = await fetch('/api/collection/rebuild-stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(
+                    streamPayload
+                        ? {
+                              projectId: streamPayload.projectId,
+                              seedNeids: streamPayload.seedNeids,
+                          }
+                        : {}
+                ),
                 signal: streamController.signal,
             });
             if (!response.ok || !response.body) {
@@ -3238,6 +3273,7 @@ export function useCollectionWorkspace() {
                 body: {
                     maxThemes: options?.maxThemes ?? 4,
                     maxEvents: options?.maxEvents ?? 24,
+                    projectId: activeProject.value?.id,
                     context: {
                         entities: collection.value.entities.map((entity) => ({
                             neid: entity.neid,
@@ -3266,6 +3302,17 @@ export function useCollectionWorkspace() {
             enrichmentWatchlistLoading.value = false;
         }
     }
+
+    watch(
+        () => activeProject.value?.id,
+        (nextProjectId, previousProjectId) => {
+            if (nextProjectId === previousProjectId) return;
+            collection.value = emptyCollectionState(activeProject.value);
+            if (nextProjectId) {
+                void bootstrap();
+            }
+        }
+    );
 
     async function fetchPropertyHistory(eids: string[]): Promise<PropertySeriesRecord[]> {
         try {

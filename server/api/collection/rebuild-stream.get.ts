@@ -12,13 +12,20 @@ import { runEnrichmentExpansion } from '~/server/utils/enrichmentExpand';
 import { runCorporateLineageInvestigation } from '~/server/utils/lineageInvestigation';
 import {
     BNY_DOCUMENTS,
+    BNY_PRESET_PROJECT,
     HOP1_FLAVORS,
+    type DocumentRecord,
     type EntityRecord,
     type RelationshipRecord,
     type EventRecord,
     type PropertySeriesRecord,
     type CollectionState,
 } from '~/utils/collectionTypes';
+
+interface StreamRebuildQuery {
+    projectId?: string;
+    seedNeids?: string | string[];
+}
 
 const FUND_ACCOUNT_HISTORY_PROPERTIES = [
     'current_fund_status',
@@ -332,6 +339,19 @@ function formatCount(value: number): string {
 }
 
 export default defineEventHandler(async (event) => {
+    const query = getQuery(event) as StreamRebuildQuery;
+    const requestProjectId = query.projectId?.trim() || BNY_PRESET_PROJECT.id;
+    const querySeedRaw = Array.isArray(query.seedNeids)
+        ? query.seedNeids.join(',')
+        : query.seedNeids || '';
+    const requestSeedNeids = querySeedRaw
+        .split(',')
+        .map((token) => token.trim())
+        .filter(Boolean)
+        .map((neid) => normalizeNeid(neid));
+    const useCustomSeed = requestSeedNeids.length > 0;
+    const useBnySeed = !useCustomSeed || requestProjectId === BNY_PRESET_PROJECT.id;
+
     setResponseHeaders(event, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -375,13 +395,24 @@ export default defineEventHandler(async (event) => {
 
     resetMcpSession();
 
-    let seed: ReturnType<typeof loadExtractedSeedGraph>;
-    const auditCounts = loadQuadOneHopAuditCounts();
-    const seedHints = loadSeedGraphHints();
-    const documentRootNeids =
-        seedHints.documentNeids.length > 0
-            ? seedHints.documentNeids.map((docNeid) => normalizeNeid(docNeid))
-            : BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid));
+    let seed: ReturnType<typeof loadExtractedSeedGraph> = {
+        entities: [],
+        events: [],
+        relationships: [],
+    };
+    const auditCounts = useBnySeed
+        ? loadQuadOneHopAuditCounts()
+        : {
+              rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
+          };
+    const seedHints = useBnySeed
+        ? loadSeedGraphHints()
+        : { documentNeids: [], eventHubNeids: [], propertyBearingNeids: [] };
+    const documentRootNeids = useCustomSeed
+        ? requestSeedNeids
+        : seedHints.documentNeids.length > 0
+          ? seedHints.documentNeids.map((docNeid) => normalizeNeid(docNeid))
+          : BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid));
     const propertyBearingNeids =
         seedHints.propertyBearingNeids.length > 0
             ? seedHints.propertyBearingNeids.map((neid) => normalizeNeid(neid))
@@ -397,7 +428,13 @@ export default defineEventHandler(async (event) => {
     let t0 = Date.now();
 
     try {
-        seed = loadExtractedSeedGraph();
+        seed = useBnySeed
+            ? loadExtractedSeedGraph()
+            : {
+                  entities: [],
+                  events: [],
+                  relationships: [],
+              };
         baselineExtractedPropertyCount =
             seed.entities.reduce((sum, entity) => sum + countRecordProperties(entity), 0) +
             seed.events.reduce((sum, eventItem) => sum + countRecordProperties(eventItem), 0);
@@ -1189,12 +1226,27 @@ export default defineEventHandler(async (event) => {
         const events = mergeEvents(documentEvents, enrichmentResult.events);
         const agreements = entities.filter((e) => e.flavor === 'legal_agreement');
         const relationships = Array.from(relationshipMap.values());
+        const selectedDocuments: DocumentRecord[] =
+            useCustomSeed || requestProjectId !== BNY_PRESET_PROJECT.id
+                ? documentRootNeids.map((neid) => ({
+                      neid,
+                      documentId: neid,
+                      title: `Seed ${neid}`,
+                      kind: 'User selected seed',
+                  }))
+                : BNY_DOCUMENTS;
+        const projectName =
+            requestProjectId === BNY_PRESET_PROJECT.id ? BNY_PRESET_PROJECT.name : 'Custom Network';
+        const projectDescription =
+            requestProjectId === BNY_PRESET_PROJECT.id
+                ? BNY_PRESET_PROJECT.description
+                : 'User-seeded graph project';
         const baseState: CollectionState = {
             meta: {
-                name: 'BNY Rebate Analysis Collection',
-                description:
-                    '$142M NJHMFA Multifamily Housing Revenue Refunding Bonds — Presidential Plaza at Newport Project',
-                documentCount: BNY_DOCUMENTS.length,
+                projectId: requestProjectId,
+                name: projectName,
+                description: projectDescription,
+                documentCount: selectedDocuments.length,
                 entityCount: entities.length,
                 eventCount: events.length,
                 relationshipCount: relationships.length,
@@ -1239,7 +1291,7 @@ export default defineEventHandler(async (event) => {
                 },
                 lastRebuilt: new Date().toISOString(),
             },
-            documents: [...BNY_DOCUMENTS],
+            documents: [...selectedDocuments],
             entities,
             relationships,
             events,
@@ -1267,7 +1319,7 @@ export default defineEventHandler(async (event) => {
             ...baseState,
             lineageInvestigation,
         };
-        const cachedState = await setCachedCollection(state);
+        const cachedState = await setCachedCollection(state, requestProjectId);
 
         sendStep(
             6,

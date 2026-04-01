@@ -12,7 +12,7 @@ documents.
 **Created:** 2026-03-25  
 **App ID:** cmac-test02  
 **Description:** Document Collection Intelligence workspace  
-**Last updated:** 2026-03-31 (Ask Yotta now preserves a scrolling multi-turn conversation with follow-up context, evidence-used callouts, and stronger brief/gap-answer routing; overview corpus narrative upgraded with richer relationship/property grounding; enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, Graph & Entities header cleanup, an editorial-style News/Recent Coverage feed hierarchy, and a graph-aware deduped News feed with explicit primary/secondary entity context, snippet expansion, analytical sorting, and stable filter-loading skeleton states; corporate lineage tab redesigned into a compact evidence-first analyst view with structured expandable support panels and scan controls; rebuild pipeline now hydrates flavor-specific core entity/event properties and context-agent guidance documents explicit schema-to-PID property retrieval)
+**Last updated:** 2026-03-31 (Ask Yotta now preserves a scrolling multi-turn conversation with follow-up context, evidence-used callouts, and stronger brief/gap-answer routing; overview corpus narrative upgraded with richer relationship/property grounding; enrichment tab refresh with degree-based comparison cards, full curated 1-degree graph defaults, article-backed recent coverage, Graph & Entities header cleanup, an editorial-style News/Recent Coverage feed hierarchy, and a graph-aware deduped News feed with explicit primary/secondary entity context, snippet expansion, analytical sorting, and stable filter-loading skeleton states; corporate lineage tab redesigned into a compact evidence-first analyst view with structured expandable support panels and scan controls; rebuild pipeline now hydrates flavor-specific core entity/event properties and context-agent guidance documents explicit schema-to-PID property retrieval; new Build Network project-first onboarding supports preset/document/entity seeded network creation, project-scoped cache bootstrap/rebuild, and dynamic seed NEID orchestration)
 
 ## Vision
 
@@ -89,6 +89,7 @@ Implementation status: **v1 complete**
 Details:
 
 - Single-page workspace with task-oriented tabs: overview, graph & entities, events, timeline, agreements, trust & coverage, ask yotta, enrichment.
+- Workspace now starts with a Build Network step when no project is active, where users can select a preset project or create one from document/entity NEIDs before entering the analysis tabs.
 - Overview is an executive intelligence briefing with a collection header, synthesized deal summary, extraction stats, a narrative case-study card without cross-tab jumps, a streamlined source-documents table, and launch cards into deeper tabs.
 - Overview corpus narrative generation now includes relationship-type patterns, concrete relationship evidence samples, entity property highlights, and historical property-series coverage so the corpus description reads as graph-grounded intelligence rather than metadata-only summary.
 - Overview supports complete, pending, and partial extraction states with intentional product copy and guided placeholders instead of empty analytics panels.
@@ -99,6 +100,7 @@ Details:
 - Trust & Coverage tab reframes validation into completeness, partial coverage, provenance, and next recommended checks.
 - Ask Yotta now behaves as a true in-session conversation: new questions append to a scrolling thread instead of replacing the prior answer, and follow-up turns carry compact recent chat context into orchestration.
 - Ask Yotta surfaces evidence-used lines alongside each answer so users can see what collection grounding informed the response instead of only seeing a final narrative.
+- Agent Workflow Architecture now surfaces explainable, example-rich live status updates per stage (planning targets, context entity/property examples, composition evidence previews), uses a typewriter-style reveal for incoming trace lines, removes connector label clutter, and applies agent-color card accents for faster visual parsing.
 - Ask Yotta tab offers contextual prompts, confidence framing, and evidence-linked outputs grounded in entities/events/documents.
 - Enrichment now opens with an Enriched Graph comparison view that separates document truth from live 1-degree and 2-degree context, and it presents the "What The World Graph Adds" signal cards directly below the comparison metrics.
 - Corporate Lineage in enrichment now uses a compact conclusion-first list with structured metadata (relationship type, date, support, confidence) and expandable evidence sections (documents, event anchors, referenced entities, grounding notes) instead of chip-heavy narrative cards.
@@ -111,6 +113,7 @@ Details:
 - App shell supports both dark mode and light mode, with a header toggle and settings control for switching.
 - Dark mode polish pass introduced layered charcoal/slate surfaces, stronger card hierarchy, improved narrative readability, and consistent pill styling across overview and analysis surfaces.
 - Server routes under `/api/collection/` handle bootstrap, rebuild (MCP traversal + event discovery), entity detail, property history (raw QS), enrichment, agent actions, insight language summaries, and insight export assembly.
+- Bootstrap and rebuild are now project-scoped (`projectId`) and accept dynamic seed NEIDs; the BNY 5-document set remains available as a preset project.
 - The rebuild pipeline explicitly hydrates flavor-specific core properties for
   resolved entities and events so the detail panel and agent context have
   access to canonical profile fields, not just relationship-derived context.
