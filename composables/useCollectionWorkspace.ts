@@ -2479,6 +2479,10 @@ export function useCollectionWorkspace() {
         const strictEntities = documentEntities.value;
         const strictRelationships = documentRelationships.value;
         const strictEvents = documentEvents.value;
+        const documentOriginEvents = collection.value.events.filter(
+            (eventItem) => eventItem.origin === 'document'
+        );
+        const scopedEvents = strictEvents.length > 0 ? strictEvents : documentOriginEvents;
         const strictAgreements = strictEntities.filter(
             (entity) => entity.flavor === 'legal_agreement'
         );
@@ -2488,12 +2492,12 @@ export function useCollectionWorkspace() {
                 ...collection.value.meta,
                 entityCount: strictEntities.length,
                 relationshipCount: strictRelationships.length,
-                eventCount: strictEvents.length,
+                eventCount: scopedEvents.length,
                 agreementCount: strictAgreements.length,
             },
             entities: strictEntities,
             relationships: strictRelationships,
-            events: strictEvents,
+            events: scopedEvents,
             propertySeries: strictDocumentPropertySeries.value,
         };
     });

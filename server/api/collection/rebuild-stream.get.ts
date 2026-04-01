@@ -825,11 +825,31 @@ export default defineEventHandler(async (event) => {
                                 appearsInDocNeids = [];
                             }
                         }
+                        const hubEntitySourceDocNeids = (
+                            getEntityByNeid(hubNeid)?.sourceDocuments ?? []
+                        )
+                            .map((docNeid) => normalizeNeid(docNeid))
+                            .filter((docNeid) => isStrictDocumentNeid(docNeid));
+                        const participantSourceDocNeids = (evt.participants ?? [])
+                            .flatMap((participant: any) => {
+                                const participantNeid = participant?.neid
+                                    ? normalizeNeid(String(participant.neid))
+                                    : null;
+                                if (!participantNeid) return [];
+                                const participantEntity = getEntityByNeid(participantNeid);
+                                return participantEntity?.sourceDocuments ?? [];
+                            })
+                            .map((docNeid) => normalizeNeid(String(docNeid)))
+                            .filter((docNeid) => isStrictDocumentNeid(docNeid));
                         const docNeids = [
                             ...new Set(
-                                [...baselineDocNeids, ...citedDocNeids, ...appearsInDocNeids].map(
-                                    (neid) => normalizeNeid(neid)
-                                )
+                                [
+                                    ...baselineDocNeids,
+                                    ...citedDocNeids,
+                                    ...appearsInDocNeids,
+                                    ...hubEntitySourceDocNeids,
+                                    ...participantSourceDocNeids,
+                                ].map((neid) => normalizeNeid(neid))
                             ),
                         ].filter((docNeid) => isStrictDocumentNeid(docNeid));
                         const hasStrictDocumentEvidence = docNeids.length > 0;
@@ -934,6 +954,29 @@ export default defineEventHandler(async (event) => {
                 `Event loading hit the ${Math.round(PHASE3_DEADLINE_MS / 1000)}s phase budget; continuing with ${formatCount(phase3ProcessedEvents)} document-backed events.`
             );
         }
+
+        // Keep only strict document-backed events in the baseline document graph.
+        const strictDocumentBackedEvents = Array.from(eventByKey.entries()).filter(
+            ([eventKey, eventItem]) => {
+                const sourceDocNeids = [
+                    ...(eventItem.sourceDocuments ?? []),
+                    ...(eventItem.extraSourceDocuments ?? []),
+                ]
+                    .map((docNeid) => normalizeNeid(docNeid))
+                    .filter((docNeid) => isStrictDocumentNeid(docNeid));
+                if (sourceDocNeids.length > 0) return true;
+                const seededDocSet = seedEventDocsByKey.get(eventKey);
+                if (!seededDocSet || seededDocSet.size === 0) return false;
+                return Array.from(seededDocSet.values())
+                    .map((docNeid) => normalizeNeid(docNeid))
+                    .some((docNeid) => isStrictDocumentNeid(docNeid));
+            }
+        );
+        eventByKey.clear();
+        for (const [eventKey, eventItem] of strictDocumentBackedEvents) {
+            eventByKey.set(eventKey, eventItem);
+        }
+        phase3ProcessedEvents = eventByKey.size;
 
         sendStep(
             3,

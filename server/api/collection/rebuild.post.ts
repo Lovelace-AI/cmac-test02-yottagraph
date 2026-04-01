@@ -444,8 +444,30 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
                     const appearsInDocNeids = (appears?.relationships ?? [])
                         .map((relationship: any) => normalizeNeid(String(relationship?.neid ?? '')))
                         .filter((docNeid: string) => strictDocumentNeidSet.has(docNeid));
+                    const hubSourceDocNeids = [
+                        ...(entityMap.get(hubNeid)?.sourceDocuments ?? []),
+                        ...(entityMap.get(normalizeNeid(hubNeid))?.sourceDocuments ?? []),
+                    ]
+                        .map((docNeid) => normalizeNeid(docNeid))
+                        .filter((docNeid) => strictDocumentNeidSet.has(docNeid));
+                    const participantSourceDocNeids = (evt.participants ?? [])
+                        .flatMap((participant: any) => {
+                            const participantNeid = normalizeNeid(String(participant?.neid ?? ''));
+                            const participantEntity =
+                                entityMap.get(participantNeid) ??
+                                entityMap.get(String(participant?.neid ?? '').trim());
+                            return participantEntity?.sourceDocuments ?? [];
+                        })
+                        .map((docNeid) => normalizeNeid(String(docNeid)))
+                        .filter((docNeid) => strictDocumentNeidSet.has(docNeid));
                     const sourceDocuments = Array.from(
-                        new Set([...seededDocNeids, ...citedDocNeids, ...appearsInDocNeids])
+                        new Set([
+                            ...seededDocNeids,
+                            ...citedDocNeids,
+                            ...appearsInDocNeids,
+                            ...hubSourceDocNeids,
+                            ...participantSourceDocNeids,
+                        ])
                     );
                     if (sourceDocuments.length === 0) continue;
 
