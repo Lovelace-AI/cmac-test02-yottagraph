@@ -282,6 +282,16 @@
         const detail = currentRebuildStep.value?.detail ?? '';
         const haystack = `${label} ${detail}`.toLowerCase();
         if (
+            haystack.includes('corporate lineage investigation') ||
+            (haystack.includes('preparing workspace') && haystack.includes('lineage'))
+        ) {
+            return {
+                id: 'lineage',
+                label: 'corporate lineage crawl',
+                tools: ['elemental_get_schema', 'elemental_get_related'],
+            };
+        }
+        if (
             haystack.includes('events:') ||
             haystack.includes('loading document events') ||
             haystack.includes('event hub')
