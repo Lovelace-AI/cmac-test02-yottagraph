@@ -23,6 +23,7 @@ interface StreamRebuildQuery {
     seedNeids?: string | string[];
     seedDocumentNeids?: string | string[];
     seedEntityNeids?: string | string[];
+    seedSourceCount?: string;
 }
 
 const FUND_ACCOUNT_HISTORY_PROPERTIES = [
@@ -353,9 +354,10 @@ function parseNeidList(value: string | string[] | undefined): string[] {
         .map((neid) => normalizeNeid(neid));
 }
 
-function buildSeedSummaryLabel(seedRootCount: number): string {
-    if (seedRootCount <= 0) return 'project seeds';
-    return `${formatCount(seedRootCount)} seeded source${seedRootCount === 1 ? '' : 's'}`;
+function buildSeedSummaryLabel(clientSeedSourceCount: number, serverSeedRootCount: number): string {
+    const count = clientSeedSourceCount > 0 ? clientSeedSourceCount : serverSeedRootCount;
+    if (count <= 0) return 'project seeds';
+    return `${formatCount(count)} seeded source${count === 1 ? '' : 's'}`;
 }
 
 export default defineEventHandler(async (event) => {
@@ -427,7 +429,11 @@ export default defineEventHandler(async (event) => {
                 : []),
         ]),
     ];
-    const seedSummaryLabel = buildSeedSummaryLabel(seedRootNeids.length);
+    const clientSeedSourceCount = Math.max(
+        0,
+        Number.parseInt(String(query.seedSourceCount ?? ''), 10) || 0
+    );
+    const seedSummaryLabel = buildSeedSummaryLabel(clientSeedSourceCount, seedRootNeids.length);
     strictDocumentNeidSet = new Set(explicitSeedDocumentNeids);
     let baselineExtractedPropertyCount = 0;
     let baselineExtractedPropertyRecordCount = 0;
