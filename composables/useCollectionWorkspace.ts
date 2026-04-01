@@ -471,6 +471,31 @@ export function useCollectionWorkspace() {
     const { activeProject } = useProjectStore();
     const isReady = computed(() => collection.value.status === 'ready');
     const isLoading = computed(() => rebuilding.value || collection.value.status === 'loading');
+    function formatSeedFlavorLabel(flavor: string, count: number): string {
+        const normalized = flavor.replace(/^schema::flavor::/, '').replace(/_/g, ' ');
+        if (count === 1) return `1 ${normalized}`;
+        return `${count} ${normalized}${normalized.endsWith('s') ? '' : 's'}`;
+    }
+    function buildProjectSeedSummary(): string {
+        if (!activeProject.value) return 'project seeds';
+        const documentCount = activeProject.value.seedDocuments?.length ?? 0;
+        const flavorCounts = new Map<string, number>();
+        if (documentCount > 0) {
+            flavorCounts.set('document', documentCount);
+        }
+        for (const entity of activeProject.value.seedEntities ?? []) {
+            const flavor = String(entity.flavor ?? '').trim() || 'entity';
+            flavorCounts.set(flavor, (flavorCounts.get(flavor) ?? 0) + 1);
+        }
+        const totalCount = Array.from(flavorCounts.values()).reduce((sum, count) => sum + count, 0);
+        if (!totalCount) {
+            return `${activeProject.value.seedNeids.length || 0} project seeds`;
+        }
+        const parts = Array.from(flavorCounts.entries()).map(([flavor, count]) =>
+            formatSeedFlavorLabel(flavor, count)
+        );
+        return `${totalCount} project seed${totalCount === 1 ? '' : 's'} (${parts.join(', ')})`;
+    }
     function projectRequestPayload() {
         if (!activeProject.value) return null;
         return {
@@ -481,6 +506,7 @@ export function useCollectionWorkspace() {
                 description: activeProject.value.description,
                 seedDocuments: activeProject.value.seedDocuments,
                 seedEntities: activeProject.value.seedEntities,
+                seedSummaryLabel: buildProjectSeedSummary(),
             },
         };
     }

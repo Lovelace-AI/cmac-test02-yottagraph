@@ -89,6 +89,14 @@ function formatDate(value?: string): string {
     return `${parts[1]}-${parts[2]}-${parts[0]}`;
 }
 
+function formatFlavorLabel(value?: string): string {
+    const normalized = String(value ?? '')
+        .trim()
+        .replace(/^schema::flavor::/, '')
+        .replace(/_/g, ' ');
+    return normalized || 'Unknown';
+}
+
 function formatDateTime(value?: string): string {
     if (!value) return 'Not available';
     const date = new Date(value);
@@ -118,6 +126,15 @@ function normalizeDateOnly(value?: string): string | null {
     const parsed = new Date(trimmed);
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed.toISOString().slice(0, 10);
+}
+
+function firstKnownDateLabel(values: Iterable<string | undefined>): string | undefined {
+    const normalized = Array.from(values)
+        .map((value) => normalizeDateOnly(value))
+        .filter(Boolean) as string[];
+    if (!normalized.length) return undefined;
+    normalized.sort((a, b) => a.localeCompare(b));
+    return formatDate(normalized[0]);
 }
 
 function formatDateRangeLabel(values: Iterable<string>): string {
@@ -152,7 +169,7 @@ function isNeidLike(value: string): boolean {
     return /^\d{16,24}$/.test(normalized);
 }
 
-function entityLabel(entity: CollectionState['entities'][number]): string {
+function entityLabel(entity?: CollectionState['entities'][number]): string {
     const name = String(entity.name ?? '').trim();
     if (name && !isNeidLike(name)) return name;
     const props = (entity.properties ?? {}) as Record<string, unknown>;
@@ -174,6 +191,53 @@ function entityLabel(entity: CollectionState['entities'][number]): string {
         if (text && !isNeidLike(text)) return text;
     }
     return '';
+}
+
+function deriveEntitySeedDate(neid: string, state: CollectionState): string | undefined {
+    const dateValues = new Set<string>();
+    const entity = state.entities.find((entry) => entry.neid === neid);
+    const relatedDocumentNeids = new Set<string>([
+        ...(entity?.sourceDocuments ?? []),
+        ...(entity?.extraSourceDocuments ?? []),
+    ]);
+
+    state.documents.forEach((doc) => {
+        if (relatedDocumentNeids.has(doc.neid) && doc.date) {
+            dateValues.add(doc.date);
+        }
+    });
+
+    state.propertySeries.forEach((series) => {
+        if (series.neid !== neid) return;
+        series.points.forEach((point) => {
+            if (point.recordedAt) dateValues.add(point.recordedAt);
+        });
+    });
+
+    state.relationships.forEach((relationship) => {
+        if (
+            (relationship.sourceNeid === neid || relationship.targetNeid === neid) &&
+            relationship.recordedAt
+        ) {
+            dateValues.add(relationship.recordedAt);
+        }
+    });
+
+    state.events.forEach((event) => {
+        if (!event.participantNeids.includes(neid)) return;
+        if (event.date) dateValues.add(event.date);
+        const eventDocumentNeids = [
+            ...event.sourceDocuments,
+            ...(event.extraSourceDocuments ?? []),
+        ];
+        state.documents.forEach((doc) => {
+            if (eventDocumentNeids.includes(doc.neid) && doc.date) {
+                dateValues.add(doc.date);
+            }
+        });
+    });
+
+    return firstKnownDateLabel(dateValues);
 }
 
 function deriveDealType(state: CollectionState): string {
@@ -276,28 +340,36 @@ export function mapCollectionToOverviewViewModel(params: {
     const confidence = confidenceLabel(trustCoverageSummary, status);
     const docsWithKind = state.documents.filter((doc) => Boolean(doc.kind)).length;
     const initialSources: InitialSourceRow[] = [];
+    const documentByNeid = new Map(state.documents.map((doc) => [doc.neid, doc]));
+    const entityByNeid = new Map(state.entities.map((entity) => [entity.neid, entity]));
 
     if (activeProject?.seedDocuments?.length) {
         initialSources.push(
-            ...sortDocumentsOldestToNewest(activeProject.seedDocuments).map((doc) => ({
-                id: doc.documentId || doc.neid,
-                label: doc.title || doc.neid,
-                sourceType: doc.kind || 'Document',
-                date: doc.date ? formatDate(doc.date) : undefined,
-                neid: doc.neid,
-            }))
+            ...sortDocumentsOldestToNewest(activeProject.seedDocuments).map((doc) => {
+                const resolvedDocument = documentByNeid.get(doc.neid);
+                return {
+                    id: doc.documentId || doc.neid,
+                    label: resolvedDocument?.title || doc.title || doc.neid,
+                    sourceType: resolvedDocument?.kind || doc.kind || 'Document',
+                    date: firstKnownDateLabel([resolvedDocument?.date, doc.date]),
+                    neid: doc.neid,
+                };
+            })
         );
     }
 
     if (activeProject?.seedEntities?.length) {
         initialSources.push(
-            ...activeProject.seedEntities.map((entity) => ({
-                id: entity.neid,
-                label: entity.name || entity.neid,
-                sourceType: entity.flavor.replace(/_/g, ' '),
-                date: undefined,
-                neid: entity.neid,
-            }))
+            ...activeProject.seedEntities.map((entity) => {
+                const resolvedEntity = entityByNeid.get(entity.neid);
+                return {
+                    id: entity.neid,
+                    label: entityLabel(resolvedEntity) || entity.name || entity.neid,
+                    sourceType: formatFlavorLabel(resolvedEntity?.flavor || entity.flavor),
+                    date: deriveEntitySeedDate(entity.neid, state),
+                    neid: entity.neid,
+                };
+            })
         );
     }
 

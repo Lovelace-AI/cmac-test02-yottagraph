@@ -24,6 +24,7 @@ interface StreamRebuildQuery {
     seedNeids?: string | string[];
     seedDocumentCount?: string;
     seedEntityCount?: string;
+    seedSummaryLabel?: string;
 }
 
 const FUND_ACCOUNT_HISTORY_PROPERTIES = [
@@ -359,6 +360,17 @@ function formatSeedSummary(seedDocumentCount: number, seedEntityCount: number): 
     return `${parts[0]} and ${parts[1]}`;
 }
 
+function resolveSeedSummaryLabel(
+    explicitLabel: string | undefined,
+    seedDocumentCount: number,
+    seedEntityCount: number,
+    documentRootCount: number
+): string {
+    const trimmed = String(explicitLabel ?? '').trim();
+    if (trimmed) return trimmed;
+    return formatSeedSummary(seedDocumentCount || documentRootCount, seedEntityCount);
+}
+
 export default defineEventHandler(async (event) => {
     const query = getQuery(event) as StreamRebuildQuery;
     const requestProjectId = query.projectId?.trim() || BNY_PRESET_PROJECT.id;
@@ -427,6 +439,12 @@ export default defineEventHandler(async (event) => {
             : isPresetProject
               ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
               : [];
+    const seedSummaryLabel = resolveSeedSummaryLabel(
+        query.seedSummaryLabel,
+        seedDocumentCount,
+        seedEntityCount,
+        documentRootNeids.length
+    );
     strictDocumentNeidSet = new Set(documentRootNeids);
     let baselineExtractedPropertyCount = 0;
     let baselineExtractedPropertyRecordCount = 0;
@@ -440,12 +458,7 @@ export default defineEventHandler(async (event) => {
     try {
         // ─── Phase 1: Load project seed documents ─────────────────────
         t0 = Date.now();
-        sendStep(
-            1,
-            'working',
-            'Loading Seed Documents',
-            `Traversing ${formatSeedSummary(seedDocumentCount || documentRootNeids.length, seedEntityCount)}...`
-        );
+        sendStep(1, 'working', 'Loading Seed Documents', `Traversing ${seedSummaryLabel}...`);
 
         const seedTraversalTasks = documentRootNeids.flatMap((docNeid) =>
             HOP1_FLAVORS.map((flavor) => ({ docNeid, flavor }))
@@ -519,7 +532,7 @@ export default defineEventHandler(async (event) => {
             1,
             'completed',
             'Loading Seed Documents',
-            `Resolved ${formatCount(entityByKey.size)} entities from ${formatSeedSummary(seedDocumentCount || documentRootNeids.length, seedEntityCount)}.`,
+            `Resolved ${formatCount(entityByKey.size)} entities from ${seedSummaryLabel}.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();
