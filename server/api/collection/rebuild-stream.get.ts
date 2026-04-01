@@ -929,50 +929,6 @@ export default defineEventHandler(async (event) => {
             }
         }
 
-        // Add extracted baseline non-document relationships.
-        for (const edge of seed.relationships) {
-            const sourceEntity = entityByKey.get(edge.sourceKey);
-            const sourceEvent = eventByKey.get(edge.sourceKey);
-            const targetEntity = entityByKey.get(edge.targetKey);
-            const targetEvent = eventByKey.get(edge.targetKey);
-            const sourceNeid = sourceEntity?.neid ?? sourceEvent?.neid;
-            const targetNeid = targetEntity?.neid ?? targetEvent?.neid;
-            if (!sourceNeid || !targetNeid) continue;
-            const sourceDocNeids = edge.sourceDocumentNeids.map((d) => normalizeNeid(d));
-            if (sourceDocNeids.length === 0) {
-                upsertRelationship(relationshipMap, {
-                    sourceNeid,
-                    targetNeid,
-                    type: edge.type,
-                    citations: edge.citations,
-                    recordedAt: edge.recordedAt,
-                    properties: {
-                        extractedTimestamp: edge.recordedAt,
-                        citationCount: edge.citations.length,
-                    },
-                    origin: 'document',
-                    extractedSeed: true,
-                });
-                continue;
-            }
-            for (const sourceDocumentNeid of sourceDocNeids) {
-                upsertRelationship(relationshipMap, {
-                    sourceNeid,
-                    targetNeid,
-                    type: edge.type,
-                    citations: edge.citations,
-                    recordedAt: edge.recordedAt,
-                    sourceDocumentNeid,
-                    properties: {
-                        extractedTimestamp: edge.recordedAt,
-                        citationCount: edge.citations.length,
-                    },
-                    origin: 'document',
-                    extractedSeed: true,
-                });
-            }
-        }
-
         sendStep(
             4,
             'completed',
