@@ -35,6 +35,7 @@ export interface RebuildStep {
 export interface McpLogEntry {
     id: number;
     tool: string;
+    targetId?: string;
     argsSummary: string;
     responseSummary: string;
     durationMs: number;
@@ -42,6 +43,16 @@ export interface McpLogEntry {
     timestamp: string;
     args?: Record<string, unknown>;
     response?: unknown;
+    errorCategory?: 'gateway_502' | 'gateway_http' | 'timeout' | 'session' | 'network' | 'unknown';
+    statusCode?: number;
+    error?: {
+        name?: string;
+        message: string;
+        stack?: string;
+        code?: string;
+        cause?: string;
+        raw?: unknown;
+    };
 }
 
 export interface GeminiUsageEntry {

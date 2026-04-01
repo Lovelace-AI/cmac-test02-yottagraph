@@ -3,6 +3,7 @@ const MCP_SERVER_NAME = 'elemental';
 export interface McpLogEntry {
     id: number;
     tool: string;
+    targetId?: string;
     argsSummary: string;
     responseSummary: string;
     durationMs: number;
@@ -10,6 +11,16 @@ export interface McpLogEntry {
     timestamp: string;
     args?: Record<string, unknown>;
     response?: unknown;
+    errorCategory?: 'gateway_502' | 'gateway_http' | 'timeout' | 'session' | 'network' | 'unknown';
+    statusCode?: number;
+    error?: {
+        name?: string;
+        message: string;
+        stack?: string;
+        code?: string;
+        cause?: string;
+        raw?: unknown;
+    };
 }
 
 let _mcpLog: McpLogEntry[] = [];
@@ -24,6 +35,39 @@ export function clearMcpLog(): void {
     _logIdCounter = 0;
 }
 
+export interface McpLogStats {
+    totalCalls: number;
+    successCount: number;
+    errorCount: number;
+    callsByTool: Record<string, number>;
+    errorsByTool: Record<string, number>;
+    lastErrorAt?: string;
+}
+
+export function getMcpLogStats(): McpLogStats {
+    const callsByTool: Record<string, number> = {};
+    const errorsByTool: Record<string, number> = {};
+    let errorCount = 0;
+    let lastErrorAt: string | undefined;
+
+    for (const entry of _mcpLog) {
+        callsByTool[entry.tool] = (callsByTool[entry.tool] ?? 0) + 1;
+        if (entry.status !== 'error') continue;
+        errorCount += 1;
+        errorsByTool[entry.tool] = (errorsByTool[entry.tool] ?? 0) + 1;
+        lastErrorAt = entry.timestamp;
+    }
+
+    return {
+        totalCalls: _mcpLog.length,
+        successCount: _mcpLog.length - errorCount,
+        errorCount,
+        callsByTool,
+        errorsByTool,
+        lastErrorAt,
+    };
+}
+
 function summarizeArgs(tool: string, args: Record<string, unknown>): string {
     const neid = (args.entity_id as any)?.id ?? (args.entity as string) ?? '';
     const flavor = (args.related_flavor as string) ?? '';
@@ -34,6 +78,14 @@ function summarizeArgs(tool: string, args: Record<string, unknown>): string {
     if (tool === 'elemental_get_entity')
         return `${neid}${args.history !== undefined ? ' +history' : ''}`;
     return neid || JSON.stringify(args).slice(0, 80);
+}
+
+function extractTargetId(args: Record<string, unknown>): string | undefined {
+    const neid = (args.entity_id as { id?: unknown } | undefined)?.id;
+    if (typeof neid === 'string' && neid.trim()) return neid.trim();
+    const entity = args.entity;
+    if (typeof entity === 'string' && entity.trim()) return entity.trim();
+    return undefined;
 }
 
 function summarizeResponse(tool: string, result: unknown): string {
@@ -111,6 +163,58 @@ function summarizeError(error: unknown): string {
     return message.slice(0, 220);
 }
 
+function extractStatusCode(error: unknown): number | undefined {
+    const match = errorMessage(error).match(/returned\s+(\d{3})/i);
+    if (!match) return undefined;
+    const code = Number(match[1]);
+    return Number.isFinite(code) ? code : undefined;
+}
+
+function classifyMcpError(
+    error: unknown
+): 'gateway_502' | 'gateway_http' | 'timeout' | 'session' | 'network' | 'unknown' {
+    const message = errorMessage(error).toLowerCase();
+    const statusCode = extractStatusCode(error);
+    if (statusCode === 502) return 'gateway_502';
+    if (statusCode !== undefined) return 'gateway_http';
+    if (isSessionNotFoundError(error)) return 'session';
+    if (message.includes('timeout') || message.includes('aborted')) return 'timeout';
+    if (message.includes('networkerror') || message.includes('failed to fetch')) return 'network';
+    return 'unknown';
+}
+
+function serializeError(error: unknown): {
+    name?: string;
+    message: string;
+    stack?: string;
+    code?: string;
+    cause?: string;
+    raw?: unknown;
+} {
+    if (error instanceof Error) {
+        return {
+            name: error.name || undefined,
+            message: error.message || 'Unknown MCP error',
+            stack: error.stack,
+            code:
+                typeof (error as Error & { code?: unknown }).code === 'string' ||
+                typeof (error as Error & { code?: unknown }).code === 'number'
+                    ? String((error as Error & { code?: unknown }).code)
+                    : undefined,
+            cause: (error as Error & { cause?: unknown }).cause
+                ? summarizeError((error as Error & { cause?: unknown }).cause)
+                : undefined,
+        };
+    }
+    if (typeof error === 'string') {
+        return { message: error };
+    }
+    return {
+        message: summarizeError(error),
+        raw: error,
+    };
+}
+
 function isSessionNotFoundError(error: unknown): boolean {
     const message = errorMessage(error).toLowerCase();
     return (
@@ -128,6 +232,15 @@ function isTransientTimeoutError(error: unknown): boolean {
         message.includes('networkerror') ||
         message.includes('failed to fetch')
     );
+}
+
+function isRetryableGatewayError(error: unknown): boolean {
+    const statusCode = extractStatusCode(error);
+    return statusCode !== undefined && [502, 503, 504, 520, 522, 524].includes(statusCode);
+}
+
+async function sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function mcpRpc(method: string, params?: any, timeoutMs = 20_000): Promise<any> {
@@ -221,6 +334,25 @@ export async function mcpCallTool(
     let result: unknown;
     let status: 'success' | 'error' = 'success';
     let failureSummary = '';
+    let errorCategory:
+        | 'gateway_502'
+        | 'gateway_http'
+        | 'timeout'
+        | 'session'
+        | 'network'
+        | 'unknown'
+        | undefined;
+    let statusCode: number | undefined;
+    let errorDetails:
+        | {
+              name?: string;
+              message: string;
+              stack?: string;
+              code?: string;
+              cause?: string;
+              raw?: unknown;
+          }
+        | undefined;
 
     try {
         const attempts = Math.max(1, options?.attempts ?? 2);
@@ -238,15 +370,31 @@ export async function mcpCallTool(
                 lastError = error;
                 const hasNextAttempt = attempt < attempts;
                 if (!hasNextAttempt) break;
+                const retryDelayMs = Math.min(1500, 250 * attempt);
                 // Common gateway failure mode in long-running rebuilds: stale/evicted session.
                 if (isSessionNotFoundError(error)) {
+                    console.warn(`[MCP] ${toolName} retrying after session error`, {
+                        attempt,
+                        nextAttempt: attempt + 1,
+                        targetId: extractTargetId(args),
+                        message: summarizeError(error),
+                    });
                     mcpSessionId = null;
                     mcpInitialized = false;
                     mcpInitPromise = null;
                     await ensureMcpSession();
+                    await sleep(retryDelayMs);
                     continue;
                 }
-                if (isTransientTimeoutError(error)) {
+                if (isTransientTimeoutError(error) || isRetryableGatewayError(error)) {
+                    console.warn(`[MCP] ${toolName} retrying after transient error`, {
+                        attempt,
+                        nextAttempt: attempt + 1,
+                        targetId: extractTargetId(args),
+                        category: classifyMcpError(error),
+                        message: summarizeError(error),
+                    });
+                    await sleep(retryDelayMs);
                     continue;
                 }
                 break;
@@ -258,12 +406,25 @@ export async function mcpCallTool(
         status = 'error';
         result = null;
         failureSummary = summarizeError(e);
+        errorCategory = classifyMcpError(e);
+        statusCode = extractStatusCode(e);
+        errorDetails = serializeError(e);
+        console.error(`[MCP] ${toolName} failed: ${failureSummary}`, {
+            tool: toolName,
+            targetId: extractTargetId(args),
+            durationMs: Date.now() - startMs,
+            errorCategory,
+            statusCode,
+            args,
+            error: errorDetails,
+        });
         throw e;
     } finally {
         const durationMs = Date.now() - startMs;
         const entry: McpLogEntry = {
             id: ++_logIdCounter,
             tool: toolName,
+            targetId: extractTargetId(args),
             argsSummary: summarizeArgs(toolName, args),
             responseSummary:
                 status === 'error'
@@ -274,6 +435,9 @@ export async function mcpCallTool(
             timestamp: new Date().toISOString(),
             args,
             response: result,
+            errorCategory,
+            statusCode,
+            error: errorDetails,
         };
         _mcpLog.push(entry);
     }

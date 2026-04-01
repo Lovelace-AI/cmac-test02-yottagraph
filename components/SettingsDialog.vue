@@ -70,47 +70,130 @@
                     <v-icon size="40" class="mb-2">mdi-api</v-icon>
                     <div>No MCP calls recorded yet. Load the graph to populate this log.</div>
                 </div>
-                <v-data-table
-                    v-else
-                    :headers="mcpHeaders"
-                    :items="mcpLog"
-                    :items-per-page="25"
-                    density="compact"
-                    item-value="id"
-                    show-expand
-                >
-                    <template #item.status="{ item }">
-                        <v-icon size="14" :color="item.status === 'success' ? 'success' : 'error'">
-                            {{
-                                item.status === 'success' ? 'mdi-check-circle' : 'mdi-alert-circle'
-                            }}
-                        </v-icon>
-                    </template>
-                    <template #item.durationMs="{ item }">
-                        <span class="text-caption">{{ item.durationMs }}ms</span>
-                    </template>
-                    <template #item.timestamp="{ item }">
-                        <span class="text-caption text-medium-emphasis">
-                            {{ new Date(item.timestamp).toLocaleTimeString() }}
-                        </span>
-                    </template>
-                    <template #expanded-row="{ item }">
-                        <tr>
-                            <td :colspan="mcpHeaders.length + 1" class="pa-3">
-                                <div class="text-caption font-weight-medium mb-1">Arguments</div>
-                                <pre class="mcp-payload">{{
-                                    JSON.stringify(item.args, null, 2)
-                                }}</pre>
-                                <div class="text-caption font-weight-medium mt-2 mb-1">
-                                    Response
-                                </div>
-                                <pre class="mcp-payload">{{
-                                    JSON.stringify(item.response, null, 2)
-                                }}</pre>
-                            </td>
-                        </tr>
-                    </template>
-                </v-data-table>
+                <template v-else>
+                    <div class="pa-4 pb-2 d-flex flex-wrap ga-2">
+                        <v-chip size="small" variant="tonal" color="primary">
+                            {{ mcpLog.length }} total calls
+                        </v-chip>
+                        <v-chip size="small" variant="tonal" color="success">
+                            {{ mcpSuccessCount }} succeeded
+                        </v-chip>
+                        <v-chip
+                            size="small"
+                            variant="tonal"
+                            :color="mcpErrorCount ? 'error' : undefined"
+                        >
+                            {{ mcpErrorCount }} errors
+                        </v-chip>
+                        <v-chip size="small" variant="tonal">
+                            {{ mcpErrorRateLabel }}
+                        </v-chip>
+                    </div>
+                    <div v-if="mcpErrorCount" class="px-4 pb-3 d-grid diagnostics-grid">
+                        <div class="diagnostics-card">
+                            <div class="text-caption text-medium-emphasis mb-2">Error Classes</div>
+                            <div class="d-flex flex-wrap ga-2">
+                                <v-chip
+                                    v-for="item in mcpErrorClassSummary"
+                                    :key="item.key"
+                                    size="small"
+                                    variant="tonal"
+                                    color="error"
+                                >
+                                    {{ item.label }}
+                                </v-chip>
+                            </div>
+                        </div>
+                        <div class="diagnostics-card">
+                            <div class="text-caption text-medium-emphasis mb-2">
+                                Top Failing Tools
+                            </div>
+                            <div class="d-flex flex-wrap ga-2">
+                                <v-chip
+                                    v-for="item in topFailingTools"
+                                    :key="item.key"
+                                    size="small"
+                                    variant="tonal"
+                                >
+                                    {{ item.label }}
+                                </v-chip>
+                            </div>
+                        </div>
+                        <div class="diagnostics-card">
+                            <div class="text-caption text-medium-emphasis mb-2">
+                                Top Failing Targets
+                            </div>
+                            <div class="d-flex flex-wrap ga-2">
+                                <v-chip
+                                    v-for="item in topFailingTargets"
+                                    :key="item.key"
+                                    size="small"
+                                    variant="tonal"
+                                >
+                                    {{ item.label }}
+                                </v-chip>
+                            </div>
+                        </div>
+                    </div>
+                    <v-data-table
+                        :headers="mcpHeaders"
+                        :items="mcpLog"
+                        :items-per-page="25"
+                        density="compact"
+                        item-value="id"
+                        show-expand
+                    >
+                        <template #item.status="{ item }">
+                            <v-icon
+                                size="14"
+                                :color="item.status === 'success' ? 'success' : 'error'"
+                            >
+                                {{
+                                    item.status === 'success'
+                                        ? 'mdi-check-circle'
+                                        : 'mdi-alert-circle'
+                                }}
+                            </v-icon>
+                        </template>
+                        <template #item.durationMs="{ item }">
+                            <span class="text-caption">{{ item.durationMs }}ms</span>
+                        </template>
+                        <template #item.timestamp="{ item }">
+                            <span class="text-caption text-medium-emphasis">
+                                {{ new Date(item.timestamp).toLocaleTimeString() }}
+                            </span>
+                        </template>
+                        <template #expanded-row="{ item }">
+                            <tr>
+                                <td :colspan="mcpHeaders.length + 1" class="pa-3">
+                                    <div class="text-caption font-weight-medium mb-1">
+                                        Arguments
+                                    </div>
+                                    <pre class="mcp-payload">{{
+                                        JSON.stringify(item.args, null, 2)
+                                    }}</pre>
+                                    <div
+                                        v-if="item.status === 'error' && item.error"
+                                        class="text-caption font-weight-medium mt-2 mb-1 text-error"
+                                    >
+                                        Error
+                                    </div>
+                                    <pre
+                                        v-if="item.status === 'error' && item.error"
+                                        class="mcp-payload mcp-payload-error"
+                                        >{{ JSON.stringify(item.error, null, 2) }}</pre
+                                    >
+                                    <div class="text-caption font-weight-medium mt-2 mb-1">
+                                        Response
+                                    </div>
+                                    <pre class="mcp-payload">{{
+                                        JSON.stringify(item.response, null, 2)
+                                    }}</pre>
+                                </td>
+                            </tr>
+                        </template>
+                    </v-data-table>
+                </template>
             </div>
 
             <div v-if="settingsTab === 'gemini'">
@@ -224,6 +307,58 @@
     const displayedGeminiLog = computed(() =>
         serverGeminiLog.value.length > 0 ? serverGeminiLog.value : geminiLog.value
     );
+    const mcpErrorEntries = computed(() =>
+        mcpLog.value.filter((entry) => entry.status === 'error')
+    );
+    const mcpErrorCount = computed(() => mcpErrorEntries.value.length);
+    const mcpSuccessCount = computed(() => mcpLog.value.length - mcpErrorCount.value);
+    const mcpErrorRateLabel = computed(() => {
+        if (!mcpLog.value.length) return '0% error rate';
+        return `${Math.round((mcpErrorCount.value / mcpLog.value.length) * 100)}% error rate`;
+    });
+    const mcpErrorClassSummary = computed(() => {
+        const counts = new Map<string, number>();
+        for (const entry of mcpErrorEntries.value) {
+            const key = entry.errorCategory || 'unknown';
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        return Array.from(counts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([key, count]) => ({
+                key,
+                label: `${key.replace(/_/g, ' ')}: ${count}`,
+            }));
+    });
+    const topFailingTools = computed(() => {
+        const counts = new Map<string, number>();
+        for (const entry of mcpErrorEntries.value) {
+            counts.set(entry.tool, (counts.get(entry.tool) ?? 0) + 1);
+        }
+        return Array.from(counts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([key, count]) => ({
+                key,
+                label: `${key.replace(/^elemental_/, '')}: ${count}`,
+            }));
+    });
+    const topFailingTargets = computed(() => {
+        const counts = new Map<string, number>();
+        for (const entry of mcpErrorEntries.value) {
+            const key =
+                entry.targetId ||
+                (typeof entry.args?.entity === 'string' ? entry.args.entity : undefined) ||
+                'unknown';
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        return Array.from(counts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([key, count]) => ({
+                key,
+                label: `${key}: ${count}`,
+            }));
+    });
     const latestGeminiEntry = computed(() =>
         displayedGeminiLog.value.reduce<(typeof displayedGeminiLog.value)[number] | null>(
             (latest, entry) => {
@@ -311,5 +446,21 @@
         overflow-y: auto;
         white-space: pre-wrap;
         word-break: break-all;
+    }
+
+    .mcp-payload-error {
+        border-color: color-mix(in srgb, rgb(var(--v-theme-error)) 45%, var(--app-divider-strong));
+    }
+
+    .diagnostics-grid {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+    }
+
+    .diagnostics-card {
+        border: 1px solid var(--app-divider-strong);
+        border-radius: 8px;
+        padding: 12px;
+        background: var(--app-subtle-surface);
     }
 </style>
