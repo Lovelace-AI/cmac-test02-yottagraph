@@ -23,7 +23,6 @@ interface StreamRebuildQuery {
     seedNeids?: string | string[];
     seedDocumentNeids?: string | string[];
     seedEntityNeids?: string | string[];
-    seedSummaryLabel?: string;
 }
 
 const FUND_ACCOUNT_HISTORY_PROPERTIES = [
@@ -354,9 +353,7 @@ function parseNeidList(value: string | string[] | undefined): string[] {
         .map((neid) => normalizeNeid(neid));
 }
 
-function resolveSeedSummaryLabel(explicitLabel: string | undefined, seedRootCount: number): string {
-    const trimmed = String(explicitLabel ?? '').trim();
-    if (trimmed) return trimmed;
+function buildSeedSummaryLabel(seedRootCount: number): string {
     if (seedRootCount <= 0) return 'project seeds';
     return `${formatCount(seedRootCount)} seeded source${seedRootCount === 1 ? '' : 's'}`;
 }
@@ -430,7 +427,7 @@ export default defineEventHandler(async (event) => {
                 : []),
         ]),
     ];
-    const seedSummaryLabel = resolveSeedSummaryLabel(query.seedSummaryLabel, seedRootNeids.length);
+    const seedSummaryLabel = buildSeedSummaryLabel(seedRootNeids.length);
     strictDocumentNeidSet = new Set(explicitSeedDocumentNeids);
     let baselineExtractedPropertyCount = 0;
     let baselineExtractedPropertyRecordCount = 0;

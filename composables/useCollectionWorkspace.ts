@@ -541,7 +541,6 @@ export function useCollectionWorkspace() {
                 description: activeProject.value.description,
                 seedDocuments: activeProject.value.seedDocuments,
                 seedEntities: activeProject.value.seedEntities,
-                seedSummaryLabel: buildProjectSeedSummary(),
             },
         };
     }

@@ -6,7 +6,6 @@ interface RebuildStreamBody {
     project?: {
         seedDocuments?: Array<{ neid?: string }>;
         seedEntities?: Array<{ neid?: string }>;
-        seedSummaryLabel?: string;
     };
 }
 
@@ -42,12 +41,6 @@ export default defineEventHandler(async (event) => {
     }
     if (inferredSeedEntityNeids.length > 0) {
         url.searchParams.set('seedEntityNeids', inferredSeedEntityNeids.join(','));
-    }
-    if (
-        typeof body.project?.seedSummaryLabel === 'string' &&
-        body.project.seedSummaryLabel.trim()
-    ) {
-        url.searchParams.set('seedSummaryLabel', body.project.seedSummaryLabel.trim());
     }
 
     event.node.req.url = `${url.pathname}?${url.searchParams.toString()}`;
