@@ -11,7 +11,6 @@ import {
     citationToDocumentNeid,
 } from '~/server/utils/extractedSeedGraph';
 import {
-    BNY_DOCUMENTS,
     BNY_PRESET_PROJECT,
     HOP1_FLAVORS,
     type DocumentRecord,
@@ -24,10 +23,12 @@ import {
 
 interface RebuildRequestBody {
     projectId?: string;
+    projectType?: 'document' | 'entity' | 'mixed';
     seedNeids?: string[];
     project?: {
         name?: string;
         description?: string;
+        type?: 'document' | 'entity' | 'mixed';
         seedDocuments?: DocumentRecord[];
         seedEntities?: Array<{ neid?: string }>;
     };
@@ -222,7 +223,7 @@ function emptyEnrichmentResult(): EnrichmentExpandResult {
 export default defineEventHandler(async (event): Promise<CollectionState> => {
     resetMcpSession();
     const body = ((await readBody(event).catch(() => ({}))) ?? {}) as RebuildRequestBody;
-    const requestProjectId = body.projectId?.trim() || BNY_PRESET_PROJECT.id;
+    const requestedProjectId = body.projectId?.trim();
     const requestSeedNeids = Array.isArray(body.seedNeids)
         ? body.seedNeids.map((neid) => normalizeNeid(neid))
         : [];
@@ -238,26 +239,28 @@ export default defineEventHandler(async (event): Promise<CollectionState> => {
               .filter(Boolean)
               .map((neid) => normalizeNeid(neid))
         : [];
+    const projectType = body.projectType ?? body.project?.type;
+    const requestProjectId = requestedProjectId || 'custom-seeded-project';
     const isPresetProject = requestProjectId === BNY_PRESET_PROJECT.id;
 
     const seed = { entities: [], events: [], relationships: [] };
     const auditCounts = {
         rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
     };
-    const seedHints = loadSeedGraphHints();
-    const seedRootNeids = [
-        ...new Set([
-            ...explicitSeedDocumentNeids,
-            ...explicitSeedEntityNeids,
-            ...requestSeedNeids,
-            ...(isPresetProject &&
-            explicitSeedDocumentNeids.length === 0 &&
-            explicitSeedEntityNeids.length === 0 &&
-            requestSeedNeids.length === 0
-                ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
-                : []),
-        ]),
-    ];
+    const seedHints = isPresetProject
+        ? loadSeedGraphHints()
+        : { documentNeids: [], eventHubNeids: [], propertyBearingNeids: [] };
+    const typedSeedRoots =
+        projectType === 'entity'
+            ? explicitSeedEntityNeids.length
+                ? explicitSeedEntityNeids
+                : requestSeedNeids
+            : projectType === 'document'
+              ? explicitSeedDocumentNeids.length
+                  ? explicitSeedDocumentNeids
+                  : requestSeedNeids
+              : [...explicitSeedDocumentNeids, ...explicitSeedEntityNeids, ...requestSeedNeids];
+    const seedRootNeids = [...new Set([...typedSeedRoots])];
     const strictDocumentNeids = [...seedRootNeids];
     const strictDocumentNeidSet = new Set(strictDocumentNeids);
     const entityMap = new Map<string, EntityRecord>();

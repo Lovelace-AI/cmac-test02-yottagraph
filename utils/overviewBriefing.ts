@@ -241,7 +241,16 @@ function deriveEntitySeedDate(neid: string, state: CollectionState): string | un
     return firstKnownDateLabel(dateValues);
 }
 
-function deriveDealType(state: CollectionState): string {
+function deriveDealType(
+    state: CollectionState,
+    activeProject: Project | null | undefined,
+    status: OverviewStatus
+): string {
+    if (activeProject && (status === 'pending' || status === 'processing')) {
+        if (activeProject.type === 'entity') return 'Entity-seeded analysis';
+        if (activeProject.type === 'document') return 'Document-seeded analysis';
+        return 'Mixed-seed analysis';
+    }
     const description = state.meta.description.toLowerCase();
     if (description.includes('bond') || description.includes('refunding')) {
         return 'Municipal bond financing';
@@ -298,7 +307,7 @@ function confidenceLabel(summary: TrustCoverageSummary, status: OverviewStatus):
 function metricForTab(tab: WorkspaceTab, state: CollectionState): string {
     if (tab === 'graph') return `${formatCount(state.meta.entityCount)} mapped entities`;
     if (tab === 'timeline') return `${formatCount(state.meta.eventCount)} extracted events`;
-    if (tab === 'validation') return `${formatCount(state.meta.documentCount)} seeded entities`;
+    if (tab === 'validation') return `${formatCount(state.meta.documentCount)} seed sources`;
     return `${formatCount(state.entities.filter((entity) => entity.origin === 'enriched').length)} enriched matches`;
 }
 
@@ -310,7 +319,6 @@ export function mapCollectionToOverviewViewModel(params: {
 }): CollectionOverviewViewModel {
     const { state, rebuilding, trustCoverageSummary, activeProject } = params;
     const status = deriveStatus(state, rebuilding);
-    const dealType = deriveDealType(state);
     const dateValues = new Set<string>();
     state.events.forEach((event) => {
         const normalized = normalizeDateOnly(event.date);
@@ -324,6 +332,14 @@ export function mapCollectionToOverviewViewModel(params: {
     });
     state.documents.forEach((doc) => {
         const normalized = normalizeDateOnly(doc.date);
+        if (normalized) dateValues.add(normalized);
+    });
+    activeProject?.seedDocuments?.forEach((doc) => {
+        const normalized = normalizeDateOnly(doc.date);
+        if (normalized) dateValues.add(normalized);
+    });
+    activeProject?.seedEntities?.forEach((entity) => {
+        const normalized = normalizeDateOnly(entity.date);
         if (normalized) dateValues.add(normalized);
     });
     const locationCount = state.entities.filter((entity) => entity.flavor === 'location').length;
@@ -414,6 +430,14 @@ export function mapCollectionToOverviewViewModel(params: {
             }))
         );
     }
+
+    if (!dateValues.size) {
+        initialSources.forEach((source) => {
+            const normalized = normalizeDateOnly(source.date);
+            if (normalized) dateValues.add(normalized);
+        });
+    }
+    const dealType = deriveDealType(state, activeProject, status);
 
     return {
         collectionName: activeProject?.name || state.meta.name,

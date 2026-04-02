@@ -576,6 +576,10 @@
         return `${iso[1]}-${iso[2]}-${iso[0]}`;
     }
 
+    function isDocumentAliasName(value: string): boolean {
+        return /^bny_document_id\|\d+$/i.test(value.trim());
+    }
+
     function lookupDateFromRecord(record: unknown): string | undefined {
         if (!record || typeof record !== 'object') return undefined;
         const data = record as Record<string, unknown>;
@@ -608,7 +612,13 @@
     function shouldRefreshSeedSources(sources: InitialSourceRow[]): boolean {
         return sources.some((source) => {
             const sourceType = source.sourceType.trim().toLowerCase();
-            return !source.date || sourceType === 'unknown' || sourceType === 'entity';
+            return (
+                !source.date ||
+                sourceType === 'unknown' ||
+                sourceType === 'entity' ||
+                sourceType === 'source' ||
+                isNeidLike(source.label)
+            );
         });
     }
 
@@ -644,7 +654,7 @@
                         normalizeLookupDate(result?.entity?.date) ||
                         lookupDateFromRecord(result?.resolution);
                     const next: Partial<InitialSourceRow> = {};
-                    if (name && !isNeidLike(name)) next.label = name;
+                    if (name && !isNeidLike(name) && !isDocumentAliasName(name)) next.label = name;
                     if (flavor) next.sourceType = flavor;
                     if (date) next.date = date;
                     if (Object.keys(next).length) {

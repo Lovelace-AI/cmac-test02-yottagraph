@@ -9,11 +9,12 @@ import type {
     LineageInvestigationResult,
     LineageResultViewModel,
     LineageSupportingDocument,
+    Project,
     RelationshipRecord,
     PropertySeriesRecord,
     WorkspaceTab,
 } from '~/utils/collectionTypes';
-import { emptyCollectionState } from '~/utils/collectionTypes';
+import { emptyCollectionState, countProjectSeedSources } from '~/utils/collectionTypes';
 import { mapCollectionToOverviewViewModel } from '~/utils/overviewBriefing';
 import { projectCollapsedOrganizationLineage } from '~/utils/enrichmentLineage';
 import type {
@@ -337,7 +338,7 @@ const INITIAL_STEPS: RebuildStep[] = [
         step: 1,
         status: 'pending',
         label: 'Loading Seed Context',
-        detail: 'Traversing seeded entities...',
+        detail: 'Traversing seed context...',
     },
     {
         step: 2,
@@ -436,6 +437,33 @@ const enrichmentRelatedDeals = ref<EnrichmentRelatedDealInsight[]>([]);
 const enrichmentRelatedDealsLoading = ref(false);
 const enrichmentRelatedDealsError = ref<string | null>(null);
 
+function mergeBootstrapStateWithProject(
+    state: CollectionState,
+    project: Project | null
+): CollectionState {
+    if (!project || state.status === 'ready') return state;
+    const seedSourceCount = countProjectSeedSources(project);
+    const normalizedStateDocs = new Map(
+        state.documents.map((doc) => [normalizeNeid(doc.neid), doc])
+    );
+    const seededDocs = (project.seedDocuments ?? []).map((doc) => {
+        const normalized = normalizeNeid(doc.neid);
+        return normalizedStateDocs.get(normalized) ?? doc;
+    });
+    const documents = state.documents.length ? state.documents : seededDocs;
+    return {
+        ...state,
+        meta: {
+            ...state.meta,
+            projectId: project.id,
+            name: project.name,
+            description: project.description,
+            documentCount: seedSourceCount || state.meta.documentCount,
+        },
+        documents,
+    };
+}
+
 function gatewayPromptForAction(
     action: string,
     params?: { entityNeid?: string; question?: string },
@@ -528,38 +556,42 @@ export function useCollectionWorkspace() {
         const parts = Array.from(flavorCounts.entries()).map(([flavor, count]) =>
             pluralizeFlavorLabel(flavor, count)
         );
-        if (!parts.length) return `${totalSeedCount} seeded entities`;
-        return `${totalSeedCount} seeded entit${totalSeedCount === 1 ? 'y' : 'ies'} (${parts.join(', ')})`;
-    }
-    function countDistinctProjectSeeds(): number {
-        if (!activeProject.value) return 0;
-        const seedNeids = new Set<string>();
-        for (const neid of activeProject.value.seedNeids ?? []) {
-            const raw = String(neid ?? '').trim();
-            if (!raw) continue;
-            seedNeids.add(normalizeNeid(raw));
-        }
-        for (const doc of activeProject.value.seedDocuments ?? []) {
-            const raw = String(doc.neid ?? '').trim();
-            if (!raw) continue;
-            seedNeids.add(normalizeNeid(raw));
-        }
-        for (const entity of activeProject.value.seedEntities ?? []) {
-            const raw = String(entity.neid ?? '').trim();
-            if (!raw) continue;
-            seedNeids.add(normalizeNeid(raw));
-        }
-        return seedNeids.size;
+        if (!parts.length) return `${totalSeedCount} seed sources`;
+        return `${totalSeedCount} seed source${totalSeedCount === 1 ? '' : 's'} (${parts.join(', ')})`;
     }
     function projectRequestPayload() {
         if (!activeProject.value) return null;
+        const projectType = activeProject.value.type;
+        const entitySeedNeids = (activeProject.value.seedEntities ?? [])
+            .map((entity) => String(entity?.neid ?? '').trim())
+            .filter(Boolean);
+        const documentSeedNeids = (activeProject.value.seedDocuments ?? [])
+            .map((doc) => String(doc?.neid ?? '').trim())
+            .filter(Boolean);
+        const projectSeedNeidsRaw =
+            projectType === 'entity' && entitySeedNeids.length
+                ? entitySeedNeids
+                : projectType === 'document' && documentSeedNeids.length
+                  ? documentSeedNeids
+                  : [
+                        ...new Set([
+                            ...(activeProject.value.seedNeids ?? []),
+                            ...entitySeedNeids,
+                            ...documentSeedNeids,
+                        ]),
+                    ];
+        const projectSeedNeids = [
+            ...new Set(projectSeedNeidsRaw.map((neid) => normalizeNeid(neid))),
+        ];
         return {
             projectId: activeProject.value.id,
-            seedNeids: activeProject.value.seedNeids,
-            seedSourceCount: countDistinctProjectSeeds(),
+            projectType,
+            seedNeids: projectSeedNeids,
+            seedSourceCount: countProjectSeedSources(activeProject.value),
             project: {
                 name: activeProject.value.name,
                 description: activeProject.value.description,
+                type: activeProject.value.type,
                 seedDocuments: activeProject.value.seedDocuments,
                 seedEntities: activeProject.value.seedEntities,
             },
@@ -2766,7 +2798,7 @@ export function useCollectionWorkspace() {
         try {
             const params = activeProject.value ? { projectId: activeProject.value.id } : undefined;
             const data = await $fetch<CollectionState>('/api/collection/bootstrap', { params });
-            collection.value = data;
+            collection.value = mergeBootstrapStateWithProject(data, activeProject.value);
             lineageInvestigation.value = sanitizeLineageInvestigation(data.lineageInvestigation);
             lineageDebugEntries.value = [...(lineageInvestigation.value.progressLog ?? [])];
             if (data.status === 'ready') {
@@ -3078,6 +3110,7 @@ export function useCollectionWorkspace() {
                     streamPayload
                         ? {
                               projectId: streamPayload.projectId,
+                              projectType: streamPayload.projectType,
                               seedNeids: streamPayload.seedNeids,
                               seedSourceCount: streamPayload.seedSourceCount,
                               project: streamPayload.project,

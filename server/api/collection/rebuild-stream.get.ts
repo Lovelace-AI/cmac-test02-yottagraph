@@ -20,6 +20,7 @@ import {
 
 interface StreamRebuildQuery {
     projectId?: string;
+    projectType?: 'document' | 'entity' | 'mixed';
     seedNeids?: string | string[];
     seedDocumentNeids?: string | string[];
     seedEntityNeids?: string | string[];
@@ -356,16 +357,18 @@ function parseNeidList(value: string | string[] | undefined): string[] {
 
 function buildSeedSummaryLabel(clientSeedSourceCount: number, serverSeedRootCount: number): string {
     const count = clientSeedSourceCount > 0 ? clientSeedSourceCount : serverSeedRootCount;
-    if (count <= 0) return 'project seeds';
-    return `${formatCount(count)} seeded entit${count === 1 ? 'y' : 'ies'}`;
+    if (count <= 0) return 'project sources';
+    return `${formatCount(count)} seed source${count === 1 ? '' : 's'}`;
 }
 
 export default defineEventHandler(async (event) => {
     const query = getQuery(event) as StreamRebuildQuery;
-    const requestProjectId = query.projectId?.trim() || BNY_PRESET_PROJECT.id;
+    const requestedProjectId = query.projectId?.trim();
+    const projectType = query.projectType;
     const requestSeedNeids = parseNeidList(query.seedNeids);
     const explicitSeedDocumentNeids = parseNeidList(query.seedDocumentNeids);
     const explicitSeedEntityNeids = parseNeidList(query.seedEntityNeids);
+    const requestProjectId = requestedProjectId || 'custom-seeded-project';
     const isPresetProject = requestProjectId === BNY_PRESET_PROJECT.id;
 
     setResponseHeaders(event, {
@@ -415,20 +418,20 @@ export default defineEventHandler(async (event) => {
     const auditCounts = {
         rawOneHop: { entityCount: 0, relationshipCount: 0, eventCount: 0 },
     };
-    const seedHints = loadSeedGraphHints();
-    const seedRootNeids = [
-        ...new Set([
-            ...explicitSeedDocumentNeids,
-            ...explicitSeedEntityNeids,
-            ...requestSeedNeids,
-            ...(isPresetProject &&
-            explicitSeedDocumentNeids.length === 0 &&
-            explicitSeedEntityNeids.length === 0 &&
-            requestSeedNeids.length === 0
-                ? BNY_DOCUMENTS.map((doc) => normalizeNeid(doc.neid))
-                : []),
-        ]),
-    ];
+    const seedHints = isPresetProject
+        ? loadSeedGraphHints()
+        : { documentNeids: [], eventHubNeids: [], propertyBearingNeids: [] };
+    const typedSeedRoots =
+        projectType === 'entity'
+            ? explicitSeedEntityNeids.length
+                ? explicitSeedEntityNeids
+                : requestSeedNeids
+            : projectType === 'document'
+              ? explicitSeedDocumentNeids.length
+                  ? explicitSeedDocumentNeids
+                  : requestSeedNeids
+              : [...explicitSeedDocumentNeids, ...explicitSeedEntityNeids, ...requestSeedNeids];
+    const seedRootNeids = [...new Set([...typedSeedRoots])];
     const clientSeedSourceCount = Math.max(
         0,
         Number.parseInt(String(query.seedSourceCount ?? ''), 10) || 0
@@ -627,7 +630,7 @@ export default defineEventHandler(async (event) => {
             'Confirming Entity Profiles',
             phase1Tasks.length > 0
                 ? `Confirmed ${formatCount(phase2Resolved)} entity matches across ${formatCount(phase1Tasks.length)} live graph lookups.`
-                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers discovered from seeded entities.`,
+                : `Using ${formatCount(entityByKey.size)} canonical graph identifiers discovered from project seed sources.`,
             Date.now() - t0
         );
         sendMcpLogSnapshot();

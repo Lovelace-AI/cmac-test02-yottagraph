@@ -346,6 +346,35 @@ export function resolvePresetProject(projectId?: string | null): Project | undef
     return PRESET_PROJECTS.find((project) => project.id === projectId);
 }
 
+function normalizeProjectSeedNeid(neid: string): string {
+    const unpadded =
+        String(neid ?? '')
+            .trim()
+            .replace(/^0+(?=\d)/, '') || '0';
+    return unpadded.padStart(20, '0');
+}
+
+export function countProjectSeedSources(project?: Project | null): number {
+    if (!project) return 0;
+    const seedNeids = new Set<string>();
+    for (const neid of project.seedNeids ?? []) {
+        const raw = String(neid ?? '').trim();
+        if (!raw) continue;
+        seedNeids.add(normalizeProjectSeedNeid(raw));
+    }
+    for (const document of project.seedDocuments ?? []) {
+        const raw = String(document?.neid ?? '').trim();
+        if (!raw) continue;
+        seedNeids.add(normalizeProjectSeedNeid(raw));
+    }
+    for (const entity of project.seedEntities ?? []) {
+        const raw = String(entity?.neid ?? '').trim();
+        if (!raw) continue;
+        seedNeids.add(normalizeProjectSeedNeid(raw));
+    }
+    return seedNeids.size;
+}
+
 export const HOP1_FLAVORS = [
     'organization',
     'person',
@@ -392,13 +421,16 @@ export function emptyCollectionState(project?: Project | null): CollectionState 
     const selectedProject = project ?? BNY_PRESET_PROJECT;
     const projectDocuments = selectedProject.seedDocuments?.length
         ? selectedProject.seedDocuments
-        : BNY_DOCUMENTS;
+        : selectedProject.preset
+          ? BNY_DOCUMENTS
+          : [];
+    const seedSourceCount = countProjectSeedSources(selectedProject);
     return {
         meta: {
             projectId: selectedProject.id,
             name: selectedProject.name,
             description: selectedProject.description,
-            documentCount: projectDocuments.length,
+            documentCount: seedSourceCount || projectDocuments.length,
             entityCount: 0,
             eventCount: 0,
             relationshipCount: 0,
