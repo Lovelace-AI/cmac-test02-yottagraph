@@ -382,6 +382,7 @@
         setTab,
         addGeminiUsage,
     } = useCollectionWorkspace();
+    const { activeProject } = useProjectStore();
 
     const liveNarrative = ref<string | null>(null);
     const narrativeCitations = ref<Array<{ label: string; neid?: string }>>([]);
@@ -766,6 +767,7 @@
             narrativeCitations.value = [];
             return;
         }
+        if (narrativeLoading.value) return;
         narrativeLoading.value = true;
         try {
             const result = await $fetch<{
@@ -780,7 +782,9 @@
                     totalTokens: number;
                     costUsd: number;
                 };
-            }>('/api/collection/overview-language');
+            }>('/api/collection/overview-language', {
+                params: activeProject.value?.id ? { projectId: activeProject.value.id } : undefined,
+            });
             liveNarrative.value = result.narrative || null;
             narrativeCitations.value = result.citations || [];
             if (result.usage) {
