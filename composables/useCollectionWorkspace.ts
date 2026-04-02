@@ -560,7 +560,20 @@ export function useCollectionWorkspace() {
         return `${totalSeedCount} seed source${totalSeedCount === 1 ? '' : 's'} (${parts.join(', ')})`;
     }
     function projectRequestPayload() {
-        if (!activeProject.value) return null;
+        if (!activeProject.value) {
+            const fallbackProjectId = String(collection.value.meta.projectId ?? '').trim();
+            if (!fallbackProjectId) return null;
+            const fallbackSeedNeids = [...strictDocumentNeidSet.value];
+            return {
+                projectId: fallbackProjectId,
+                seedNeids: fallbackSeedNeids,
+                seedSourceCount: fallbackSeedNeids.length,
+                project: {
+                    name: collection.value.meta.name,
+                    description: collection.value.meta.description,
+                },
+            };
+        }
         const projectType = activeProject.value.type;
         const entitySeedNeids = (activeProject.value.seedEntities ?? [])
             .map((entity) => String(entity?.neid ?? '').trim())

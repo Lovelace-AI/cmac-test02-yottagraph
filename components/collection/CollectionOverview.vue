@@ -783,7 +783,10 @@
                     costUsd: number;
                 };
             }>('/api/collection/overview-language', {
-                params: activeProject.value?.id ? { projectId: activeProject.value.id } : undefined,
+                params:
+                    activeProject.value?.id || meta.value.projectId
+                        ? { projectId: activeProject.value?.id || meta.value.projectId }
+                        : undefined,
             });
             liveNarrative.value = result.narrative || null;
             narrativeCitations.value = result.citations || [];
