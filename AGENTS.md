@@ -62,6 +62,20 @@ check) and `npm run format:check` (Prettier). See Verification Commands.
 hook runs `lint-staged` with `prettier --check` and will reject
 unformatted files.
 
+### Secrets
+
+`GEMINI_API_KEY` is injected as a Cloud Agent environment variable (added
+via the Secrets panel). Nuxt picks it up from `process.env.GEMINI_API_KEY`
+at runtime — no need to add it to `.env`. If the key is missing, Gemini
+server routes (`server/utils/gemini.ts`) will return a 500 error.
+
+### Pre-existing formatting issues
+
+`npm run format:check` reports ~21 issues in `.cursor/skills/` markdown
+files installed from the `@yottagraph-app/aether-instructions` package.
+These are upstream and should not be "fixed" locally — the package manages
+those files.
+
 ## Manual / Local Setup
 
 Node 20 is the baseline (pinned in `.nvmrc`). Newer versions generally work.
