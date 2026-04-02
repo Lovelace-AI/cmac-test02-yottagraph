@@ -559,13 +559,22 @@ export function useCollectionWorkspace() {
         if (!parts.length) return `${totalSeedCount} seed sources`;
         return `${totalSeedCount} seed source${totalSeedCount === 1 ? '' : 's'} (${parts.join(', ')})`;
     }
-    function projectRequestPayload() {
+    function projectRequestPayload(overrideSeedNeids?: string[]) {
+        const normalizedOverrideSeeds = [
+            ...new Set(
+                (overrideSeedNeids ?? [])
+                    .map((neid) => normalizeNeid(neid))
+                    .filter((neid) => Boolean(neid))
+            ),
+        ];
         if (!activeProject.value) {
             const fallbackProjectId = String(collection.value.meta.projectId ?? '').trim();
-            if (!fallbackProjectId) return null;
-            const fallbackSeedNeids = [...strictDocumentNeidSet.value];
+            const fallbackSeedNeids = normalizedOverrideSeeds.length
+                ? normalizedOverrideSeeds
+                : [...strictDocumentNeidSet.value];
+            if (!fallbackSeedNeids.length) return null;
             return {
-                projectId: fallbackProjectId,
+                projectId: fallbackProjectId || 'custom-seeded-project',
                 seedNeids: fallbackSeedNeids,
                 seedSourceCount: fallbackSeedNeids.length,
                 project: {
@@ -596,11 +605,16 @@ export function useCollectionWorkspace() {
         const projectSeedNeids = [
             ...new Set(projectSeedNeidsRaw.map((neid) => normalizeNeid(neid))),
         ];
+        const scopedSeedNeids = normalizedOverrideSeeds.length
+            ? normalizedOverrideSeeds
+            : projectSeedNeids;
         return {
             projectId: activeProject.value.id,
             projectType,
-            seedNeids: projectSeedNeids,
-            seedSourceCount: countProjectSeedSources(activeProject.value),
+            seedNeids: scopedSeedNeids,
+            seedSourceCount: normalizedOverrideSeeds.length
+                ? normalizedOverrideSeeds.length
+                : countProjectSeedSources(activeProject.value),
             project: {
                 name: activeProject.value.name,
                 description: activeProject.value.description,
@@ -3010,7 +3024,7 @@ export function useCollectionWorkspace() {
         }
     }
 
-    async function rebuild(): Promise<void> {
+    async function rebuild(overrideSeedNeids?: string[]): Promise<void> {
         // Watchdog guardrails for stream stalls.
         // Keep these intentionally generous so slower MCP event windows
         // do not prematurely force fallback rebuilds.
@@ -3032,7 +3046,7 @@ export function useCollectionWorkspace() {
         const previousEntityCount = collection.value.meta.entityCount ?? 0;
 
         const runFallbackRebuild = async (reason: string) => {
-            const payload = projectRequestPayload();
+            const payload = projectRequestPayload(overrideSeedNeids);
             const fallbackState = await $fetch<CollectionState>('/api/collection/rebuild', {
                 method: 'POST',
                 ...(payload ? { body: payload } : {}),
@@ -3113,7 +3127,7 @@ export function useCollectionWorkspace() {
                     );
                 }
             }, 2000);
-            const streamPayload = projectRequestPayload();
+            const streamPayload = projectRequestPayload(overrideSeedNeids);
             const response = await fetch('/api/collection/rebuild-stream', {
                 method: 'POST',
                 headers: {

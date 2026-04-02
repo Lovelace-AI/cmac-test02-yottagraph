@@ -812,7 +812,10 @@
 
     async function handleRunAnalysis() {
         if (rebuilding.value) return;
-        await rebuild();
+        const seedNeids = overview.value.initialSources
+            .map((source) => String(source.neid ?? '').trim())
+            .filter(Boolean);
+        await rebuild(seedNeids);
     }
 
     async function handleReloadGraph() {

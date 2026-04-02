@@ -239,8 +239,19 @@ export default defineEventHandler(async (event) => {
     const query = getQuery(event);
     const projectId = typeof query.projectId === 'string' ? query.projectId : undefined;
     const inMemoryCollection = getCachedCollection(projectId);
+    const cachedByRequestedId = await readCollectionCache(projectId);
+    const fallbackProjectId =
+        projectId && projectId !== 'custom-seeded-project' ? 'custom-seeded-project' : undefined;
+    const inMemoryFallback = fallbackProjectId ? getCachedCollection(fallbackProjectId) : null;
+    const cachedFallback = fallbackProjectId
+        ? (await readCollectionCache(fallbackProjectId)).state
+        : null;
     const collection =
-        inMemoryCollection ?? (await readCollectionCache(projectId)).state ?? inMemoryCollection;
+        inMemoryCollection ??
+        cachedByRequestedId.state ??
+        inMemoryFallback ??
+        cachedFallback ??
+        inMemoryCollection;
     if (!collection) {
         throw createError({
             statusCode: 409,
